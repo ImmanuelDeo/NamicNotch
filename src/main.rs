@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 //! Nusa Notch Clone - A living notch for Windows
 //! 
 //! This is a reverse-engineered clone of Nusa Notch, built from scratch

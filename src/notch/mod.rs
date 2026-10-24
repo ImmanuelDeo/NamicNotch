@@ -194,6 +194,12 @@ impl Notch {
         // Position notch at top center
         self.position_notch()?;
         
+        // Show window immediately
+        self.visible = true;
+        unsafe {
+            let _ = ShowWindow(self.hwnd, SW_SHOW);
+        }
+        
         // Message loop
         let mut msg = MSG::default();
         
@@ -434,17 +440,37 @@ impl Notch {
         Ok(())
     }
     
-    // State-specific drawing methods (stubs for now)
-    fn draw_pet(&self, _rt: &ID2D1HwndRenderTarget) -> Result<()> { Ok(()) }
-    fn draw_idle(&self, _rt: &ID2D1HwndRenderTarget) -> Result<()> { Ok(()) }
-    fn draw_music(&self, _rt: &ID2D1HwndRenderTarget) -> Result<()> { Ok(()) }
-    fn draw_lyrics(&self, _rt: &ID2D1HwndRenderTarget) -> Result<()> { Ok(()) }
-    fn draw_pomo(&self, _rt: &ID2D1HwndRenderTarget) -> Result<()> { Ok(()) }
-    fn draw_water(&self, _rt: &ID2D1HwndRenderTarget) -> Result<()> { Ok(()) }
-    fn draw_shelf(&self, _rt: &ID2D1HwndRenderTarget) -> Result<()> { Ok(()) }
-    fn draw_todo(&self, _rt: &ID2D1HwndRenderTarget) -> Result<()> { Ok(()) }
-    fn draw_bt(&self, _rt: &ID2D1HwndRenderTarget) -> Result<()> { Ok(()) }
-    fn draw_charge(&self, _rt: &ID2D1HwndRenderTarget) -> Result<()> { Ok(()) }
+    // State-specific drawing methods
+    fn draw_pet(&self, rt: &ID2D1HwndRenderTarget) -> Result<()> {
+        let mut rect = RECT::default();
+        unsafe { GetClientRect(self.hwnd, &mut rect)?; }
+        let width = rect.right as f32;
+        let height = rect.bottom as f32;
+        
+        let center_x = width / 2.0;
+        let center_y = height / 2.0;
+        let eye_radius = 4.0;
+        
+        let mascot = crate::mascot::Mascot::new(self.settings.clone(), self.event_tx.clone())?;
+        mascot.draw_eyes(rt, center_x, center_y, eye_radius, self.dpi_scale)?;
+        Ok(())
+    }
+
+    fn draw_idle(&self, rt: &ID2D1HwndRenderTarget) -> Result<()> {
+        self.draw_pet(rt)
+    }
+
+    fn draw_music(&self, rt: &ID2D1HwndRenderTarget) -> Result<()> {
+        self.draw_pet(rt)
+    }
+
+    fn draw_lyrics(&self, rt: &ID2D1HwndRenderTarget) -> Result<()> { Ok(()) }
+    fn draw_pomo(&self, rt: &ID2D1HwndRenderTarget) -> Result<()> { Ok(()) }
+    fn draw_water(&self, rt: &ID2D1HwndRenderTarget) -> Result<()> { Ok(()) }
+    fn draw_shelf(&self, rt: &ID2D1HwndRenderTarget) -> Result<()> { Ok(()) }
+    fn draw_todo(&self, rt: &ID2D1HwndRenderTarget) -> Result<()> { Ok(()) }
+    fn draw_bt(&self, rt: &ID2D1HwndRenderTarget) -> Result<()> { Ok(()) }
+    fn draw_charge(&self, rt: &ID2D1HwndRenderTarget) -> Result<()> { Ok(()) }
 }
 
 fn create_notch_window(hinstance: HINSTANCE) -> Result<HWND> {
@@ -469,7 +495,7 @@ fn create_notch_window(hinstance: HINSTANCE) -> Result<HWND> {
         RegisterClassExW(&wc);
         
         let hwnd = CreateWindowExW(
-            WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
+            WS_EX_LAYERED | WS_EX_TOPMOST | windows::Win32::UI::WindowsAndMessaging::WS_EX_TOOLWINDOW,
             PCWSTR(class_name.as_ptr()),
             PCWSTR(to_wide_string("NusaNotchCloneNotch\0").as_ptr()),
             WS_POPUP,

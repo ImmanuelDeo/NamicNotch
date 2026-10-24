@@ -372,7 +372,13 @@ extern "system" fn wnd_proc(
 }
 
 fn create_tray_icon() -> Result<HICON> {
-    Ok(HICON::default())
+    unsafe {
+        let icon = windows::Win32::UI::WindowsAndMessaging::LoadIconW(
+            HINSTANCE::default(),
+            windows::Win32::UI::WindowsAndMessaging::IDI_APPLICATION,
+        )?;
+        Ok(icon)
+    }
 }
 
 fn create_context_menu(settings: &Arc<RwLock<Settings>>) -> Result<HMENU> {
