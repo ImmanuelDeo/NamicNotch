@@ -1,0 +1,89 @@
+[package]
+name = "nusa-clone"
+version = "0.1.0"
+edition = "2021"
+description = "A living notch for Windows - clone of Nusa Notch"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/yourusername/nusa-clone"
+
+[dependencies]
+# Windows API bindings
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Shell",
+    "Win32_Graphics_Direct2D",
+    "Win32_Graphics_Direct2D_Common",
+    "Win32_Graphics_DirectWrite",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Registry",
+    "Win32_System_Com",
+    "Win32_System_Ole",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Controls",
+    "Win32_Media",
+    "Media_Control",
+    "Win32_Devices_Bluetooth",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Threading",
+    "Win32_System_SystemServices",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Foundation_Numerics",
+] }
+
+# Async runtime
+tokio = { version = "1.38", features = ["full"] }
+
+# HTTP client for LRCLIB
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+urlencoding = "2.1"
+
+# File system watching
+notify = "6.1"
+tempfile = "3.10"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.8"
+
+# Configuration
+config = "0.14"
+toml = "0.8"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Anyhow for error handling
+anyhow = "1.0"
+
+# UUID for shelf items
+uuid = { version = "1.7", features = ["v4", "serde"] }
+
+# Directory paths
+dirs = "5.0"
+
+# Single instance mutex
+single-instance = "0.3"
+
+# Random for mascot
+rand = "0.9"
+
+# Image loading (for album art)
+image = "0.25"
+
+[build-dependencies]
+embed-resource = "1.8"
+
+[profile.release]
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
+codegen-units = 1
