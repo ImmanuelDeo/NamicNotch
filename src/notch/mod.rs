@@ -95,26 +95,26 @@ impl NotchApp {
         let win_y = monitor_rect.top;
 
         unsafe {
-            let _ = SetWindowPos(
-                hwnd,
-                HWND_TOPMOST,
-                win_x,
-                win_y,
-                win_w,
-                win_h,
-                SWP_NOACTIVATE | SWP_NOZORDER,
-            );
-            let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA);
+                    let _ = SetWindowPos(
+                        hwnd,
+                        HWND_TOPMOST,
+                        win_x,
+                        win_y,
+                        win_w,
+                        win_h,
+                        SWP_NOACTIVATE | SWP_NOZORDER,
+                    );
 
-            let margins = MARGINS {
-                cxLeftWidth: -1,
-                cxRightWidth: -1,
-                cyTopHeight: -1,
-                cyBottomHeight: -1,
-            };
-            let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
-            DragAcceptFiles(hwnd, true);
-        }
+                    // Use DWM for transparency - NO WS_EX_LAYERED needed (like original Nusa)
+                    let margins = MARGINS {
+                        cxLeftWidth: -1,
+                        cxRightWidth: -1,
+                        cyTopHeight: -1,
+                        cyBottomHeight: -1,
+                    };
+                    let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
+                    DragAcceptFiles(hwnd, true);
+                }
 
         let renderer = NotchRenderer::new(hwnd, win_w as u32, win_h as u32, dpi_scale)?;
         let mut controller = NotchController::new();
@@ -243,30 +243,32 @@ impl NotchApp {
 
         let pad = 6.0;
         let cursor_in_pill = local_logical_x >= pill_rect.left - pad
-            && local_logical_x <= pill_rect.right + pad
-            && local_logical_y >= pill_rect.top - pad
-            && local_logical_y <= pill_rect.bottom + pad;
+                    && local_logical_x <= pill_rect.right + pad
+                    && local_logical_y >= pill_rect.top - pad
+                    && local_logical_y <= pill_rect.bottom + pad;
 
-        self.cursor_in_pill = cursor_in_pill;
+                self.cursor_in_pill = cursor_in_pill;
 
-        unsafe {
-            let style = GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE);
-            if cursor_in_pill {
-                if (style & (WS_EX_TRANSPARENT.0 as isize)) != 0 {
-                    let _ = SetWindowLongPtrW(
-                        self.hwnd,
-                        GWL_EXSTYLE,
-                        style & !(WS_EX_TRANSPARENT.0 as isize),
-                    );
+                // Dynamic click-through: toggle WS_EX_TRANSPARENT based on cursor position
+                // When cursor is inside pill, click works; when outside, clicks pass through to Windows desktop!
+                unsafe {
+                    let style = GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE);
+                    if cursor_in_pill {
+                        if (style & (WS_EX_TRANSPARENT.0 as isize)) != 0 {
+                            let _ = SetWindowLongPtrW(
+                                self.hwnd,
+                                GWL_EXSTYLE,
+                                style & !(WS_EX_TRANSPARENT.0 as isize),
+                            );
+                        }
+                    } else if (style & (WS_EX_TRANSPARENT.0 as isize)) == 0 {
+                        let _ = SetWindowLongPtrW(
+                            self.hwnd,
+                            GWL_EXSTYLE,
+                            style | (WS_EX_TRANSPARENT.0 as isize),
+                        );
+                    }
                 }
-            } else if (style & (WS_EX_TRANSPARENT.0 as isize)) == 0 {
-                let _ = SetWindowLongPtrW(
-                    self.hwnd,
-                    GWL_EXSTYLE,
-                    style | (WS_EX_TRANSPARENT.0 as isize),
-                );
-            }
-        }
 
         let pill_cx = (pill_rect.left + pill_rect.right) * 0.5;
         let pill_cy = (pill_rect.top + pill_rect.bottom) * 0.5;
@@ -399,17 +401,19 @@ pub fn run_ui(
     unsafe {
         RegisterClassExW(&wc);
 
-        // PENTING: Tambahkan WS_EX_NOACTIVATE agar klik pada notch TIDAK PERNAH mencuri fokus / mem-minimize app!
+        // EXSTYLE: SAMA PERSIS DENGAN NUSA ORIGINAL (0x08200088)
+        // WS_EX_NOACTIVATE | WS_EX_ACCEPTFILES | WS_EX_TOOLWINDOW | WS_EX_TOPMOST
+        // TANPA WS_EX_LAYERED! (Layered window adalah penyebab utama notch tembus pandang / hilang)
+        let ex_style = WS_EX_TOPMOST
+            | WS_EX_TOOLWINDOW
+            | WS_EX_ACCEPTFILES
+            | WS_EX_NOACTIVATE;
+
         let hwnd = CreateWindowExW(
-            WS_EX_TOPMOST
-                | WS_EX_TOOLWINDOW
-                | WS_EX_LAYERED
-                | WS_EX_TRANSPARENT
-                | WS_EX_ACCEPTFILES
-                | WS_EX_NOACTIVATE,
+            ex_style,
             PCWSTR(class_name.as_ptr()),
-            PCWSTR(to_wide_string("Nusa Notch\0").as_ptr()),
-            WS_POPUP,
+            PCWSTR(to_wide_string("Notch\0").as_ptr()),
+            WS_POPUP | WS_VISIBLE,
             0,
             0,
             NOTCH_WINDOW_WIDTH,
