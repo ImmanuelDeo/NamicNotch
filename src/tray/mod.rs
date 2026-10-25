@@ -9,7 +9,7 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreatePopupMenu, AppendMenuW, TrackPopupMenuEx,
-    GetCursorPos, SetForegroundWindow,
+    GetCursorPos, SetForegroundWindow, GetSystemMetrics,
     TPM_RIGHTBUTTON, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RETURNCMD,
     WM_USER,
     MF_STRING, MF_SEPARATOR, MF_CHECKED, MF_UNCHECKED,
@@ -129,6 +129,43 @@ pub fn handle_tray_command(cmd: u32, hwnd: HWND, settings: &Arc<RwLock<Settings>
 
 fn create_tray_icon() -> Result<HICON> {
     unsafe {
+        let hinstance = windows::Win32::System::LibraryLoader::GetModuleHandleW(None)?;
+        
+        // Coba load icon IDI_ICON1 (1) yang di-embed dari resource .rc
+        if let Ok(icon) = windows::Win32::UI::WindowsAndMessaging::LoadImageW(
+            hinstance,
+            PCWSTR(1 as *const u16), // IDI_ICON1 = 1
+            windows::Win32::UI::WindowsAndMessaging::IMAGE_ICON,
+            GetSystemMetrics(windows::Win32::UI::WindowsAndMessaging::SM_CXSMICON),
+            GetSystemMetrics(windows::Win32::UI::WindowsAndMessaging::SM_CYSMICON),
+            windows::Win32::UI::WindowsAndMessaging::LR_DEFAULTCOLOR,
+        ) {
+            let hicon = HICON(icon.0);
+            if !hicon.is_invalid() {
+                return Ok(hicon);
+            }
+        }
+
+        // Coba load dari file resources/icon.ico atau icon.ico di folder saat ini jika ada
+        let icon_paths = ["resources\\icon.ico\0", "icon.ico\0"];
+        for p in icon_paths {
+            let wide = to_wide_string(p);
+            if let Ok(icon) = windows::Win32::UI::WindowsAndMessaging::LoadImageW(
+                HINSTANCE::default(),
+                PCWSTR(wide.as_ptr()),
+                windows::Win32::UI::WindowsAndMessaging::IMAGE_ICON,
+                GetSystemMetrics(windows::Win32::UI::WindowsAndMessaging::SM_CXSMICON),
+                GetSystemMetrics(windows::Win32::UI::WindowsAndMessaging::SM_CYSMICON),
+                windows::Win32::UI::WindowsAndMessaging::LR_LOADFROMFILE | windows::Win32::UI::WindowsAndMessaging::LR_DEFAULTCOLOR,
+            ) {
+                let hicon = HICON(icon.0);
+                if !hicon.is_invalid() {
+                    return Ok(hicon);
+                }
+            }
+        }
+
+        // Fallback terakhir
         let icon = windows::Win32::UI::WindowsAndMessaging::LoadIconW(
             HINSTANCE::default(),
             windows::Win32::UI::WindowsAndMessaging::IDI_APPLICATION,
