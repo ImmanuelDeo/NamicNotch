@@ -108,14 +108,14 @@ impl NotchRenderer {
                             dashStyle: D2D1_DASH_STYLE_DASH,
                             dashOffset: 0.0,
                             transformType: D2D1_STROKE_TRANSFORM_TYPE_NORMAL,
-                        };
-                let dashed_stroke: Option<ID2D1StrokeStyle> = factory
-                                    .CreateStrokeStyle(
-                                        &props,
-                                        None,
-                                    )
-                                    .ok()
-                                    .and_then(|s| s.cast().ok());
+                            };
+                            let dashed_stroke: Option<ID2D1StrokeStyle> = factory
+                            .CreateStrokeStyle(
+                                &props,
+                                None,
+                            )
+                            .ok()
+                            .map(|s| s.into());
 
         let fmt_clock_hero = dwrite.CreateTextFormat(
             PCWSTR(font_family.as_ptr()),
