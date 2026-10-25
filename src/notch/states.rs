@@ -1,12 +1,20 @@
 // src/notch/states.rs
+use std::os::windows::process::CommandExt;
 use std::sync::{Arc, Mutex};
-use chrono::{Local, Timelike};
+use chrono::{Datelike, Local, Timelike};
 use windows::core::PCWSTR;
 use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSessionManager,
     GlobalSystemMediaTransportControlsSessionPlaybackStatus,
 };
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
+use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
+use windows::Win32::Media::Audio::{
+    eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator,
+};
+use windows::Win32::System::Com::{
+    CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED,
+};
 use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
@@ -14,16 +22,17 @@ use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use crate::mascot::chibi_liebe::ChibiLiebe;
 use crate::mascot::eyes::DevilUnionEyes;
 
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotchState {
-    Pet,     // Closed mascot: Mata Asta Full Anime
-    Idle,    // Closed notch: Jam Digital & Baterai iOS (muncul setiap 30 menit / saat baru tutup)
-    Hub,     // Tab 0: Jam Besar, Baterai iOS & Scrollable Notification Center
-    Music,   // Tab 1: Music/Video Player + Spotify-style Side-by-Side Synced Lyrics
-    Control, // Tab 2: All-in-One Control (Volume Slider, Brightness Slider, Wi-Fi, Energy Saver)
+    Pet,     // Closed mascot: Asta Devil Union Crown / Cheer Mode
+    Idle,    // Closed notch: Jam Digital & Baterai iOS
+    Hub,     // Tab 0: Jam Besar, Baterai iOS & Daily Motivational Quote / Word of the Day
+    Music,   // Tab 1: Full-Height Cover + Controls + Auto-Synced LRC Lyrics
+    Control, // Tab 2: All-in-One Control (Volume, Brightness, Wi-Fi, Energy Saver)
     Pomo,    // Tab 3: Pomodoro Focus Timer
-    Shelf,   // Tab 4: File Shelf (Real Drag & Drop Temporary Storage)
-    Todo,    // Tab 5: To-Do List
+    Shelf,   // Tab 4: File Shelf (Drag & Drop Temporary Storage)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,22 +44,59 @@ pub enum OverlayKind {
 }
 
 #[derive(Debug, Clone)]
-pub struct AppNotification {
-    pub app_name: String,
-    pub title: String,
-    pub message: String,
-    pub time_str: String,
-    pub launch_target: String, // URL atau protokol/exe untuk dibuka saat diklik
+pub struct DailyQuote {
+    pub word_of_the_day: &'static str,
+    pub quote: &'static str,
+    pub author: &'static str,
 }
+
+pub const MOTIVATIONAL_QUOTES: [DailyQuote; 7] = [
+    DailyQuote {
+        word_of_the_day: "RELENTLESS · PANTANG MENYERAH",
+        quote: "\"My magic is never giving up — surpass your limits right here, right now!\"",
+        author: "Asta · Black Clover",
+    },
+    DailyQuote {
+        word_of_the_day: "CONSISTENCY · KONSISTENSI",
+        quote: "\"Small disciplines repeated with consistency every day lead to great achievements.\"",
+        author: "John C. Maxwell",
+    },
+    DailyQuote {
+        word_of_the_day: "MASTERY · KETEKUNAN",
+        quote: "\"Being weak is nothing to be ashamed of. Staying weak is!\"",
+        author: "Fuegoleon Vermillion",
+    },
+    DailyQuote {
+        word_of_the_day: "FOCUS · FOKUS PENUH",
+        quote: "\"Starve your distractions, feed your focus, and build what matters today.\"",
+        author: "Daily Mindset",
+    },
+    DailyQuote {
+        word_of_the_day: "RESILIENCE · TANGGUH",
+        quote: "\"It always seems impossible until it is done. Keep pushing forward.\"",
+        author: "Nelson Mandela",
+    },
+    DailyQuote {
+        word_of_the_day: "MOMENTUM · LANGKAH NYATA",
+        quote: "\"Action cures fear. Start where you are, use what you have, do what you can.\"",
+        author: "Arthur Ashe",
+    },
+    DailyQuote {
+        word_of_the_day: "GRIT · TEKAD BAJA",
+        quote: "\"Even without talent or magic, hard work beats everything in the end.\"",
+        author: "Yami & Asta · Black Bulls",
+    },
+];
 
 #[derive(Debug, Clone, Default)]
 pub struct LiveMediaSnapshot {
     pub title: String,
     pub artist: String,
     pub playing: bool,
-    pub elapsed_secs: u32,
-    pub total_secs: u32,
-    pub lyrics: Vec<String>,
+    pub elapsed_secs: f32,
+    pub total_secs: f32,
+    /// Baris lirik beserta timestamp detiknya: `(timestamp_secs, lyric_text)`
+    pub timed_lyrics: Vec<(f32, String)>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -115,7 +161,7 @@ pub struct NotchController {
 
     pub closed_quiet_timer: f32,
     pub hover_grace_timer: f32,
-    pub last_half_hour_marker: (u32, u32), // (hour, minute) untuk chime setiap 30 menit
+    pub last_half_hour_marker: (u32, u32),
 
     // --- Pop-up Interactive Overlay ---
     pub active_overlay: Option<OverlayKind>,
@@ -132,20 +178,18 @@ pub struct NotchController {
     pub is_charging: bool,
     power_poll_timer: f32,
 
-    // --- Section 0: Hub & Scrollable Notifications ---
-    pub notifications: Vec<AppNotification>,
-    pub notif_scroll_offset: usize,
-    pub show_notif_list_in_hub: bool,
+    // --- Section 0: Hub & Daily Quote ---
+    pub quote_offset: usize,
 
-    // --- Section 1: Music/Video + Integrated Spotify Lyrics ---
+    // --- Section 1: Music/Video + Auto-Synced Timed LRC Lyrics ---
     pub media_title: String,
     pub media_artist: String,
     pub media_playing: bool,
     pub media_progress: f32,
-    pub media_elapsed_secs: u32,
-    pub media_total_secs: u32,
+    pub media_elapsed_exact: f32,
+    pub media_total_secs: f32,
     pub show_side_lyrics: bool,
-    pub lyrics_lines: Vec<String>,
+    pub timed_lyrics: Vec<(f32, String)>,
     pub active_lyric_idx: usize,
     live_media_arc: Arc<Mutex<Option<LiveMediaSnapshot>>>,
 
@@ -156,11 +200,8 @@ pub struct NotchController {
     pub pomo_is_break: bool,
     pomo_accum: f32,
 
-    // --- Section 4: File Shelf (Name, Meta, FullPath) ---
+    // --- Section 4: File Shelf ---
     pub shelf_files: Vec<(String, String, String)>,
-
-    // --- Section 5: To-Do List ---
-    pub todos: Vec<(String, bool)>,
 
     // --- Maskot ---
     pub devil_eyes: DevilUnionEyes,
@@ -173,6 +214,8 @@ impl NotchController {
         let live_media_arc: Arc<Mutex<Option<LiveMediaSnapshot>>> = Arc::new(Mutex::new(None));
         Self::spawn_gsmtc_media_poller(live_media_arc.clone());
 
+        let day_idx = (Local::now().ordinal() as usize) % MOTIVATIONAL_QUOTES.len();
+
         let mut ctrl = Self {
             state: NotchState::Pet,
             last_expanded_tab: NotchState::Music,
@@ -180,8 +223,8 @@ impl NotchController {
             minimal_mode: false,
             mascot_enabled: true,
             anim_time: 0.0,
-            width: SpringValue::new(190.0, 310.0, 26.0),
-            height: SpringValue::new(36.0, 310.0, 26.0),
+            width: SpringValue::new(196.0, 310.0, 26.0),
+            height: SpringValue::new(38.0, 310.0, 26.0),
             corner_radius: SpringValue::new(16.0, 310.0, 26.0),
             content_alpha: SpringValue::new(1.0, 240.0, 28.0),
             closed_quiet_timer: 0.0,
@@ -200,51 +243,20 @@ impl NotchController {
             is_charging: charging,
             power_poll_timer: 0.0,
 
-            notifications: vec![
-                AppNotification {
-                    app_name: String::from("WhatsApp"),
-                    title: String::from("Grup Project Rust"),
-                    message: String::from("Build Nusa Clone v4 sudah siap di-test!"),
-                    time_str: String::from("Baru saja"),
-                    launch_target: String::from("https://web.whatsapp.com"),
-                },
-                AppNotification {
-                    app_name: String::from("Discord"),
-                    title: String::from("Black Clover Server"),
-                    message: String::from("Asta Devil Union animation looks sick 🔥"),
-                    time_str: String::from("5m lalu"),
-                    launch_target: String::from("https://discord.com/app"),
-                },
-                AppNotification {
-                    app_name: String::from("YouTube"),
-                    title: String::from("Media Session Active"),
-                    message: String::from("Sinkronisasi pemutaran video & lirik aktif"),
-                    time_str: String::from("12m lalu"),
-                    launch_target: String::from("https://www.youtube.com"),
-                },
-                AppNotification {
-                    app_name: String::from("Windows Security"),
-                    title: String::from("System Status"),
-                    message: String::from("Semua layanan berjalan normal tanpa kendala"),
-                    time_str: String::from("25m lalu"),
-                    launch_target: String::from("ms-settings:windowsdefender"),
-                },
-            ],
-            notif_scroll_offset: 0,
-            show_notif_list_in_hub: true,
+            quote_offset: day_idx,
 
             media_title: String::from("Menunggu Musik / Video YouTube..."),
             media_artist: String::from("Putar lagu di Spotify / Chrome / YouTube"),
             media_playing: false,
             media_progress: 0.0,
-            media_elapsed_secs: 0,
-            media_total_secs: 180,
+            media_elapsed_exact: 0.0,
+            media_total_secs: 180.0,
             show_side_lyrics: true,
-            lyrics_lines: vec![
-                String::from("♪ Putar musik atau video di YouTube / Spotify"),
-                String::from("Lirik otomatis tampil di panel kanan ini"),
-                String::from("Klik baris lirik untuk scroll manual"),
-                String::from("Atau klik tombol Lyrics untuk mode penuh"),
+            timed_lyrics: vec![
+                (0.0, String::from("♪ Putar lagu di Spotify / YouTube")),
+                (6.0, String::from("Lirik tersinkronisasi otomatis per detik")),
+                (12.0, String::from("Mengikuti timestamp LRC dari LRCLIB")),
+                (18.0, String::from("Atau scroll mouse untuk menggeser lirik")),
             ],
             active_lyric_idx: 0,
             live_media_arc,
@@ -257,12 +269,6 @@ impl NotchController {
 
             shelf_files: Vec::new(),
 
-            todos: vec![
-                (String::from("Bentuk notch menyatu ke bezel atas laptop"), true),
-                (String::from("Coba drag & drop file ke tab Shelf"), false),
-                (String::from("Atur Volume & Brightness dari tab Control"), false),
-            ],
-
             devil_eyes: DevilUnionEyes::new(),
             chibi_liebe: ChibiLiebe::new(),
         };
@@ -270,14 +276,18 @@ impl NotchController {
         ctrl
     }
 
-    /// Background worker yang mem-poll Windows GSMTC secara langsung agar YouTube / Spotify selalu terdeteksi
+    pub fn current_quote(&self) -> &'static DailyQuote {
+        &MOTIVATIONAL_QUOTES[self.quote_offset % MOTIVATIONAL_QUOTES.len()]
+    }
+
+    /// Background worker yang mem-poll Windows GSMTC & mem-parsing timestamp `[mm:ss.xx]` LRC secara akurat
     fn spawn_gsmtc_media_poller(shared: Arc<Mutex<Option<LiveMediaSnapshot>>>) {
         std::thread::spawn(move || {
             let mut last_fetched_title = String::new();
-            let mut cached_lyrics: Vec<String> = Vec::new();
+            let mut cached_lyrics: Vec<(f32, String)> = Vec::new();
 
             loop {
-                std::thread::sleep(std::time::Duration::from_millis(1200));
+                std::thread::sleep(std::time::Duration::from_millis(900));
 
                 let Ok(mgr_op) = GlobalSystemMediaTransportControlsSessionManager::RequestAsync() else {
                     continue;
@@ -292,13 +302,12 @@ impl NotchController {
                     .map(|st| st == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing)
                     .unwrap_or(false);
 
-                let (mut elapsed_secs, mut total_secs) = (0_u32, 180_u32);
+                let (mut elapsed_secs, mut total_secs) = (0.0_f32, 180.0_f32);
                 if let Ok(timeline) = session.GetTimelineProperties() {
                     if let (Ok(pos), Ok(end)) = (timeline.Position(), timeline.EndTime()) {
-                        // TimeSpan.Duration adalah dalam satuan 100-nanosecond ticks
-                        elapsed_secs = (pos.Duration / 10_000_000).max(0) as u32;
-                        let end_s = (end.Duration / 10_000_000).max(1) as u32;
-                        if end_s > 1 {
+                        elapsed_secs = (pos.Duration as f32 / 10_000_000.0).max(0.0);
+                        let end_s = (end.Duration as f32 / 10_000_000.0).max(1.0);
+                        if end_s > 1.0 {
                             total_secs = end_s;
                         }
                     }
@@ -311,7 +320,7 @@ impl NotchController {
 
                         if !title.is_empty() && title != last_fetched_title {
                             last_fetched_title = title.clone();
-                            cached_lyrics = Self::fetch_lrclib_Stage(&title, &artist);
+                            cached_lyrics = Self::fetch_timed_lrclib(&title, &artist, total_secs);
                         }
 
                         if !title.is_empty() {
@@ -326,7 +335,7 @@ impl NotchController {
                                     playing,
                                     elapsed_secs,
                                     total_secs,
-                                    lyrics: cached_lyrics.clone(),
+                                    timed_lyrics: cached_lyrics.clone(),
                                 });
                             }
                         }
@@ -336,46 +345,65 @@ impl NotchController {
         });
     }
 
-    fn fetch_lrclib_Stage(title: &str, artist: &str) -> Vec<String> {
+    /// Parse timestamp `[mm:ss.xx]` dari LRCLIB agar lirik berganti tepat sesuai detik lagu!
+    fn fetch_timed_lrclib(title: &str, artist: &str, total_secs: f32) -> Vec<(f32, String)> {
         let query = format!(
             "https://lrclib.net/api/search?q={}%20{}",
             title.replace(' ', "%20"),
             artist.replace(' ', "%20")
         );
-        let Ok(resp) = reqwest::blocking::get(&query) else {
-            return Vec::new();
-        };
-        let Ok(json) = resp.json::<serde_json::Value>() else {
-            return Vec::new();
-        };
-        if let Some(arr) = json.as_array() {
-            if let Some(first) = arr.first() {
-                let raw = first
-                    .get("syncedLyrics")
-                    .and_then(|v| v.as_str())
-                    .or_else(|| first.get("plainLyrics").and_then(|v| v.as_str()))
-                    .unwrap_or("");
-                let lines: Vec<String> = raw
-                    .lines()
-                    .map(|l| {
-                        // Bersihkan tag timestamp [00:12.34]
-                        if let Some(pos) = l.find(']') {
-                            l[pos + 1..].trim().to_string()
-                        } else {
-                            l.trim().to_string()
+        if let Ok(resp) = reqwest::blocking::get(&query) {
+            if let Ok(json) = resp.json::<serde_json::Value>() {
+                if let Some(arr) = json.as_array() {
+                    if let Some(first) = arr.first() {
+                        if let Some(synced) = first.get("syncedLyrics").and_then(|v| v.as_str()) {
+                            let mut timed = Vec::new();
+                            for line in synced.lines() {
+                                if let (Some(open), Some(close)) = (line.find('['), line.find(']')) {
+                                    if close > open + 1 {
+                                        let tag = &line[open + 1..close];
+                                        let text = line[close + 1..].trim().to_string();
+                                        if !text.is_empty() {
+                                            if let Some(colon) = tag.find(':') {
+                                                let mins: f32 =
+                                                    tag[..colon].parse().unwrap_or(0.0);
+                                                let secs: f32 =
+                                                    tag[colon + 1..].parse().unwrap_or(0.0);
+                                                timed.push((mins * 60.0 + secs, text));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            if !timed.is_empty() {
+                                return timed;
+                            }
                         }
-                    })
-                    .filter(|l| !l.is_empty())
-                    .collect();
-                if !lines.is_empty() {
-                    return lines;
+
+                        // Fallback jika lagu hanya punya plainLyrics: bagi rata sepanjang durasi lagu
+                        if let Some(plain) = first.get("plainLyrics").and_then(|v| v.as_str()) {
+                            let raw_lines: Vec<String> = plain
+                                .lines()
+                                .map(|l| l.trim().to_string())
+                                .filter(|l| !l.is_empty())
+                                .collect();
+                            if !raw_lines.is_empty() {
+                                let step = (total_secs.max(60.0)) / (raw_lines.len() as f32);
+                                return raw_lines
+                                    .into_iter()
+                                    .enumerate()
+                                    .map(|(i, l)| (i as f32 * step, l))
+                                    .collect();
+                            }
+                        }
+                    }
                 }
             }
         }
         vec![
-            format!("♪ {}", title),
-            format!("Artist: {}", if artist.is_empty() { "Unknown" } else { artist }),
-            String::from("Menikmati alunan musik & video..."),
+            (0.0, format!("♪ {}", title)),
+            (4.0, format!("Artist: {}", if artist.is_empty() { "Unknown" } else { artist })),
+            (8.0, String::from("Streaming audio aktif di Nusa Notch")),
         ]
     }
 
@@ -403,7 +431,7 @@ impl NotchController {
             _ => {}
         }
         self.active_overlay = Some(kind);
-        self.overlay_timer = 3.2; // Cukup waktu bagi pengguna untuk klik/geser slider langsung dari notch!
+        self.overlay_timer = 3.2;
         if !self.is_hovered {
             self.width.set_target(290.0);
             self.height.set_target(46.0);
@@ -411,14 +439,14 @@ impl NotchController {
         }
     }
 
-    pub fn ordered_tabs() -> [NotchState; 6] {
+    /// 5 Section Presisi (Tanpa To-Do & Tanpa Water)
+    pub fn ordered_tabs() -> [NotchState; 5] {
         [
             NotchState::Hub,
             NotchState::Music,
             NotchState::Control,
             NotchState::Pomo,
             NotchState::Shelf,
-            NotchState::Todo,
         ]
     }
 
@@ -442,14 +470,13 @@ impl NotchController {
         }
 
         match state {
-            NotchState::Pet => (190.0, 36.0, 16.0),
-            NotchState::Idle => (216.0, 36.0, 16.0),
-            NotchState::Hub => (470.0, 174.0, 24.0),
-            NotchState::Music => (488.0, 172.0, 24.0),
+            NotchState::Pet => (196.0, 38.0, 16.0),
+            NotchState::Idle => (216.0, 38.0, 16.0),
+            NotchState::Hub => (470.0, 172.0, 24.0),
+            NotchState::Music => (496.0, 174.0, 24.0),
             NotchState::Control => (460.0, 168.0, 24.0),
             NotchState::Pomo => (440.0, 162.0, 24.0),
             NotchState::Shelf => (465.0, 168.0, 24.0),
-            NotchState::Todo => (450.0, 168.0, 24.0),
         }
     }
 
@@ -502,19 +529,63 @@ impl NotchController {
         self.transition_to(NotchState::Shelf);
     }
 
-    pub fn on_mouse_wheel(&mut self, delta: i16) {
-        if self.state == NotchState::Hub && !self.notifications.is_empty() {
-            if delta < 0 && self.notif_scroll_offset + 1 < self.notifications.len() {
-                self.notif_scroll_offset += 1;
-            } else if delta > 0 && self.notif_scroll_offset > 0 {
-                self.notif_scroll_offset -= 1;
+    /// Scroll Wheel: Atur Brightness/Volume dengan cepat atau ganti Quote/Lyrics!
+    pub fn on_mouse_wheel(&mut self, delta: i16, lx: f32, pill_w: f32) {
+        let step: i16 = if delta > 0 { 5 } else { -5 };
+
+        // 1. Jika sedang di Overlay Volume/Brightness, scroll mengubah nilainya langsung!
+        if !self.is_hovered {
+            if let Some(ref mut ov) = self.active_overlay {
+                match ov {
+                    OverlayKind::Volume(v) => {
+                        let next = (*v as i16 + step).clamp(0, 100) as u8;
+                        *v = next;
+                        self.volume_level = next;
+                        Self::apply_system_volume(next);
+                        self.overlay_timer = 3.0;
+                        return;
+                    }
+                    OverlayKind::Brightness(b) => {
+                        let next = (*b as i16 + step).clamp(0, 100) as u8;
+                        *b = next;
+                        self.brightness_level = next;
+                        Self::apply_system_brightness(next);
+                        self.overlay_timer = 3.0;
+                        return;
+                    }
+                    _ => {}
+                }
             }
-        } else if self.state == NotchState::Music && !self.lyrics_lines.is_empty() {
+        }
+
+        // 2. Jika sedang di tab Control, scroll di sisi kiri mengubah Volume, scroll di sisi kanan mengubah Brightness!
+        if self.state == NotchState::Control {
+            if lx < pill_w * 0.5 {
+                let next = (self.volume_level as i16 + step).clamp(0, 100) as u8;
+                self.volume_level = next;
+                Self::apply_system_volume(next);
+            } else {
+                let next = (self.brightness_level as i16 + step).clamp(0, 100) as u8;
+                self.brightness_level = next;
+                Self::apply_system_brightness(next);
+            }
+            return;
+        }
+
+        // 3. Jika di Hub: scroll mengganti Quote inspiratif
+        if self.state == NotchState::Hub {
             if delta < 0 {
-                self.active_lyric_idx = (self.active_lyric_idx + 1) % self.lyrics_lines.len();
+                self.quote_offset = (self.quote_offset + 1) % MOTIVATIONAL_QUOTES.len();
+            } else if delta > 0 {
+                self.quote_offset =
+                    (self.quote_offset + MOTIVATIONAL_QUOTES.len() - 1) % MOTIVATIONAL_QUOTES.len();
+            }
+        } else if self.state == NotchState::Music && !self.timed_lyrics.is_empty() {
+            if delta < 0 {
+                self.active_lyric_idx = (self.active_lyric_idx + 1) % self.timed_lyrics.len();
             } else if delta > 0 {
                 self.active_lyric_idx = if self.active_lyric_idx == 0 {
-                    self.lyrics_lines.len() - 1
+                    self.timed_lyrics.len() - 1
                 } else {
                     self.active_lyric_idx - 1
                 };
@@ -523,44 +594,62 @@ impl NotchController {
     }
 
     pub fn update(&mut self, dt: f32, cursor_in_pill: bool, cursor_offset: Option<(f32, f32)>) {
-        self.anim_time += dt.clamp(0.001, 0.05);
+        let dt = dt.clamp(0.001, 0.05);
+        self.anim_time += dt;
 
-        // 1. Sinkronisasi hasil tangkapan GSMTC (YouTube / Spotify / Browser)
+        // 1. Sinkronisasi GSMTC + Interpolasi Waktu Lagu Real-Time agar Lirik Berganti Otomatis!
         if let Ok(mut guard) = self.live_media_arc.try_lock() {
             if let Some(snap) = guard.take() {
                 let title_changed = self.media_title != snap.title;
                 self.media_title = snap.title;
                 self.media_artist = snap.artist;
                 self.media_playing = snap.playing;
-                if snap.total_secs > 0 {
-                    self.media_elapsed_secs = snap.elapsed_secs;
+                if snap.total_secs > 1.0 {
                     self.media_total_secs = snap.total_secs;
-                    self.media_progress =
-                        (snap.elapsed_secs as f32 / snap.total_secs as f32).clamp(0.0, 1.0);
+                    // Sinkronkan elapsed_exact jika selisih > 1.8 detik dari posisi GSMTC
+                    if (self.media_elapsed_exact - snap.elapsed_secs).abs() > 1.8 || title_changed {
+                        self.media_elapsed_exact = snap.elapsed_secs;
+                    }
                 }
-                if !snap.lyrics.is_empty() && (title_changed || self.lyrics_lines.len() <= 4) {
-                    self.lyrics_lines = snap.lyrics;
-                }
-                if !self.lyrics_lines.is_empty() && self.media_total_secs > 0 {
-                    let lyr_idx = ((self.media_progress * self.lyrics_lines.len() as f32) as usize)
-                        .min(self.lyrics_lines.len() - 1);
-                    self.active_lyric_idx = lyr_idx;
+                if !snap.timed_lyrics.is_empty() && (title_changed || self.timed_lyrics.len() <= 4)
+                {
+                    self.timed_lyrics = snap.timed_lyrics;
                 }
             }
         }
 
-        // 2. Cek apakah waktu sekarang berada di menit :00 atau :30 (Auto 30-Minute Time Peek!)
+        if self.media_playing && self.media_total_secs > 1.0 {
+            self.media_elapsed_exact =
+                (self.media_elapsed_exact + dt).min(self.media_total_secs);
+            self.media_progress =
+                (self.media_elapsed_exact / self.media_total_secs).clamp(0.0, 1.0);
+
+            // Cari baris lirik terakhir yang timestamp-nya <= media_elapsed_exact!
+            if !self.timed_lyrics.is_empty() {
+                let mut found_idx = 0;
+                for (i, (ts, _)) in self.timed_lyrics.iter().enumerate() {
+                    if *ts <= self.media_elapsed_exact + 0.35 {
+                        found_idx = i;
+                    } else {
+                        break;
+                    }
+                }
+                self.active_lyric_idx = found_idx;
+            }
+        }
+
+        // 2. Auto Time Peek setiap 30 menit (:00 dan :30)
         let now = Local::now();
         let hm = (now.hour(), now.minute());
         if (hm.1 == 0 || hm.1 == 30) && self.last_half_hour_marker != hm {
             self.last_half_hour_marker = hm;
             if !self.is_hovered && self.state == NotchState::Pet {
-                self.closed_quiet_timer = -6.5; // Tampilkan Jam & Baterai iOS selama 10 detik penuh!
+                self.closed_quiet_timer = -6.5;
                 self.transition_to(NotchState::Idle);
             }
         }
 
-        // 3. Poll status baterai & charger setiap 2 detik
+        // 3. Poll Baterai & Charger
         self.power_poll_timer += dt;
         if self.power_poll_timer >= 2.0 {
             self.power_poll_timer = 0.0;
@@ -591,7 +680,7 @@ impl NotchController {
             }
         }
 
-        // 5. Deteksi Hover
+        // 5. Hover Expand / Collapse
         if cursor_in_pill {
             self.hover_grace_timer = 0.15;
             if !self.is_hovered && self.active_overlay.is_none() {
@@ -665,27 +754,35 @@ impl NotchController {
         });
     }
 
-    pub fn apply_system_brightness(level: u8) {
-        std::thread::spawn(move || {
-            let script = format!(
-                "(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1,{})",
-                level.min(100)
-            );
-            let _ = std::process::Command::new("powershell")
-                .args(["-WindowStyle", "Hidden", "-NoProfile", "-Command", &script])
-                .spawn();
+    /// NATIVE WINDOWS COM AUDIO VOLUME (0ms Delay, Tanpa PowerShell, Tanpa Pop-up Terminal, Tidak Minimize App!)
+    pub fn apply_system_volume(level: u8) {
+        let scalar = (level.min(100) as f32 / 100.0).clamp(0.0, 1.0);
+        std::thread::spawn(move || unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+            if let Ok(enumerator) =
+                CoCreateInstance::<_, IMMDeviceEnumerator>(&MMDeviceEnumerator, None, CLSCTX_ALL)
+            {
+                if let Ok(device) = enumerator.GetDefaultAudioEndpoint(eRender, eConsole) {
+                    if let Ok(endpoint) = device.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None)
+                    {
+                        let _ = endpoint.SetMasterVolumeLevelScalar(scalar, std::ptr::null());
+                    }
+                }
+            }
         });
     }
 
-    pub fn apply_system_volume(level: u8) {
+    /// SILENT WMI BRIGHTNESS (Menggunakan `CREATE_NO_WINDOW = 0x08000000` sehingga TIDAK ADA Terminal Pop-Up!)
+    pub fn apply_system_brightness(level: u8) {
+        let lvl = level.min(100);
         std::thread::spawn(move || {
-            // Gunakan PowerShell AudioEndpoint sederhana atau WScript SendKeys agar non-intrusif
             let script = format!(
-                "$w = New-Object -ComObject WScript.Shell; 1..50 | % {{ $w.SendKeys([char]174) }}; 1..{} | % {{ $w.SendKeys([char]175) }}",
-                (level.min(100) / 2).max(1)
+                "(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1,{})",
+                lvl
             );
             let _ = std::process::Command::new("powershell")
-                .args(["-WindowStyle", "Hidden", "-NoProfile", "-Command", &script])
+                .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+                .creation_flags(CREATE_NO_WINDOW)
                 .spawn();
         });
     }
@@ -705,10 +802,9 @@ impl NotchController {
         }
     }
 
-    /// Tangani klik pada Overlay Slider (ketika Volume / Brightness pop-up aktif)
     pub fn handle_overlay_click(&mut self, lx: f32, pill_w: f32) -> bool {
         if let Some(ref mut ov) = self.active_overlay {
-            let bar_l = 56.0;
+            let bar_l = 58.0;
             let bar_r = pill_w - 48.0;
             if lx >= bar_l - 8.0 && lx <= bar_r + 8.0 {
                 let pct = (((lx - bar_l) / (bar_r - bar_l).max(1.0)).clamp(0.0, 1.0) * 100.0)
@@ -735,13 +831,11 @@ impl NotchController {
         false
     }
 
-    /// Tangani klik di dalam kartu fitur menggunakan koordinat logis `lx` & `ly` (relatif terhadap `pill_rect.left, pill_rect.top`)
     pub fn handle_panel_click(&mut self, lx: f32, ly: f32, pill_w: f32) -> bool {
         let card_l = 14.0;
         let card_t = 30.0;
         let card_w = pill_w - 28.0;
 
-        // Koordinat relatif terhadap sudut kiri-atas Inner Card
         let cx = lx - card_l;
         let cy = ly - card_t;
         if cx < 0.0 || cy < 0.0 {
@@ -750,65 +844,54 @@ impl NotchController {
 
         match self.state {
             NotchState::Hub => {
-                // Klik pada bagian kanan (daftar notifikasi) membuka aplikasi terkait!
-                if cx >= 170.0 {
-                    let row = (cy / 42.0) as usize;
-                    let idx = self.notif_scroll_offset + row;
-                    if let Some(notif) = self.notifications.get(idx) {
-                        let target = notif.launch_target.clone();
-                        Self::open_target_url_or_path(&target);
-                        return true;
-                    }
-                } else {
-                    self.show_notif_list_in_hub = !self.show_notif_list_in_hub;
+                // Klik pada kartu Quote di sebelah kanan untuk mengganti ke kutipan motivasi berikutnya
+                if cx >= 166.0 {
+                    self.quote_offset = (self.quote_offset + 1) % MOTIVATIONAL_QUOTES.len();
                     return true;
                 }
             }
             NotchState::Music => {
-                // Sisi kiri: kontrol musik (cy: 84..126)
-                if (80.0..=130.0).contains(&cy) && cx < card_w * 0.54 {
-                    if (84.0..=116.0).contains(&cx) {
+                // Kolom tengah (cx: 120..275): tombol Prev, Play/Pause, Next, Lyrics Toggle (cy: 80..128)
+                if (76.0..=130.0).contains(&cy) && (114.0..=285.0).contains(&cx) {
+                    if (114.0..=148.0).contains(&cx) {
                         Self::send_system_media_command("prev");
+                        self.media_elapsed_exact = 0.0;
                         self.media_progress = 0.0;
-                        self.media_elapsed_secs = 0;
                         return true;
-                    } else if (120.0..=156.0).contains(&cx) {
+                    } else if (150.0..=186.0).contains(&cx) {
                         Self::send_system_media_command("toggle");
                         self.media_playing = !self.media_playing;
                         return true;
-                    } else if (160.0..=192.0).contains(&cx) {
+                    } else if (188.0..=222.0).contains(&cx) {
                         Self::send_system_media_command("next");
+                        self.media_elapsed_exact = 0.0;
                         self.media_progress = 0.0;
-                        self.media_elapsed_secs = 0;
                         return true;
-                    } else if (196.0..=248.0).contains(&cx) {
+                    } else if (224.0..=282.0).contains(&cx) {
                         self.show_side_lyrics = !self.show_side_lyrics;
                         return true;
                     }
                 }
-                // Sisi kanan: klik panel lirik untuk melompat ke baris berikutnya
-                if cx >= card_w * 0.54 && !self.lyrics_lines.is_empty() {
-                    self.active_lyric_idx = (self.active_lyric_idx + 1) % self.lyrics_lines.len();
+                // Klik di kolom kanan (Lirik): lompat ke baris lirik berikutnya
+                if cx > 282.0 && !self.timed_lyrics.is_empty() {
+                    self.active_lyric_idx = (self.active_lyric_idx + 1) % self.timed_lyrics.len();
                     return true;
                 }
             }
             NotchState::Control => {
-                // Baris 1 (cy: 10..56): Slider Volume (kiri) & Slider Brightness (kanan)
                 let half_w = card_w * 0.5;
-                if (10.0..=62.0).contains(&cy) {
-                    if cx < half_w - 6.0 {
-                        // Volume Slider bar
-                        let sl_l = 14.0;
-                        let sl_r = half_w - 18.0;
+                if (10.0..=64.0).contains(&cy) {
+                    if cx < half_w - 5.0 {
+                        let sl_l = 20.0;
+                        let sl_r = half_w - 15.0;
                         let pct = (((cx - sl_l) / (sl_r - sl_l).max(1.0)).clamp(0.0, 1.0) * 100.0)
                             .round() as u8;
                         self.volume_level = pct;
                         Self::apply_system_volume(pct);
                         return true;
                     } else {
-                        // Brightness Slider bar
-                        let sl_l = half_w + 10.0;
-                        let sl_r = card_w - 16.0;
+                        let sl_l = half_w + 15.0;
+                        let sl_r = card_w - 20.0;
                         let pct = (((cx - sl_l) / (sl_r - sl_l).max(1.0)).clamp(0.0, 1.0) * 100.0)
                             .round() as u8;
                         self.brightness_level = pct;
@@ -816,9 +899,8 @@ impl NotchController {
                         return true;
                     }
                 }
-                // Baris 2 (cy: 68..124): Toggle Wi-Fi (kiri) & Toggle Energy Saver (kanan)
                 if (68.0..=126.0).contains(&cy) {
-                    if cx < half_w - 6.0 {
+                    if cx < half_w - 5.0 {
                         self.wifi_enabled = !self.wifi_enabled;
                         return true;
                     } else {
@@ -829,7 +911,7 @@ impl NotchController {
             }
             NotchState::Pomo => {
                 if (62.0..=112.0).contains(&cy) {
-                    if (110.0..=202.0).contains(&cx) {
+                    if (110.0..=204.0).contains(&cx) {
                         self.pomo_running = !self.pomo_running;
                         return true;
                     } else if (210.0..=280.0).contains(&cx) {
@@ -840,12 +922,12 @@ impl NotchController {
                 }
             }
             NotchState::Shelf => {
-                // Klik kartu file untuk membuka/menampilkan di Explorer (atau klik sudut kanan atas kartu untuk hapus)
                 if cy >= 30.0 && !self.shelf_files.is_empty() {
                     let slot_w = (card_w - 76.0) * 0.5;
                     let idx = if cx < 14.0 + slot_w { 0 } else { 1 };
                     if idx < self.shelf_files.len() {
-                        let card_right_edge = 14.0 + (idx as f32 + 1.0) * slot_w + idx as f32 * 10.0;
+                        let card_right_edge =
+                            14.0 + (idx as f32 + 1.0) * slot_w + idx as f32 * 10.0;
                         if cx >= card_right_edge - 24.0 && cy <= 54.0 {
                             self.shelf_files.remove(idx);
                         } else {
@@ -854,13 +936,6 @@ impl NotchController {
                         }
                         return true;
                     }
-                }
-            }
-            NotchState::Todo => {
-                let row = ((cy - 8.0) / 32.0) as usize;
-                if let Some(item) = self.todos.get_mut(row) {
-                    item.1 = !item.1;
-                    return true;
                 }
             }
             _ => {}

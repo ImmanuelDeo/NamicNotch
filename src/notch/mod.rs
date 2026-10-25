@@ -1,5 +1,5 @@
 // src/notch/mod.rs
-//! Notch window and rendering for Nusa Notch Clone (v4.0)
+//! Notch window and rendering for Nusa Notch Clone (v5.0)
 
 pub mod renderer;
 pub mod states;
@@ -62,6 +62,7 @@ pub struct NotchApp {
     pub win_h: i32,
     pub last_tick: Instant,
     pub cursor_in_pill: bool,
+    pub last_cursor_logical_x: f32,
 }
 
 impl NotchApp {
@@ -112,8 +113,6 @@ impl NotchApp {
                 cyBottomHeight: -1,
             };
             let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
-
-            // Aktifkan dukungan Drag & Drop file dari Windows Explorer / Aplikasi lain ke Notch!
             DragAcceptFiles(hwnd, true);
         }
 
@@ -138,16 +137,16 @@ impl NotchApp {
             win_h,
             last_tick: Instant::now(),
             cursor_in_pill: false,
+            last_cursor_logical_x: 0.0,
         })
     }
 
-    /// Koordinat Logis (DIPs) yang 100% sinkron dengan Direct2D RenderTarget (`dpiX = 96.0 * dpi_scale`)
     pub fn current_pill_rect(&self) -> D2D_RECT_F {
         let logical_win_w = NOTCH_WINDOW_WIDTH as f32;
         let pw = self.controller.width.value;
         let ph = self.controller.height.value;
         let left = ((logical_win_w - pw) * 0.5).max(0.0);
-        let top = 0.0; // Menempel langsung ke bezel atas laptop
+        let top = 0.0;
         let right = left + pw;
         let bottom = top + ph;
 
@@ -166,6 +165,9 @@ impl NotchApp {
 
         while let Ok(ev) = self.event_rx.try_recv() {
             match ev {
+                NotchEvent::SetState(s) => self.controller.transition_to(s),
+                NotchEvent::Show => unsafe { let _ = ShowWindow(self.hwnd, SW_SHOW); },
+                NotchEvent::Hide => unsafe { let _ = ShowWindow(self.hwnd, windows::Win32::UI::WindowsAndMessaging::SW_HIDE); },
                 NotchEvent::Toggle => {
                     if self.controller.is_hovered || self.controller.state != NotchState::Pet {
                         self.controller.is_hovered = false;
@@ -187,9 +189,26 @@ impl NotchApp {
                 }
                 NotchEvent::UpdateLyrics(lines) => {
                     if !lines.is_empty() {
-                        self.controller.lyrics_lines = lines;
-                        self.controller.active_lyric_idx = 0;
+                        let step = (self.controller.media_total_secs.max(60.0))
+                            / (lines.len().max(1) as f32);
+                        self.controller.timed_lyrics = lines
+                            .into_iter()
+                            .enumerate()
+                            .map(|(i, l)| (i as f32 * step, l))
+                            .collect();
                     }
+                }
+                NotchEvent::UpdateTimer(info) => {
+                    self.controller.pomo_remaining_secs = info.remaining_seconds;
+                    self.controller.pomo_total_secs = info.total_seconds;
+                    self.controller.pomo_running = info.running;
+                    self.controller.pomo_is_break = matches!(info.mode, crate::timers::PomodoroMode::ShortBreak | crate::timers::PomodoroMode::LongBreak);
+                }
+                NotchEvent::UpdateShelf(items) => {
+                    self.controller.shelf_files = items
+                        .into_iter()
+                        .map(|item| (item.name.clone(), format!("{} · {:?}", item.size, item.item_type), item.path.to_string_lossy().to_string()))
+                        .collect();
                 }
                 NotchEvent::HotkeyVolume(vol) => {
                     self.controller
@@ -212,7 +231,6 @@ impl NotchApp {
             self.controller.minimal_mode = s.minimal_notch;
         }
 
-        // Konversi posisi kursor layar fisik ke koordinat logis (DIPs)
         let pill_rect = self.current_pill_rect();
         let mut pt = POINT::default();
         unsafe {
@@ -221,6 +239,7 @@ impl NotchApp {
 
         let local_logical_x = (pt.x - self.win_x) as f32 / self.dpi_scale;
         let local_logical_y = (pt.y - self.win_y) as f32 / self.dpi_scale;
+        self.last_cursor_logical_x = local_logical_x;
 
         let pad = 6.0;
         let cursor_in_pill = local_logical_x >= pill_rect.left - pad
@@ -269,7 +288,6 @@ impl NotchApp {
     }
 
     pub fn on_lbutton_down(&mut self, phys_x: f32, phys_y: f32) {
-        // Konversi koordinat klik fisik ke koordinat logis Direct2D (100% Presisi!)
         let x = phys_x / self.dpi_scale;
         let y = phys_y / self.dpi_scale;
 
@@ -278,7 +296,6 @@ impl NotchApp {
         let lx = x - pill_rect.left;
         let ly = y - pill_rect.top;
 
-        // 0. Jika Overlay Volume/Brightness sedang tampil, izinkan klik langsung pada slider-nya!
         if !self.controller.is_hovered
             && self.controller.active_overlay.is_some()
             && self.controller.handle_overlay_click(lx, pill_w)
@@ -289,7 +306,6 @@ impl NotchApp {
             return;
         }
 
-        // 1. Cek apakah Chibi Liebe diklik (Poke)
         if self.controller.chibi_liebe.handle_click(x, y) {
             unsafe {
                 let _ = InvalidateRect(self.hwnd, None, false);
@@ -297,7 +313,7 @@ impl NotchApp {
             return;
         }
 
-        // 2. Cek klik pada Bar Navigasi Atas (`<`, 6 Tab, dan `>`) saat notch terbuka
+        // Bar Navigasi Atas (`<`, 5 Tab: Hub/Music/Control/Focus/Shelf, dan `>`)
         if self.controller.height.value > 65.0 && (0.0..=28.0).contains(&ly) {
             if (10.0..=36.0).contains(&lx) {
                 self.controller.prev_tab();
@@ -313,14 +329,13 @@ impl NotchApp {
                 return;
             } else if lx > 38.0 && lx < pill_w - 38.0 {
                 let tabs_w = (pill_w - 76.0).max(1.0);
-                let slot = ((lx - 38.0) / (tabs_w / 6.0)) as usize;
+                let slot = ((lx - 38.0) / (tabs_w / 5.0)) as usize;
                 let next = match slot {
                     0 => NotchState::Hub,
                     1 => NotchState::Music,
                     2 => NotchState::Control,
                     3 => NotchState::Pomo,
-                    4 => NotchState::Shelf,
-                    _ => NotchState::Todo,
+                    _ => NotchState::Shelf,
                 };
                 self.controller.transition_to(next);
                 unsafe {
@@ -330,7 +345,6 @@ impl NotchApp {
             }
         }
 
-        // 3. Cek klik tombol/slider di dalam panel aktif
         if self.controller.height.value > 65.0
             && self.controller.handle_panel_click(lx, ly, pill_w)
         {
@@ -340,7 +354,6 @@ impl NotchApp {
             return;
         }
 
-        // 4. Jika tertutup, klik akan membuka tab terakhir
         if matches!(self.controller.state, NotchState::Pet | NotchState::Idle) {
             self.controller.devil_eyes.trigger_wake_surge();
             let target = self.controller.last_expanded_tab;
@@ -377,8 +390,14 @@ pub fn run_ui(
     unsafe {
         RegisterClassExW(&wc);
 
+        // PENTING: Tambahkan WS_EX_NOACTIVATE agar klik pada notch TIDAK PERNAH mencuri fokus / mem-minimize app!
         let hwnd = CreateWindowExW(
-            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_ACCEPTFILES,
+            WS_EX_TOPMOST
+                | WS_EX_TOOLWINDOW
+                | WS_EX_LAYERED
+                | WS_EX_TRANSPARENT
+                | WS_EX_ACCEPTFILES
+                | WS_EX_NOACTIVATE,
             PCWSTR(class_name.as_ptr()),
             PCWSTR(to_wide_string("Nusa Notch\0").as_ptr()),
             WS_POPUP,
@@ -443,6 +462,8 @@ extern "system" fn notch_wnd_proc(
         let app = unsafe { &mut *ptr };
         match msg {
             WM_ERASEBKGND => return LRESULT(1),
+            // PENTING: Cegah Windows mengaktifkan window notch saat diklik (agar game/app tidak minimize!)
+            WM_MOUSEACTIVATE => return LRESULT(MA_NOACTIVATE as isize),
             WM_TIMER => {
                 let _ = app.on_tick();
                 return LRESULT(0);
@@ -460,7 +481,10 @@ extern "system" fn notch_wnd_proc(
             }
             WM_MOUSEWHEEL => {
                 let delta = ((wparam.0 >> 16) & 0xFFFF) as i16;
-                app.controller.on_mouse_wheel(delta);
+                let pill_rect = app.current_pill_rect();
+                let pill_w = pill_rect.right - pill_rect.left;
+                let lx = app.last_cursor_logical_x - pill_rect.left;
+                app.controller.on_mouse_wheel(delta, lx, pill_w);
                 unsafe {
                     let _ = InvalidateRect(hwnd, None, false);
                 }

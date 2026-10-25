@@ -10,15 +10,15 @@ use windows::Win32::Graphics::Direct2D::{
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AstaIdleMode {
-    /// Devil Union Mode: Tatapan tajam serius, alis mengernyit, sclera gelap/kontras, pupil '+'
+    /// Sesuai Referensi 2 (image_fab516): Devil Union dengan Mahkota 5-Salib Merah, Tanduk, Tanda Pipi & Tatapan Serius
     DevilUnionSerious { timer: f32 },
-    /// Sword Summon & Grab: Pedang Demon-Slayer melayang lalu ditangkap tangan Asta
+    /// Devil Union + Aksi Pedang Demon-Slayer Melayang & Tangan Asta Menangkap Gagangnya
     SwordSummonGrab { timer: f32 },
-    /// Normal Asta Mode: Sclera putih bersih anime, iris Hijau Emerald berbinar, alis ramah
-    NormalEmerald { timer: f32 },
-    /// Happy Gesture: Mata melengkung senang '^ ^' dengan alis terangkat ceria
+    /// Sesuai Referensi 1 (image_fa62bb): Asta Cheer Mode (Rambut Ash-Grey, Mata Olive-Emerald Besar, Mulut Senyum ':D')
+    NormalEmeraldCheer { timer: f32 },
+    /// Ekspresi Senang Mata Melengkung '^ ^'
     HappySmileGesture { timer: f32 },
-    /// Dozing: Mata setengah terpejam tenang
+    /// Istirahat Tenang
     Dozing { timer: f32 },
 }
 
@@ -47,10 +47,8 @@ pub struct DevilUnionEyes {
     pub glance_timer: f32,
     pub aura_intensity: f32,
     pub pupil_scale: f32,
-    /// 0.0 = Devil Union Mode, 1.0 = Normal Asta Emerald Mode
-    pub emerald_blend: f32,
-    /// -1.0 = Serius/Mengernyit (Devil Union), +1.0 = Senang/Antusias (Normal Emerald)
-    pub brow_mood: f32,
+    /// 0.0 = Devil Union (Referensi 2), 1.0 = Asta Cheer Olive-Emerald (Referensi 1)
+    pub cheer_blend: f32,
     pub sparks: [AntiMagicSpark; 10],
     rng_seed: u32,
 }
@@ -70,14 +68,13 @@ impl DevilUnionEyes {
             look_y: 0.0,
             target_look_x: 0.0,
             target_look_y: 0.0,
-            openness: 0.15,
+            openness: 0.2,
             blink_timer: 0.0,
             next_blink_in: 3.0,
             glance_timer: 1.8,
             aura_intensity: 1.0,
-            pupil_scale: 1.1,
-            emerald_blend: 0.0,
-            brow_mood: -0.8,
+            pupil_scale: 1.0,
+            cheer_blend: 0.0,
             sparks: [AntiMagicSpark {
                 offset_x: 0.0,
                 offset_y: 0.0,
@@ -88,7 +85,7 @@ impl DevilUnionEyes {
                 max_life: 1.0,
                 kind: 0,
             }; 10],
-            rng_seed: 0xA57A_9999,
+            rng_seed: 0xA57A_2026,
         };
         for i in 0..eyes.sparks.len() {
             eyes.respawn_spark(i, true);
@@ -107,17 +104,17 @@ impl DevilUnionEyes {
 
     fn respawn_spark(&mut self, idx: usize, random_life: bool) {
         let side = if idx % 2 == 0 { -1.0 } else { 1.0 };
-        let rx = (self.next_f32() - 0.5) * 26.0 + side * 18.0;
+        let rx = (self.next_f32() - 0.5) * 32.0 + side * 20.0;
         let ry = (self.next_f32() - 0.5) * 8.0;
-        let vx = (self.next_f32() - 0.5) * 12.0 + side * 3.0;
-        let vy = -8.0 - self.next_f32() * 14.0;
-        let max_life = 0.50 + self.next_f32() * 0.60;
+        let vx = (self.next_f32() - 0.5) * 10.0 + side * 3.0;
+        let vy = -7.0 - self.next_f32() * 12.0;
+        let max_life = 0.50 + self.next_f32() * 0.55;
         let life = if random_life {
             self.next_f32() * max_life
         } else {
             0.0
         };
-        let size = 1.3 + self.next_f32() * 1.9;
+        let size = 1.2 + self.next_f32() * 1.8;
         let kind = (idx % 3) as u8;
 
         self.sparks[idx] = AntiMagicSpark {
@@ -134,13 +131,12 @@ impl DevilUnionEyes {
 
     pub fn trigger_awakening(&mut self) {
         self.mode = AstaIdleMode::DevilUnionSerious { timer: 0.0 };
-        self.openness = 0.15;
-        self.pupil_scale = 1.25;
+        self.openness = 0.2;
         self.aura_intensity = 1.25;
     }
 
     pub fn trigger_wake_surge(&mut self) {
-        self.mode = AstaIdleMode::HappySmileGesture { timer: 0.0 };
+        self.mode = AstaIdleMode::NormalEmeraldCheer { timer: 0.0 };
         self.aura_intensity = 1.15;
     }
 
@@ -156,7 +152,7 @@ impl DevilUnionEyes {
                 self.target_look_x = (dx / 170.0).clamp(-1.0, 1.0);
                 self.target_look_y = (dy / 105.0).clamp(-0.75, 0.85);
                 if matches!(self.mode, AstaIdleMode::Dozing { .. }) {
-                    self.mode = AstaIdleMode::HappySmileGesture { timer: 0.0 };
+                    self.mode = AstaIdleMode::NormalEmeraldCheer { timer: 0.0 };
                 }
             }
         }
@@ -165,78 +161,73 @@ impl DevilUnionEyes {
             self.glance_timer -= dt;
             if self.glance_timer <= 0.0 {
                 let r = self.next_f32();
-                if r < 0.35 {
+                if r < 0.38 {
                     self.target_look_x = 0.0;
                     self.target_look_y = 0.0;
                 } else {
-                    self.target_look_x = (self.next_f32() - 0.5) * 1.4;
-                    self.target_look_y = (self.next_f32() - 0.5) * 0.55;
+                    self.target_look_x = (self.next_f32() - 0.5) * 1.35;
+                    self.target_look_y = (self.next_f32() - 0.5) * 0.50;
                 }
-                self.glance_timer = 1.8 + self.next_f32() * 2.5;
+                self.glance_timer = 1.8 + self.next_f32() * 2.4;
             }
         }
 
         let target_openness: f32;
         let target_aura: f32;
         let target_pupil: f32;
-        let target_emerald: f32;
-        let target_brow: f32;
+        let target_cheer: f32;
 
         match &mut self.mode {
             AstaIdleMode::DevilUnionSerious { timer } => {
                 *timer += dt;
-                target_openness = 0.96;
-                target_emerald = 0.0;
-                target_brow = -0.85; // Alis tajam serius khas Devil Union
+                target_openness = 0.98;
+                target_cheer = 0.0;
                 target_aura = if cursor_near {
-                    1.15
+                    1.20
                 } else {
-                    0.82 + 0.12 * (self.time * 3.0).sin()
+                    0.90 + 0.12 * (self.time * 3.2).sin()
                 };
-                target_pupil = if cursor_near { 0.86 } else { 1.0 };
+                target_pupil = if cursor_near { 0.88 } else { 1.0 };
 
-                if *timer >= 7.0 {
+                if *timer >= 6.8 {
                     if self.next_f32() < 0.58 {
                         self.mode = AstaIdleMode::SwordSummonGrab { timer: 0.0 };
                     } else {
-                        self.mode = AstaIdleMode::NormalEmerald { timer: 0.0 };
+                        self.mode = AstaIdleMode::NormalEmeraldCheer { timer: 0.0 };
                     }
                 }
             }
             AstaIdleMode::SwordSummonGrab { timer } => {
                 *timer += dt;
                 target_openness = 1.02;
-                target_emerald = 0.0;
-                target_brow = -1.0; // Ekstra fokus saat menangkap pedang
-                target_aura = 1.25;
-                target_pupil = 0.82;
+                target_cheer = 0.0;
+                target_aura = 1.30;
+                target_pupil = 0.84;
 
                 let p = (*timer / 3.8).clamp(0.0, 1.0);
                 self.target_look_x = 0.85 * (1.0 - (p - 0.5).abs() * 1.2).clamp(0.2, 1.0);
-                self.target_look_y = -0.10 + (self.time * 4.0).sin() * 0.18;
+                self.target_look_y = -0.10 + (self.time * 4.0).sin() * 0.16;
 
                 if *timer >= 3.8 {
-                    self.mode = AstaIdleMode::NormalEmerald { timer: 0.0 };
+                    self.mode = AstaIdleMode::NormalEmeraldCheer { timer: 0.0 };
                 }
             }
-            AstaIdleMode::NormalEmerald { timer } => {
+            AstaIdleMode::NormalEmeraldCheer { timer } => {
                 *timer += dt;
-                target_openness = 1.08;
-                target_emerald = 1.0;
-                target_brow = 0.65; // Alis terangkat antusias khas Asta biasa
-                target_aura = 0.45;
-                target_pupil = 1.08;
+                target_openness = 1.06;
+                target_cheer = 1.0;
+                target_aura = 0.50;
+                target_pupil = 1.05;
 
-                if *timer >= 4.2 {
+                if *timer >= 4.5 {
                     self.mode = AstaIdleMode::HappySmileGesture { timer: 0.0 };
                 }
             }
             AstaIdleMode::HappySmileGesture { timer } => {
                 *timer += dt;
                 target_openness = 1.0;
-                target_emerald = 1.0;
-                target_brow = 0.95; // Alis melengkung senang
-                target_aura = 0.60;
+                target_cheer = 1.0;
+                target_aura = 0.65;
                 target_pupil = 1.0;
 
                 if *timer >= 2.2 {
@@ -246,17 +237,16 @@ impl DevilUnionEyes {
             AstaIdleMode::Dozing { timer } => {
                 *timer += dt;
                 target_openness = 0.30 + 0.04 * (self.time * 1.4).sin();
-                target_emerald = 0.0;
-                target_brow = -0.2;
+                target_cheer = 0.0;
                 target_aura = 0.35;
-                target_pupil = 1.05;
+                target_pupil = 1.0;
             }
         }
 
         self.next_blink_in -= dt;
         if self.next_blink_in <= 0.0 {
             self.blink_timer = 0.13;
-            self.next_blink_in = 2.6 + self.next_f32() * 3.4;
+            self.next_blink_in = 2.7 + self.next_f32() * 3.3;
         }
 
         let blink_factor = if self.blink_timer > 0.0 {
@@ -273,8 +263,7 @@ impl DevilUnionEyes {
         self.openness += (target_openness * blink_factor - self.openness) * (22.0 * dt).min(1.0);
         self.aura_intensity += (target_aura - self.aura_intensity) * (10.0 * dt).min(1.0);
         self.pupil_scale += (target_pupil - self.pupil_scale) * (12.0 * dt).min(1.0);
-        self.emerald_blend += (target_emerald - self.emerald_blend) * (8.0 * dt).min(1.0);
-        self.brow_mood += (target_brow - self.brow_mood) * (10.0 * dt).min(1.0);
+        self.cheer_blend += (target_cheer - self.cheer_blend) * (9.0 * dt).min(1.0);
 
         for i in 0..self.sparks.len() {
             self.sparks[i].life += dt * self.aura_intensity.max(0.45);
@@ -299,7 +288,7 @@ impl DevilUnionEyes {
         }
 
         let center_x = (pill_rect.left + pill_rect.right) * 0.5;
-        let center_y = (pill_rect.top + pill_rect.bottom) * 0.5 + 1.5;
+        let center_y = (pill_rect.top + pill_rect.bottom) * 0.5 + 2.5;
 
         let sword_shift = if let AstaIdleMode::SwordSummonGrab { timer } = self.mode {
             let s = (timer * 2.5).min(1.0) * ((3.8 - timer) * 2.5).clamp(0.0, 1.0);
@@ -308,19 +297,44 @@ impl DevilUnionEyes {
             0.0
         };
 
-        let eyes_cx = center_x + sword_shift;
-        let eye_spacing = 18.5;
+        let face_cx = center_x + sword_shift;
+        let eye_spacing = 17.5;
+        let cb = self.cheer_blend.clamp(0.0, 1.0);
 
         unsafe {
-            self.draw_anti_magic_sparks(rt, eyes_cx, center_y, alpha_mult);
+            self.draw_anti_magic_sparks(rt, face_cx, center_y, alpha_mult);
 
+            // 1. Gambar Elemen Kepala / Dahi Sesuai Mode (Devil Union Crown & Horns vs Cheer Ash-Grey Hair)
+            if cb < 0.55 {
+                self.draw_devil_union_crown_and_horns(
+                    factory,
+                    rt,
+                    face_cx,
+                    pill_rect.top,
+                    center_y,
+                    eye_spacing,
+                    alpha_mult * (1.0 - cb),
+                );
+            } else {
+                self.draw_cheer_ash_grey_bangs_and_smile(
+                    factory,
+                    rt,
+                    face_cx,
+                    pill_rect.top,
+                    center_y,
+                    pill_rect.bottom,
+                    alpha_mult * cb,
+                );
+            }
+
+            // 2. Gambar Mata (Happy Arc '^ ^' atau Full Anime Reference Eye)
             if let AstaIdleMode::HappySmileGesture { timer } = self.mode {
-                let bounce = (timer * 10.0).sin().abs() * -1.6;
+                let bounce = (timer * 10.0).sin().abs() * -1.5;
                 for side in [-1.0_f32, 1.0_f32] {
                     self.draw_happy_arc_eye(
                         factory,
                         rt,
-                        eyes_cx + side * eye_spacing,
+                        face_cx + side * eye_spacing,
                         center_y + bounce,
                         side,
                         alpha_mult,
@@ -328,17 +342,24 @@ impl DevilUnionEyes {
                 }
             } else {
                 for side in [-1.0_f32, 1.0_f32] {
-                    let base_x = eyes_cx + side * eye_spacing;
-                    self.draw_full_anime_asta_eye(factory, rt, base_x, center_y, side, alpha_mult);
+                    self.draw_reference_anime_eye(
+                        factory,
+                        rt,
+                        face_cx + side * eye_spacing,
+                        center_y,
+                        side,
+                        alpha_mult,
+                    );
                 }
             }
 
+            // 3. Jika Mode SwordSummonGrab: Gambar Pedang Demon-Slayer Melayang & Tangan Asta Menangkap!
             if let AstaIdleMode::SwordSummonGrab { timer } = self.mode {
                 self.draw_floating_sword_and_grabbing_hand(
                     factory,
                     rt,
-                    center_x + 38.0,
-                    center_y,
+                    center_x + 40.0,
+                    center_y - 1.5,
                     pill_rect.bottom,
                     timer,
                     alpha_mult,
@@ -347,93 +368,379 @@ impl DevilUnionEyes {
         }
     }
 
-    /// Gambar Anatomi Lengkap Mata Anime Asta (Kelopak Atas/Bawah, Sclera, Lipatan Mata, Alis, Tanda Devil Union, Iris & Pupil)
-    unsafe fn draw_full_anime_asta_eye(
+    /// Sesuai Referensi 2 (`image_fab516.png`):
+    /// Mahkota hitam bergerigi dengan deretan 5 bintang/salib merah menyala di dahi + Tanduk melengkung + Tanda silang hitam di pipi
+    unsafe fn draw_devil_union_crown_and_horns(
+        &self,
+        factory: &ID2D1Factory,
+        rt: &ID2D1HwndRenderTarget,
+        cx: f32,
+        top_y: f32,
+        eye_y: f32,
+        eye_spacing: f32,
+        alpha: f32,
+    ) {
+        let horn_dark = D2D1_COLOR_F {
+            r: 0.14,
+            g: 0.15,
+            b: 0.20,
+            a: alpha,
+        };
+        let horn_ring = D2D1_COLOR_F {
+            r: 0.34,
+            g: 0.38,
+            b: 0.48,
+            a: 0.85 * alpha,
+        };
+        let crimson_glow = D2D1_COLOR_F {
+            r: 1.0,
+            g: 0.08,
+            b: 0.14,
+            a: alpha,
+        };
+        let scar_black = D2D1_COLOR_F {
+            r: 0.12,
+            g: 0.14,
+            b: 0.18,
+            a: 0.95 * alpha,
+        };
+
+        let Ok(horn_b) = rt.CreateSolidColorBrush(&horn_dark, None) else { return };
+        let Ok(ring_b) = rt.CreateSolidColorBrush(&horn_ring, None) else { return };
+        let Ok(red_b) = rt.CreateSolidColorBrush(&crimson_glow, None) else { return };
+        let Ok(scar_b) = rt.CreateSolidColorBrush(&scar_black, None) else { return };
+
+        // 1. Sepasang Tanduk Iblis Melengkung di Kiri & Kanan (`image_fab516.png`)
+        for side in [-1.0_f32, 1.0_f32] {
+            let hx = cx + side * (eye_spacing + 14.0);
+            if let Ok(h_geom) = factory.CreatePathGeometry() {
+                if let Ok(sink) = h_geom.Open() {
+                    sink.BeginFigure(
+                        D2D_POINT_2F {
+                            x: hx - side * 3.0,
+                            y: top_y + 16.0,
+                        },
+                        D2D1_FIGURE_BEGIN_FILLED,
+                    );
+                    sink.AddBezier(&D2D1_BEZIER_SEGMENT {
+                        point1: D2D_POINT_2F {
+                            x: hx + side * 6.0,
+                            y: top_y + 11.0,
+                        },
+                        point2: D2D_POINT_2F {
+                            x: hx + side * 8.5,
+                            y: top_y + 4.0,
+                        },
+                        point3: D2D_POINT_2F {
+                            x: hx + side * 4.5,
+                            y: top_y + 1.0,
+                        },
+                    });
+                    sink.AddLine(D2D_POINT_2F {
+                        x: hx - side * 1.5,
+                        y: top_y + 8.0,
+                    });
+                    sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+                    let _ = sink.Close();
+                    rt.FillGeometry(&h_geom, &horn_b, None);
+                    rt.DrawGeometry(&h_geom, &ring_b, 0.9, None);
+                }
+            }
+        }
+
+        // 2. Deretan 5 Bintang/Salib Merah Menyala di Dahi Khas Devil Union (`image_fab516.png`)
+        let crown_y = top_y + 7.2;
+        // Garis horizontal penghubung cahaya merah
+        rt.DrawLine(
+            D2D_POINT_2F {
+                x: cx - 22.0,
+                y: crown_y,
+            },
+            D2D_POINT_2F {
+                x: cx + 22.0,
+                y: crown_y,
+            },
+            &red_b,
+            2.2,
+            None,
+        );
+
+        // 5 Titik Salib/Bintang Vertikal pada Mahkota (Tengah paling tinggi)
+        let star_offsets: [(f32, f32); 5] = [
+            (-18.0, 2.8),
+            (-9.5, 3.6),
+            (0.0, 5.2),
+            (9.5, 3.6),
+            (18.0, 2.8),
+        ];
+        for (ox, half_h) in star_offsets {
+            if let Ok(star_g) = self.create_tapered_plus_geometry(
+                factory,
+                cx + ox,
+                crown_y,
+                3.2,
+                half_h,
+                1.1,
+            ) {
+                rt.FillGeometry(&star_g, &red_b, None);
+            }
+        }
+
+        // 3. Poni Hitam Runcing di Antara Kedua Mata (`image_fab516.png`)
+        if let Ok(bang_g) = factory.CreatePathGeometry() {
+            if let Ok(sink) = bang_g.Open() {
+                sink.BeginFigure(
+                    D2D_POINT_2F {
+                        x: cx - 4.5,
+                        y: crown_y + 3.5,
+                    },
+                    D2D1_FIGURE_BEGIN_FILLED,
+                );
+                sink.AddLines(&[
+                    D2D_POINT_2F {
+                        x: cx,
+                        y: eye_y + 2.5,
+                    },
+                    D2D_POINT_2F {
+                        x: cx + 4.5,
+                        y: crown_y + 3.5,
+                    },
+                ]);
+                sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+                let _ = sink.Close();
+                rt.FillGeometry(&bang_g, &horn_b, None);
+            }
+        }
+
+        // 4. Tanda Silang Hitam Tebal (Devil Union Cross-Scars) di Pipi Bawah Mata (`image_fab516.png`)
+        for side in [-1.0_f32, 1.0_f32] {
+            let ex = cx + side * eye_spacing;
+            let sy = eye_y + 5.5;
+            // Garis miring utama dari bawah mata ke pipi luar
+            rt.DrawLine(
+                D2D_POINT_2F {
+                    x: ex + side * 1.5,
+                    y: sy,
+                },
+                D2D_POINT_2F {
+                    x: ex + side * 5.5,
+                    y: sy + 6.5,
+                },
+                &scar_b,
+                2.2,
+                None,
+            );
+            // Garis silang pendek (crossbar)
+            rt.DrawLine(
+                D2D_POINT_2F {
+                    x: ex + side * 0.5,
+                    y: sy + 4.2,
+                },
+                D2D_POINT_2F {
+                    x: ex + side * 6.2,
+                    y: sy + 2.2,
+                },
+                &scar_b,
+                1.8,
+                None,
+            );
+        }
+    }
+
+    /// Sesuai Referensi 1 (`image_fa62bb.png`):
+    /// Poni Rambut Ash-Grey Meruncing di Dahi + Mulut Terbuka Tersenyum Lebar (':D')
+    unsafe fn draw_cheer_ash_grey_bangs_and_smile(
+        &self,
+        factory: &ID2D1Factory,
+        rt: &ID2D1HwndRenderTarget,
+        cx: f32,
+        top_y: f32,
+        eye_y: f32,
+        bottom_y: f32,
+        alpha: f32,
+    ) {
+        let ash_hair = D2D1_COLOR_F {
+            r: 0.65,
+            g: 0.68,
+            b: 0.72,
+            a: alpha,
+        };
+        let hair_line = D2D1_COLOR_F {
+            r: 0.35,
+            g: 0.38,
+            b: 0.42,
+            a: alpha,
+        };
+        let mouth_pink = D2D1_COLOR_F {
+            r: 0.78,
+            g: 0.45,
+            b: 0.46,
+            a: alpha,
+        };
+        let teeth_white = D2D1_COLOR_F {
+            r: 0.96,
+            g: 0.97,
+            b: 0.99,
+            a: alpha,
+        };
+
+        let Ok(hair_b) = rt.CreateSolidColorBrush(&ash_hair, None) else { return };
+        let Ok(line_b) = rt.CreateSolidColorBrush(&hair_line, None) else { return };
+        let Ok(mouth_b) = rt.CreateSolidColorBrush(&mouth_pink, None) else { return };
+        let Ok(teeth_b) = rt.CreateSolidColorBrush(&teeth_white, None) else { return };
+
+        // 1. Helai Poni Ash-Grey di Dahi Atas (`image_fa62bb.png`)
+        if let Ok(b_geom) = factory.CreatePathGeometry() {
+            if let Ok(sink) = b_geom.Open() {
+                sink.BeginFigure(
+                    D2D_POINT_2F {
+                        x: cx - 22.0,
+                        y: top_y,
+                    },
+                    D2D1_FIGURE_BEGIN_FILLED,
+                );
+                sink.AddLines(&[
+                    D2D_POINT_2F {
+                        x: cx - 14.0,
+                        y: top_y + 9.5,
+                    },
+                    D2D_POINT_2F {
+                        x: cx - 7.0,
+                        y: top_y + 4.5,
+                    },
+                    D2D_POINT_2F {
+                        x: cx,
+                        y: eye_y - 2.0, // Helai V tengah khas Asta
+                    },
+                    D2D_POINT_2F {
+                        x: cx + 7.0,
+                        y: top_y + 4.5,
+                    },
+                    D2D_POINT_2F {
+                        x: cx + 14.0,
+                        y: top_y + 9.5,
+                    },
+                    D2D_POINT_2F {
+                        x: cx + 22.0,
+                        y: top_y,
+                    },
+                ]);
+                sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+                let _ = sink.Close();
+                rt.FillGeometry(&b_geom, &hair_b, None);
+                rt.DrawGeometry(&b_geom, &line_b, 0.9, None);
+            }
+        }
+
+        // 2. Mulut Terbuka Tersenyum Ceria (':D') di Bagian Tengah Bawah (`image_fa62bb.png`)
+        let my = (eye_y + bottom_y) * 0.5 + 3.2;
+        if let Ok(m_geom) = factory.CreatePathGeometry() {
+            if let Ok(sink) = m_geom.Open() {
+                sink.BeginFigure(
+                    D2D_POINT_2F {
+                        x: cx - 5.2,
+                        y: my - 1.5,
+                    },
+                    D2D1_FIGURE_BEGIN_FILLED,
+                );
+                sink.AddLine(D2D_POINT_2F {
+                    x: cx + 5.2,
+                    y: my - 2.0,
+                });
+                sink.AddBezier(&D2D1_BEZIER_SEGMENT {
+                    point1: D2D_POINT_2F {
+                        x: cx + 5.0,
+                        y: my + 4.2,
+                    },
+                    point2: D2D_POINT_2F {
+                        x: cx - 5.0,
+                        y: my + 4.2,
+                    },
+                    point3: D2D_POINT_2F {
+                        x: cx - 5.2,
+                        y: my - 1.5,
+                    },
+                });
+                sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+                let _ = sink.Close();
+                rt.FillGeometry(&m_geom, &mouth_b, None);
+            }
+        }
+        // Garis gigi putih tipis di bagian atas mulut
+        rt.DrawLine(
+            D2D_POINT_2F {
+                x: cx - 4.2,
+                y: my - 1.2,
+            },
+            D2D_POINT_2F {
+                x: cx + 4.2,
+                y: my - 1.6,
+            },
+            &teeth_b,
+            1.3,
+            None,
+        );
+    }
+
+    /// Gambar Mata Anime Asta Sesuai Kedua Gambar Referensi (`image_fa62bb.png` & `image_fab516.png`)
+    unsafe fn draw_reference_anime_eye(
         &self,
         factory: &ID2D1Factory,
         rt: &ID2D1HwndRenderTarget,
         base_x: f32,
         base_y: f32,
-        side: f32, // -1.0 = Kiri, 1.0 = Kanan
+        side: f32,
         alpha: f32,
     ) {
-        let eb = self.emerald_blend.clamp(0.0, 1.0);
-        let open = self.openness.clamp(0.08, 1.15);
+        let cb = self.cheer_blend.clamp(0.0, 1.0);
+        let open = self.openness.clamp(0.08, 1.12);
 
-        // Lebar & tinggi soket mata anime
-        let w = 10.2;
-        let h = (6.2 * open).max(0.8);
+        let w = 9.4;
+        let h = (5.6 * open).max(0.8);
 
-        // Kemiringan sudut kelopak atas (serius tajam saat Devil Union, melengkung ramah saat Emerald)
-        let inner_drop = (1.0 - eb) * 2.2 - eb * 0.4;
-        let outer_lift = (1.0 - eb) * 1.4 + eb * 0.5;
+        // Kemiringan kelopak atas: Tajam mengernyit saat Devil Union (cb=0), Bulat besar saat Cheer (cb=1)
+        let inner_drop = (1.0 - cb) * 2.4;
+        let outer_lift = (1.0 - cb) * 1.2 + cb * 0.6;
 
         let inner_pt = D2D_POINT_2F {
             x: base_x - side * w,
-            y: base_y + 0.5 + inner_drop * 0.3,
+            y: base_y + 0.5 + inner_drop * 0.35,
         };
         let outer_pt = D2D_POINT_2F {
             x: base_x + side * w,
-            y: base_y - outer_lift * 0.5,
+            y: base_y - outer_lift * 0.4,
         };
 
-        // --- 1. Gambar Alis Ekspresif (Eyebrow) & Lipatan Kelopak (Eyelid Crease) ---
-        let brow_y_inner = base_y - h - 3.2 - self.brow_mood * 1.8;
-        let brow_y_outer = base_y - h - 4.2 + self.brow_mood * 0.8;
+        // 1. Alis Anime (Eyebrow): Tebal pendek ash-grey saat Cheer (`image_fa62bb`), Tajam menyatu saat Devil Union (`image_fab516`)
         let brow_col = D2D1_COLOR_F {
-            r: 0.72,
-            g: 0.78,
-            b: 0.88,
-            a: 0.85 * alpha,
+            r: 0.25 * (1.0 - cb) + 0.72 * cb,
+            g: 0.27 * (1.0 - cb) + 0.75 * cb,
+            b: 0.34 * (1.0 - cb) + 0.78 * cb,
+            a: 0.92 * alpha,
         };
-        if let Ok(brow_b) = rt.CreateSolidColorBrush(&brow_col, None) {
+        if let Ok(bb) = rt.CreateSolidColorBrush(&brow_col, None) {
+            let by_in = base_y - h - 1.5 + (1.0 - cb) * 2.2 - cb * 1.8;
+            let by_out = base_y - h - 3.5;
             rt.DrawLine(
                 D2D_POINT_2F {
-                    x: base_x - side * (w * 0.85),
-                    y: brow_y_inner,
+                    x: base_x - side * (w * 0.75),
+                    y: by_in,
                 },
                 D2D_POINT_2F {
-                    x: base_x + side * (w * 0.95),
-                    y: brow_y_outer,
+                    x: base_x + side * (w * 0.65),
+                    y: by_out,
                 },
-                &brow_b,
-                1.8,
+                &bb,
+                2.0,
                 None,
             );
         }
 
-        // --- 2. Tanda Vertikal Devil Union di Bawah Mata (Muncul saat mode Devil Union) ---
-        if eb < 0.75 {
-            let mark_alpha = (1.0 - eb) * alpha * 0.75;
-            let mark_col = D2D1_COLOR_F {
-                r: 0.68,
-                g: 0.22,
-                b: 0.30,
-                a: mark_alpha,
-            };
-            if let Ok(mb) = rt.CreateSolidColorBrush(&mark_col, None) {
-                rt.DrawLine(
-                    D2D_POINT_2F {
-                        x: base_x + side * 1.5,
-                        y: base_y + h + 1.2,
-                    },
-                    D2D_POINT_2F {
-                        x: base_x + side * 2.2,
-                        y: base_y + h + 4.8,
-                    },
-                    &mb,
-                    1.5,
-                    None,
-                );
-            }
-        }
-
-        // Jika sedang berkedip rapat
         if open < 0.16 {
             let lash_col = D2D1_COLOR_F {
-                r: 0.85,
-                g: 0.88,
-                b: 0.95,
+                r: 0.90,
+                g: 0.92,
+                b: 0.96,
                 a: 0.90 * alpha,
             };
             if let Ok(lb) = rt.CreateSolidColorBrush(&lash_col, None) {
@@ -442,11 +749,10 @@ impl DevilUnionEyes {
             return;
         }
 
-        // --- 3. Geometri Sclera (Bentuk Mata Anime Utuh) ---
+        // 2. Sclera Putih Lebar Kontras (Sesuai Kedua Gambar Referensi)
         if let Ok(sclera_geom) = factory.CreatePathGeometry() {
             if let Ok(sink) = sclera_geom.Open() {
                 sink.BeginFigure(inner_pt, D2D1_FIGURE_BEGIN_FILLED);
-                // Lengkungan kelopak atas
                 sink.AddBezier(&D2D1_BEZIER_SEGMENT {
                     point1: D2D_POINT_2F {
                         x: base_x - side * (w * 0.35),
@@ -458,7 +764,6 @@ impl DevilUnionEyes {
                     },
                     point3: outer_pt,
                 });
-                // Lengkungan kelopak bawah
                 sink.AddBezier(&D2D1_BEZIER_SEGMENT {
                     point1: D2D_POINT_2F {
                         x: base_x + side * (w * 0.45),
@@ -473,44 +778,45 @@ impl DevilUnionEyes {
                 sink.EndFigure(D2D1_FIGURE_END_CLOSED);
                 let _ = sink.Close();
 
-                // Warna Sclera: Putih keperakan bersih khas anime (sedikit smoky slate saat Devil Union)
-                let sclera_col = D2D1_COLOR_F {
-                    r: 0.82 * (1.0 - eb) + 0.95 * eb,
-                    g: 0.85 * (1.0 - eb) + 0.97 * eb,
-                    b: 0.92 * (1.0 - eb) + 0.99 * eb,
-                    a: 0.95 * alpha,
+                let sclera_white = D2D1_COLOR_F {
+                    r: 0.94,
+                    g: 0.95,
+                    b: 0.97,
+                    a: 0.98 * alpha,
                 };
-                if let Ok(sb) = rt.CreateSolidColorBrush(&sclera_col, None) {
+                if let Ok(sb) = rt.CreateSolidColorBrush(&sclera_white, None) {
                     rt.FillGeometry(&sclera_geom, &sb, None);
                 }
             }
         }
 
-        // --- 4. Iris & Pupil (Bergerak di dalam Sclera mengikuti Look Vector) ---
-        let shift_x = self.look_x * 3.2;
-        let shift_y = self.look_y * 1.5;
+        // 3. Iris: Crimson Red Bulat Tajam (`image_fab516`) vs Olive-Emerald Besar (`image_fa62bb`)
+        let shift_x = self.look_x * 2.8;
+        let shift_y = self.look_y * 1.4;
         let ex = base_x + shift_x;
         let ey = base_y + shift_y;
 
-        let iris_rx = 5.4;
-        let iris_ry = (5.0 * open).max(1.2);
+        // Pada Devil Union (`image_fab516`), iris merah berukuran medium-kecil di tengah sklera putih sehingga terlihat intens!
+        // Pada Cheer (`image_fa62bb`), iris Olive-Green berukuran besar memenuhi tinggi mata!
+        let iris_rx = 3.8 * (1.0 - cb) + 5.2 * cb;
+        let iris_ry = (3.8 * (1.0 - cb) + 5.2 * cb) * open;
 
         let c0 = D2D1_COLOR_F {
-            r: 0.85 * (1.0 - eb) + 0.28 * eb,
-            g: 0.28 * (1.0 - eb) + 0.92 * eb,
-            b: 0.36 * (1.0 - eb) + 0.64 * eb,
+            r: 0.98 * (1.0 - cb) + 0.62 * cb,
+            g: 0.14 * (1.0 - cb) + 0.82 * cb,
+            b: 0.18 * (1.0 - cb) + 0.36 * cb,
             a: alpha,
         };
         let c1 = D2D1_COLOR_F {
-            r: 0.64 * (1.0 - eb) + 0.12 * eb,
-            g: 0.14 * (1.0 - eb) + 0.68 * eb,
-            b: 0.22 * (1.0 - eb) + 0.48 * eb,
+            r: 0.86 * (1.0 - cb) + 0.46 * cb,
+            g: 0.04 * (1.0 - cb) + 0.68 * cb,
+            b: 0.08 * (1.0 - cb) + 0.24 * cb,
             a: alpha,
         };
         let c2 = D2D1_COLOR_F {
-            r: 0.22 * (1.0 - eb) + 0.05 * eb,
-            g: 0.06 * (1.0 - eb) + 0.32 * eb,
-            b: 0.12 * (1.0 - eb) + 0.25 * eb,
+            r: 0.45 * (1.0 - cb) + 0.24 * cb,
+            g: 0.02 * (1.0 - cb) + 0.42 * cb,
+            b: 0.04 * (1.0 - cb) + 0.14 * cb,
             a: alpha,
         };
 
@@ -520,7 +826,7 @@ impl DevilUnionEyes {
                 color: c0,
             },
             D2D1_GRADIENT_STOP {
-                position: 0.68,
+                position: 0.70,
                 color: c1,
             },
             D2D1_GRADIENT_STOP {
@@ -529,7 +835,7 @@ impl DevilUnionEyes {
             },
         ];
 
-        if let Ok(stop_collection) =
+        if let Ok(sc) =
             rt.CreateGradientStopCollection(&iris_stops, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP)
         {
             let props = D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES {
@@ -541,73 +847,68 @@ impl DevilUnionEyes {
                 radiusX: iris_rx,
                 radiusY: iris_ry,
             };
-            if let Ok(iris_brush) = rt.CreateRadialGradientBrush(&props, None, &stop_collection) {
+            if let Ok(ib) = rt.CreateRadialGradientBrush(&props, None, &sc) {
                 rt.FillEllipse(
                     &D2D1_ELLIPSE {
                         point: D2D_POINT_2F { x: ex, y: ey },
                         radiusX: iris_rx,
                         radiusY: iris_ry,
                     },
-                    &iris_brush,
+                    &ib,
                 );
             }
         }
 
-        // Pupil ('+' saat Devil Union, Bulat saat Normal Emerald)
-        let px = base_x + shift_x * 1.15;
-        let py = base_y + shift_y * 1.15;
-        let pupil_color = D2D1_COLOR_F {
-            r: 0.03,
-            g: 0.04,
-            b: 0.07,
+        // 4. Pupil & Highlight Sesuai Referensi
+        let pupil_dark = D2D1_COLOR_F {
+            r: 0.05,
+            g: 0.06,
+            b: 0.09,
             a: alpha,
         };
-
-        if eb < 0.65 {
-            let arm_h = 4.1 * self.pupil_scale;
-            let arm_v = (3.9 * self.pupil_scale * open).max(1.0);
-            let half_thick = 1.05 * self.pupil_scale;
-
-            if let Ok(plus_geom) =
-                self.create_tapered_plus_geometry(factory, px, py, arm_h, arm_v, half_thick)
+        if cb < 0.55 {
+            // Pupil '+' Devil Union
+            if let Ok(plus_g) =
+                self.create_tapered_plus_geometry(factory, ex, ey, 2.8, 2.8 * open, 0.85)
             {
-                if let Ok(pb) = rt.CreateSolidColorBrush(&pupil_color, None) {
-                    rt.FillGeometry(&plus_geom, &pb, None);
+                if let Ok(pb) = rt.CreateSolidColorBrush(&pupil_dark, None) {
+                    rt.FillGeometry(&plus_g, &pb, None);
                 }
             }
-        } else if let Ok(pb) = rt.CreateSolidColorBrush(&pupil_color, None) {
-            rt.FillEllipse(
-                &D2D1_ELLIPSE {
-                    point: D2D_POINT_2F { x: px, y: py },
-                    radiusX: 2.3 * self.pupil_scale,
-                    radiusY: 2.5 * self.pupil_scale * open,
-                },
-                &pb,
-            );
-        }
-
-        // Specular Highlight Putih Anime
-        let glint_color = D2D1_COLOR_F {
-            r: 0.96,
-            g: 0.98,
-            b: 1.0,
-            a: 0.90 * alpha,
-        };
-        if let Ok(glint_brush) = rt.CreateSolidColorBrush(&glint_color, None) {
-            rt.FillEllipse(
-                &D2D1_ELLIPSE {
-                    point: D2D_POINT_2F {
-                        x: px - side * 1.9,
-                        y: py - iris_ry * 0.35,
+        } else {
+            // Pupil vertikal kecil di tengah iris Olive-Green + Highlight putih bulat di kiri-atas (`image_fa62bb.png`)
+            if let Ok(pb) = rt.CreateSolidColorBrush(&pupil_dark, None) {
+                rt.FillEllipse(
+                    &D2D1_ELLIPSE {
+                        point: D2D_POINT_2F { x: ex, y: ey },
+                        radiusX: 1.15,
+                        radiusY: 1.85 * open,
                     },
-                    radiusX: 1.15 + 0.35 * eb,
-                    radiusY: (0.85 + 0.35 * eb) * open,
-                },
-                &glint_brush,
-            );
+                    &pb,
+                );
+            }
+            let glint_white = D2D1_COLOR_F {
+                r: 0.99,
+                g: 0.99,
+                b: 1.0,
+                a: 0.96 * alpha,
+            };
+            if let Ok(gb) = rt.CreateSolidColorBrush(&glint_white, None) {
+                rt.FillEllipse(
+                    &D2D1_ELLIPSE {
+                        point: D2D_POINT_2F {
+                            x: ex - 1.8,
+                            y: ey - iris_ry * 0.38,
+                        },
+                        radiusX: 1.55,
+                        radiusY: 1.35 * open,
+                    },
+                    &gb,
+                );
+            }
         }
 
-        // --- 5. Garis Bulu Mata / Kelopak Atas & Bawah Tebal Khas Anime (Upper & Lower Lash Frame) ---
+        // 5. Eyeliner / Garis Kelopak Atas & Bawah Hitam Tegas Khas Anime (`image_fa62bb` & `image_fab516`)
         if let Ok(lash_geom) = factory.CreatePathGeometry() {
             if let Ok(sink) = lash_geom.Open() {
                 sink.BeginFigure(inner_pt, D2D1_FIGURE_BEGIN_HOLLOW);
@@ -625,14 +926,14 @@ impl DevilUnionEyes {
                 sink.EndFigure(D2D1_FIGURE_END_OPEN);
                 let _ = sink.Close();
 
-                let upper_lash_col = D2D1_COLOR_F {
+                let liner_col = D2D1_COLOR_F {
                     r: 0.08,
-                    g: 0.10,
-                    b: 0.15,
+                    g: 0.09,
+                    b: 0.12,
                     a: alpha,
                 };
-                if let Ok(lb) = rt.CreateSolidColorBrush(&upper_lash_col, None) {
-                    rt.DrawGeometry(&lash_geom, &lb, 2.3, None);
+                if let Ok(lb) = rt.CreateSolidColorBrush(&liner_col, None) {
+                    rt.DrawGeometry(&lash_geom, &lb, 2.5, None);
                 }
             }
         }
@@ -644,7 +945,7 @@ impl DevilUnionEyes {
         rt: &ID2D1HwndRenderTarget,
         ex: f32,
         ey: f32,
-        side: f32,
+        _side: f32,
         alpha: f32,
     ) {
         if let Ok(geom) = factory.CreatePathGeometry() {
@@ -652,60 +953,37 @@ impl DevilUnionEyes {
                 sink.BeginFigure(
                     D2D_POINT_2F {
                         x: ex - 7.0,
-                        y: ey + 2.5,
+                        y: ey + 2.0,
                     },
                     D2D1_FIGURE_BEGIN_HOLLOW,
                 );
                 sink.AddBezier(&D2D1_BEZIER_SEGMENT {
                     point1: D2D_POINT_2F {
                         x: ex - 3.2,
-                        y: ey - 5.8,
+                        y: ey - 5.5,
                     },
                     point2: D2D_POINT_2F {
                         x: ex + 3.2,
-                        y: ey - 5.8,
+                        y: ey - 5.5,
                     },
                     point3: D2D_POINT_2F {
                         x: ex + 7.0,
-                        y: ey + 2.5,
+                        y: ey + 2.0,
                     },
                 });
                 sink.EndFigure(D2D1_FIGURE_END_OPEN);
                 let _ = sink.Close();
 
-                let emerald_col = D2D1_COLOR_F {
-                    r: 0.22,
-                    g: 0.88,
-                    b: 0.62,
+                let olive_col = D2D1_COLOR_F {
+                    r: 0.55,
+                    g: 0.82,
+                    b: 0.32,
                     a: alpha,
                 };
-                if let Ok(b) = rt.CreateSolidColorBrush(&emerald_col, None) {
+                if let Ok(b) = rt.CreateSolidColorBrush(&olive_col, None) {
                     rt.DrawGeometry(&geom, &b, 2.5, None);
                 }
             }
-        }
-
-        // Alis ceria di atas lengkungan mata senang
-        let brow_col = D2D1_COLOR_F {
-            r: 0.72,
-            g: 0.78,
-            b: 0.88,
-            a: 0.80 * alpha,
-        };
-        if let Ok(bb) = rt.CreateSolidColorBrush(&brow_col, None) {
-            rt.DrawLine(
-                D2D_POINT_2F {
-                    x: ex - side * 6.0,
-                    y: ey - 6.5,
-                },
-                D2D_POINT_2F {
-                    x: ex + side * 6.5,
-                    y: ey - 5.0,
-                },
-                &bb,
-                1.5,
-                None,
-            );
         }
     }
 
@@ -719,7 +997,7 @@ impl DevilUnionEyes {
         timer: f32,
         alpha: f32,
     ) {
-        let hover_bob = (timer * 6.5).sin() * 2.2;
+        let hover_bob = (timer * 6.5).sin() * 2.0;
         let retract = if timer > 2.7 {
             ((timer - 2.7) / 1.1).clamp(0.0, 1.0).powi(2) * 18.0
         } else {
@@ -730,27 +1008,27 @@ impl DevilUnionEyes {
         let sword_y = sy + hover_bob + retract;
 
         let blade_dark = D2D1_COLOR_F {
-            r: 0.14,
-            g: 0.17,
-            b: 0.24,
+            r: 0.16,
+            g: 0.19,
+            b: 0.26,
             a: alpha,
         };
         let blade_edge = D2D1_COLOR_F {
-            r: 0.52,
-            g: 0.60,
-            b: 0.74,
+            r: 0.56,
+            g: 0.64,
+            b: 0.78,
             a: alpha * 0.9,
         };
         let crimson_core = D2D1_COLOR_F {
-            r: 0.72,
-            g: 0.22,
-            b: 0.30,
-            a: alpha * 0.85,
+            r: 0.88,
+            g: 0.16,
+            b: 0.24,
+            a: alpha * 0.9,
         };
         let hand_obsidian = D2D1_COLOR_F {
-            r: 0.08,
-            g: 0.10,
-            b: 0.15,
+            r: 0.10,
+            g: 0.12,
+            b: 0.18,
             a: alpha,
         };
 
@@ -764,26 +1042,26 @@ impl DevilUnionEyes {
                 sink.BeginFigure(
                     D2D_POINT_2F {
                         x: sword_x,
-                        y: sword_y - 12.5,
+                        y: sword_y - 12.0,
                     },
                     D2D1_FIGURE_BEGIN_FILLED,
                 );
                 sink.AddLines(&[
                     D2D_POINT_2F {
-                        x: sword_x + 4.2,
-                        y: sword_y - 7.5,
+                        x: sword_x + 4.0,
+                        y: sword_y - 7.0,
                     },
                     D2D_POINT_2F {
-                        x: sword_x + 3.4,
+                        x: sword_x + 3.2,
                         y: sword_y + 3.5,
                     },
                     D2D_POINT_2F {
-                        x: sword_x - 3.4,
+                        x: sword_x - 3.2,
                         y: sword_y + 3.5,
                     },
                     D2D_POINT_2F {
-                        x: sword_x - 4.2,
-                        y: sword_y - 7.5,
+                        x: sword_x - 4.0,
+                        y: sword_y - 7.0,
                     },
                 ]);
                 sink.EndFigure(D2D1_FIGURE_END_CLOSED);
@@ -796,7 +1074,7 @@ impl DevilUnionEyes {
         rt.DrawLine(
             D2D_POINT_2F {
                 x: sword_x,
-                y: sword_y - 10.0,
+                y: sword_y - 9.5,
             },
             D2D_POINT_2F {
                 x: sword_x,
@@ -808,11 +1086,11 @@ impl DevilUnionEyes {
         );
         rt.DrawLine(
             D2D_POINT_2F {
-                x: sword_x - 5.5,
+                x: sword_x - 5.2,
                 y: sword_y + 3.8,
             },
             D2D_POINT_2F {
-                x: sword_x + 5.5,
+                x: sword_x + 5.2,
                 y: sword_y + 3.8,
             },
             &edge_b,
@@ -826,7 +1104,7 @@ impl DevilUnionEyes {
             },
             D2D_POINT_2F {
                 x: sword_x,
-                y: sword_y + 10.5,
+                y: sword_y + 10.0,
             },
             &edge_b,
             2.0,
@@ -840,12 +1118,12 @@ impl DevilUnionEyes {
                 1.0
             };
 
-            let hand_top_y = pill_bottom - (pill_bottom - (sword_y + 6.5)) * reach_progress;
+            let hand_top_y = pill_bottom - (pill_bottom - (sword_y + 6.0)) * reach_progress;
             let arm_rect = D2D1_ROUNDED_RECT {
                 rect: D2D_RECT_F {
-                    left: sword_x - 3.2,
+                    left: sword_x - 3.0,
                     top: hand_top_y,
-                    right: sword_x + 3.2,
+                    right: sword_x + 3.0,
                     bottom: pill_bottom,
                 },
                 radiusX: 2.0,
@@ -853,25 +1131,6 @@ impl DevilUnionEyes {
             };
             rt.FillRoundedRectangle(&arm_rect, &hand_b);
             rt.DrawRoundedRectangle(&arm_rect, &core_b, 0.9, None);
-
-            if reach_progress > 0.75 {
-                for f in 0..3 {
-                    let fy = hand_top_y + f as f32 * 1.8;
-                    rt.DrawLine(
-                        D2D_POINT_2F {
-                            x: sword_x - 3.8,
-                            y: fy,
-                        },
-                        D2D_POINT_2F {
-                            x: sword_x + 3.8,
-                            y: fy,
-                        },
-                        &edge_b,
-                        1.2,
-                        None,
-                    );
-                }
-            }
         }
     }
 
@@ -892,32 +1151,32 @@ impl DevilUnionEyes {
                 continue;
             }
 
-            let color = if self.emerald_blend > 0.5 {
+            let color = if self.cheer_blend > 0.5 {
                 D2D1_COLOR_F {
-                    r: 0.25,
+                    r: 0.55,
                     g: 0.85,
-                    b: 0.65,
-                    a: spark_alpha * 0.55,
+                    b: 0.35,
+                    a: spark_alpha * 0.50,
                 }
             } else {
                 match spark.kind {
                     0 => D2D1_COLOR_F {
-                        r: 0.12,
-                        g: 0.15,
-                        b: 0.22,
-                        a: spark_alpha * 0.85,
+                        r: 0.85,
+                        g: 0.12,
+                        b: 0.18,
+                        a: spark_alpha * 0.70,
                     },
                     1 => D2D1_COLOR_F {
                         r: 0.48,
                         g: 0.56,
                         b: 0.72,
-                        a: spark_alpha * 0.60,
+                        a: spark_alpha * 0.55,
                     },
                     _ => D2D1_COLOR_F {
-                        r: 0.68,
+                        r: 0.20,
                         g: 0.24,
-                        b: 0.32,
-                        a: spark_alpha * 0.55,
+                        b: 0.34,
+                        a: spark_alpha * 0.75,
                     },
                 }
             };
