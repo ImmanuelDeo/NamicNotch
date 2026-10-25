@@ -147,7 +147,7 @@ impl NotchApp {
         let pw = (self.controller.width.value * self.dpi_scale).round();
         let ph = (self.controller.height.value * self.dpi_scale).round();
         let left = ((self.win_w as f32 - pw) * 0.5).max(0.0);
-        let top = 4.0 * self.dpi_scale; // Jarak 4px dari tepi atas layar agar bayangan/glow terlihat rapi
+        let top = 0.0; // MENEMPEL LANGSUNG KE BEZEL ATAS MONITOR (y = 0.0)
         let right = left + pw;
         let bottom = top + ph;
 
@@ -181,11 +181,44 @@ impl NotchApp {
                     }
                 }
                 NotchEvent::UpdateMedia(info) => {
+                    self.controller.media_title = info.title;
+                    self.controller.media_artist = info.artist;
+                    self.controller.media_playing = info.playing;
+                    self.controller.media_total_secs = info.duration;
+                    self.controller.media_elapsed_secs = info.position;
+                    if info.duration > 0 {
+                        self.controller.media_progress = info.position as f32 / info.duration as f32;
+                    }
                     if info.playing && !self.controller.is_hovered {
                         self.controller.transition_to(NotchState::Music);
                     }
                 }
-                _ => {}
+                NotchEvent::UpdateLyrics(lines) => {
+                    self.controller.lyrics_lines = lines;
+                    self.controller.active_lyric_idx = 0;
+                }
+                NotchEvent::UpdateTimer(info) => {
+                    self.controller.pomo_remaining_secs = info.remaining_seconds;
+                    self.controller.pomo_total_secs = info.total_seconds;
+                    self.controller.pomo_running = info.running;
+                    self.controller.pomo_is_break = matches!(info.mode, crate::timers::PomodoroMode::ShortBreak | crate::timers::PomodoroMode::LongBreak);
+                }
+                NotchEvent::UpdateWater(info) => {
+                    self.controller.water_current_ml = info.current_ml;
+                    self.controller.water_goal_ml = info.goal_ml;
+                }
+                NotchEvent::UpdateShelf(items) => {
+                    self.controller.shelf_files = items.into_iter().map(|item| (item.name, format!("{} · {:?}", item.size, item.item_type))).collect();
+                }
+                NotchEvent::HotkeyVolume(vol) => {
+                    self.controller.trigger_overlay(crate::notch::states::OverlayKind::Volume(vol));
+                }
+                NotchEvent::HotkeyBrightness(bri) => {
+                    self.controller.trigger_overlay(crate::notch::states::OverlayKind::Brightness(bri));
+                }
+                NotchEvent::HotkeyCapsLock(state) => {
+                    self.controller.trigger_overlay(crate::notch::states::OverlayKind::CapsLock(state));
+                }
             }
         }
 
@@ -268,7 +301,15 @@ impl NotchApp {
 
         let pill_rect = self.current_pill_rect();
 
-        // Cek klik bar navigasi tab atas saat notch sedang terbuka
+        // 1. Cek klik tombol interaktif di dalam panel (misal Play/Pause GSMTC, Next, Prev, Pomo Start, dsb)
+        if self.controller.handle_panel_click(x, y, pill_rect, self.dpi_scale) {
+            unsafe {
+                let _ = InvalidateRect(self.hwnd, None, false);
+            }
+            return;
+        }
+
+        // 2. Cek klik bar navigasi tab atas saat notch sedang terbuka
         if self.controller.height.value > 65.0 && y <= pill_rect.top + 32.0 * self.dpi_scale {
             let total_w = pill_rect.right - pill_rect.left;
             let slot_w = total_w / 5.0;

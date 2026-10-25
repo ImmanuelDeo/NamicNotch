@@ -1,145 +1,83 @@
-# Nusa Clone: Perbaikan Interaksi Notch, Smooth Spring Animation, Neutral Anti-Magic Theme, Mata Asta (Devil Union) & Chibi Liebe
+# Nusa Clone: Bezel-Connected Notch, Dual-Mode Mata Asta (Devil Union & Normal Emerald + Pedang Melayang), Chibi Liebe, & Seluruh Fitur + Hardware Overlays Nusa Original
 
-Dokumen ini berisi **Diagnosis & Solusi Arsitektur**, **Spesifikasi Palet Neutral Slate-Blue Anti-Magic**, **Prompt Siap Pakai untuk Hermes Agent**, serta **Kode Modul Rust Lengkap (`windows` v0.58 + Direct2D)** untuk memperbaiki *notch* yang tidak merespons dan animasi yang kaku, mengganti *idle mascot* menjadi mata **Asta (Black Clover) — Devil Union Mode**, serta menambahkan **Chibi Liebe** yang berinteraksi secara selektif pada fitur terpilih (`Music`, `Pomodoro`, dan `Shelf`).
-
----
-
-## 1. Diagnosis Masalah pada `ARCHITECTURE.md` & Solusi Teknis
-
-Berdasarkan `ARCHITECTURE.md` proyekmu, ada **3 penyebab utama** mengapa *notch* saat ini tidak berfungsi (tidak bisa diklik/di-*hover*) dan animasinya sangat kaku:
-
-| Masalah Saat Ini | Penyebab Teknis di Win32 / Direct2D | Solusi Perbaikan |
-| :--- | :--- | :--- |
-| **Notch tidak merespons hover atau klik sama sekali** | Penggunaan flag `WS_EX_TRANSPARENT` secara permanen pada saat pembuatan window (`CreateWindowExW`). Di Windows API, kombinasi `WS_EX_LAYERED \| WS_EX_TRANSPARENT` membuat window menjadi **100% click-through** — semua *event* mouse (`WM_MOUSEMOVE`, `WM_LBUTTONDOWN`) langsung tembus ke aplikasi di belakangnya. | **Dynamic Click-Through Toggle & Cursor Polling**: Poll posisi kursor dengan `GetCursorPos` di dalam *timer* (`WM_TIMER`). Saat kursor masuk ke *bounding box* notch yang sedang aktif, hapus bit `WS_EX_TRANSPARENT` via `SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ...)`. Saat kursor keluar dari area notch, pasang kembali `WS_EX_TRANSPARENT` agar area transparan di luar *pill* tidak menghalangi klik desktop. |
-| **Buka-tutup notch sangat kaku (patah-patah / instan)** | Ukuran *pill* (`width`, `height`, `corner_radius`) diubah langsung secara diskrit saat berganti *state*, dan window hanya digambar ulang saat ada *event* sistem tanpa *frame loop* fisika. | **Critically-Damped Spring Physics Engine (60–120 FPS On-Demand)**: Gunakan interpolasi pegas (*spring-damper* `stiffness = 310.0`, `damping = 26.0`) untuk `width`, `height`, `corner_radius`, dan `content_alpha`. Nyalakan `SetTimer` berkecepatan tinggi (`8ms` / ~120 FPS) ketika animasi berjalan atau saat mode `pet` aktif, dan hentikan *rendering* saat posisi pegas sudah konvergen (*settled*) agar tetap **0% CPU saat idle statis**. |
-| **Transparansi sudut pill bocor atau kotak hitam terlihat** | Window berukuran tetap atau *render target* Direct2D tidak mendukung *per-pixel alpha composition* di atas desktop. | Buat ukuran jendela (`HWND`) sebesar ukuran maksimum ekspansi (`520x220`), bersihkan *canvas* dengan `D2D1_COLOR_F { r: 0.0, g: 0.0, b: 0.0, a: 0.0 }` menggunakan `D2D1_ALPHA_MODE_PREMULTIPLIED` + `DwmExtendFrameIntoClientArea` (`MARGINS: -1`), lalu gambar *rounded rect* sebesar ukuran pegas saat ini (`current_w`, `current_h`). |
+Dokumen ini berisi **Spesifikasi 4 Upgrade Utama**, **Prompt Lengkap untuk Hermes Agent**, serta **Kode Modul Rust Utuh (`src/mascot/eyes.rs`, `src/mascot/chibi_liebe.rs`, `src/notch/states.rs`, `src/notch/renderer.rs`, `src/notch/mod.rs`)** yang siap dipasang langsung ke dalam repositori `nusa-clone/` milikmu.
 
 ---
 
-## 2. Palet Warna "Neutral Slate-Blue Anti-Magic" & Selektivitas Chibi Liebe
+## 1. Ringkasan 4 Upgrade Utama yang Diterapkan
 
-Agar menyatu dengan tema utama laptopmu (**biru, abu-abu, dan warna netral**) tanpa warna merah yang terlalu mencolok, gaya visual *Anti-Magic* dikalibrasi menjadi **Obsidian Slate, Cool Steel Grey, dan Muted Wine-Rose tipis**:
-
-| Elemen UI / Visual | Kode Warna (Hex) | Nilai `D2D1_COLOR_F` (`r, g, b, a`) | Fungsi Visual |
-| :--- | :--- | :--- | :--- |
-| **Notch Pill Background** | `#0B0E14` | `(0.043, 0.055, 0.078, 0.97)` | Hitam-biru *obsidian* pekat yang menyatu elegan dengan tema desktop gelap/abu-abu/biru. |
-| **Elevated Card / Surface** | `#131822` | `(0.075, 0.094, 0.133, 0.92)` | Abu-abu kebiruan (*dark slate*) untuk kartu album musik, *drop zone* Shelf, dan bar navigasi. |
-| **Neutral Steel Border** | `#263042` | `(0.149, 0.188, 0.259, 0.55)` | Garis tepi *pill* abu-abu kebiruan dingin yang bersih dan netral. |
-| **Primary Accent (Steel Blue)** | `#6488EA` | `(0.392, 0.533, 0.918, 1.00)` | Aksen utama untuk *progress bar* musik, cincin Pomodoro, dan indikator tab aktif. |
-| **Anti-Magic Smoke / Sparks** | `#1E2533` & `#8A99B5` | `(0.118, 0.145, 0.200, 0.85)` | Partikel *Anti-Magic* monokrom abu-abu arang (*charcoal*) dan *silver-slate* (bukan merah neon). |
-| **Subtle Crimson Eye Core** | `#A83244` | `(0.659, 0.196, 0.267, 0.90)` | Merah *muted crimson / wine* yang kalem khusus pada inti iris Asta & mata Chibi Liebe agar tetap ikonik tanpa menabrak warna biru/abu-abu laptop. |
-
-### Di Mana Saja Chibi Liebe Muncul? (Selektif 3 Fitur Saja)
-Sesuai permintaanmu agar **tidak semua fitur** dipenuhi maskot, **Chibi Liebe** (wujud mungil Liebe dari bahu Asta dengan rambut abu-abu *ash-silver*, tanduk melengkung kecil, sayap mungil, dan ekspresi *deadpan/smug*) hanya muncul pada **3 state terpilih**:
-1. **`NotchState::Music` (`Headbop`)**: Chibi Liebe duduk santai di pojok kanan atas *album art* / kapsul musik sambil mengangguk-angguk (*headbop*) mengikuti irama lagu dan mengepakkan sayap kecilnya.
-2. **`NotchState::Pomo` (`FocusGuard`)**: Chibi Liebe berdiri melipat tangan di samping *ring timer* Pomodoro dengan tatapan mengawasi fokusmu (dan menguap santai saat fase *Short Break*).
-3. **`NotchState::Shelf` (`CatchingFiles`)**: Chibi Liebe mengintip dari tepi bawah *drop zone* sambil merentangkan kedua tangan kecilnya seolah siap menangkap file yang kamu *drag-and-drop*.
-- *Catatan*: Pada mode **`Idle`**, **`Lyrics`**, **`Water`**, dan **`Todo`**, Chibi Liebe **tidak ditampilkan** agar tampilan tetap bersih dan minimalis.
+| # | Fitur & Permintaan Kamu | Implementasi Teknis di Direct2D / Win32 |
+| :- | :--- | :--- |
+| **1** | **Bentuk Notch Menyatu dengan Bezel Atas Laptop (`Bezel-Connected Geometry`)** | `pill_rect.top` dikunci tepat di **`0.0` (menempel langsung ke tepi paling atas layar `rcMonitor.top`)**. Bukan lagi memakai `FillRoundedRectangle` yang mengambang, melainkan **`create_bezel_notch_geometry` (`ID2D1PathGeometry`)**: bagian atas rata menyatu dengan bezel layar disertai lekukan bahu halus (*top bezel fillet*), sedangkan bagian bawah kiri & kanan tetap *rounded* mulus baik saat tertutup maupun saat terbuka lebar. |
+| **2** | **Animasi Idle Asta Hidup: Transisi Devil Union ↔ Mata Asli (Hijau Emerald) + Pedang Anti-Magic Melayang & Tangan Menangkap** | Di `src/mascot/eyes.rs`, siklus *idle* kini punya 4 aksi karakter Asta:<br>• **`DevilUnionSerious`**: Tatapan tajam serius, iris *Muted Wine-Crimson*, pupil tanda plus (`+`), partikel *Anti-Magic*.<br>• **`NormalAstaHappy`**: Berubah mulus ke mata asli Asta (**Hijau Emerald `#2EE68A`** dengan kilau bintang putih besar Khas Asta saat bersemangat) lalu melengkung senang (`^ ^` *happy arc gesture*).<br>• **`SwordSummonGrab`**: Pedang *Demon-Slayer* (*Danma no Tsurugi*) mini melayang & berputar di samping mata, lalu **tangan Asta (dengan lengan hitam Anti-Magic)** muncul menjulur dan menangkap gagang pedang dengan efek *slash spark*! |
+| **3** | **Seluruh 6 Fitur Panel + Hardware Overlays Nusa Original Berfungsi Penuh** | • **6 Panel Utama**: `Music` (dengan kontrol *real-time* Windows Media Session: Play/Pause/Next/Prev), `Lyrics` (LRCLIB), `Focus` (Pomodoro Timer), `Water` (Hydration Tracker + Chart), `Shelf` (Drag & Drop Files), dan `To-Do` (Interactive Checkboxes) + `Idle` (Jam Digital Real-Time & Persentase Baterai).<br>• **5 Pop-up Overlays Otomatis**: **Volume Overlay**, **Brightness Overlay**, **Caps Lock / Language Overlay**, **Charging / Battery Plugged Overlay** (deteksi otomatis via `GetSystemPowerStatus`), dan **Headphones / Bluetooth Connected Overlay**. |
+| **4** | **Tema Neutral Slate-Blue Anti-Magic + Chibi Liebe Selektif** | Warna utama tetap menggunakan **Obsidian Slate (`#0B0E14`)**, **Dark Slate Card (`#131822`)**, dan **Steel Blue (`#6488EA`)** yang kalem dan menyatu dengan laptop biru/abu-abu, ditemani **Chibi Liebe** secara selektif hanya pada tab `Music`, `Focus (Pomo)`, dan `Shelf`. |
 
 ---
 
-## 3. Prompt Siap Pakai untuk Hermes Agent
+## 2. Prompt Lengkap untuk Hermes Agent
 
-Salin seluruh blok di bawah ini dan berikan langsung ke **Hermes Agent** di terminal lokalmu (jalankan di *root directory* `nusa-clone/`):
+Salin seluruh blok perintah di bawah ini dan berikan langsung ke **Hermes Agent** di terminal lokalmu (di folder `nusa-clone/`):
 
 ```markdown
-Tolong perbaiki dan upgrade repositori Rust `nusa-clone` ini (menggunakan `windows = "0.58"` dan Direct2D) berdasarkan panduan di `DEVIL_UNION_UPGRADE.md` dengan spesifikasi tugas berikut:
+Tolong baca file `DEVIL_UNION_UPGRADE.md` dan terapkan seluruh pembaruan kode ke dalam repositori `nusa-clone` ini dengan spesifikasi wajib berikut:
 
-### Tujuan Utama
-1. **Perbaiki Interaksi Notch (Hover & Click) yang Mati (`src/notch/mod.rs`)**:
-   - Jangan kunci window dengan `WS_EX_TRANSPARENT` secara statis.
-   - Buat sistem *dynamic hit-testing*: gunakan timer polling (`GetCursorPos`) setiap tick untuk mengecek apakah kursor berada di dalam *bounding box* pill saat ini (`current_pill_rect()`).
-   - Jika kursor berada di dalam pill (`cursor_in_pill == true`), cabut flag `WS_EX_TRANSPARENT` menggunakan `SetWindowLongPtrW(hwnd, GWL_EXSTYLE, style & !(WS_EX_TRANSPARENT.0 as isize))` sehingga window menerima `WM_LBUTTONDOWN`, `WM_MOUSEWHEEL`, dan drag-and-drop.
-   - Jika kursor berada di luar pill (`cursor_in_pill == false`), aktifkan kembali `WS_EX_TRANSPARENT` agar area transparan di sekeliling pill tidak memblokir klik di bagian atas layar Windows.
-   - Gunakan `DwmExtendFrameIntoClientArea` dengan `MARGINS { cxLeftWidth: -1, cxRightWidth: -1, cyTopWidth: -1, cyBottomWidth: -1 }` dan `D2D1_ALPHA_MODE_PREMULTIPLIED` agar latar belakang di luar pill benar-benar transparan.
+### 1. Bentuk Notch Menyatu dengan Bezel Atas Laptop (`Bezel-Connected Notch Geometry`)
+- Di `src/notch/mod.rs` (`current_pill_rect`), pastikan `top = 0.0` (jangan diberi jarak mengambang dari atas layar) sehingga sisi atas notch menempel 100% menyatu dengan bezel atas monitor (`rcMonitor.top`), baik saat tertutup maupun saat terbuka menampilkan fitur.
+- Di `src/notch/renderer.rs`, gunakan fungsi `create_bezel_notch_geometry` (`ID2D1PathGeometry`) untuk menggambar bentuk notch khas Nusa/MacBook:
+  - Sisi atas rata menempel ke bezel (`y = 0.0`) dengan sedikit *top shoulder curve* (`ear_r = 8.0`),
+  - Dinding kiri dan kanan turun vertikal,
+  - Sudut kiri-bawah dan kanan-bawah melengkung mulus menggunakan `BezierSegment` sebesar `controller.corner_radius.value`.
+  - Jangan gambar garis border pada tepi paling atas (`y = 0.0`) agar notch terlihat benar-benar tumbuh keluar dari bezel layar laptop.
 
-2. **Implementasikan Smooth Spring-Damper Animation (`src/notch/states.rs`)**:
-   - Tambahkan struct `SpringValue` (critically-damped spring physics dengan `stiffness: 310.0`, `damping: 26.0`) untuk menginterpolasi `width`, `height`, `corner_radius`, dan `content_alpha` secara mulus setiap frame (`dt`).
-   - Gunakan `SetTimer` dengan interval `8ms` (~120 FPS) untuk mengupdate fisika pegas dan memanggil `InvalidateRect`.
+### 2. Upgrade Animasi Idle Mata Asta + Transisi Mata Asli + Pedang Melayang & Tangan Menangkap (`src/mascot/eyes.rs`)
+- Perbarui `src/mascot/eyes.rs` dengan kode lengkap dari `DEVIL_UNION_UPGRADE.md` yang memiliki siklus hidup karakter Asta:
+  1. **Mode `DevilUnionSerious`**: Tatapan tajam serius dengan kelopak miring, iris *Muted Wine-Crimson*, pupil tanda plus (`+`) hitam obsidian, dan pelacakan kursor (*cursor tracking*).
+  2. **Mode `NormalEmeraldHappy`**: Secara periodik saat idle (atau saat pengguna baru selesai berinteraksi), mata Asta bertransisi dari Devil Union kembali ke **mata asli Asta (Hijau Emerald cerah `#2EE68A`)** dengan pupil bulat dan kilau bintang putih (*starry anime highlight*), diikuti ekspresi melengkung senang (`^ ^` *happy gesture*) yang ramah.
+  3. **Mode `SwordSummonGrab` (Aksesori Pedang & Tangan Menangkap)**: Secara berkala saat idle, muncul pedang *Demon-Slayer* (*Danma no Tsurugi*) hitam-abu berkarat yang melayang dan berputar halus di sisi kanan notch. Kemudian **tangan Asta (berlengan hitam Anti-Magic)** muncul dari tepi bawah notch, meraih dan menggenggam gagang pedang tersebut disertai kilatan *slash spark* sebelum ditarik masuk kembali!
 
-3. **Terapkan Tema Visual "Neutral Slate-Blue Anti-Magic" (`src/notch/renderer.rs`)**:
-   - Gunakan palet warna netral yang serasi dengan tema laptop biru/abu-abu:
-     - Background Pill: Obsidian Slate (`#0B0E14`)
-     - Surface / Card: Dark Slate (`#131822`)
-     - Border: Cool Steel Grey (`#263042`) dengan aksen Slate-Blue (`#6488EA`)
-     - Anti-Magic Sparks: Monokrom Charcoal (`#1E2533`) & Silver-Slate (`#8A99B5`) dengan sentuhan Muted Wine-Rose tipis (`#A83244`) yang tidak mencolok.
+### 3. Pastikan Seluruh Fitur & Hardware Overlays Nusa Original Berjalan (`src/notch/states.rs`, `src/notch/mod.rs`, `src/notch/renderer.rs`, `src/media/mod.rs`)
+- **Kontrol Musik Real-Time (GSMTC)**:
+  - Saat pengguna mengklik tombol `Play/Pause`, `Next`, atau `Prev` di panel `Music`, panggil API Windows `GlobalSystemMediaTransportControlsSessionManager` (`TryTogglePlayPauseAsync()`, `TrySkipNextAsync()`, `TrySkipPreviousAsync()`) agar benar-benar mengontrol Spotify, YouTube Browser, atau Apple Music yang sedang berjalan di laptop!
+- **Deteksi Baterai & Charger Otomatis (`GetSystemPowerStatus`)**:
+  - Poll status baterai Windows setiap 2 detik menggunakan `GetSystemPowerStatus`. Simpan persentase baterai (`battery_percent`) dan status cas (`is_charging`).
+  - Saat charger baru dicolokkan atau dicabut, otomatis munculkan **Charging Peek Overlay** (`OverlayKind::Charging`) selama 3.0 detik dengan animasi cincin baterai seperti Nusa Original.
+- **Overlay Volume, Brightness, Caps Lock, dan Headphones**:
+  - Hubungkan event `HotkeyVolume(u8)`, `HotkeyBrightness(u8)`, `HotkeyCapsLock(bool)` dari `src/hooks/` ke `controller.trigger_overlay(...)` sehingga setiap kali pengguna menekan tombol Volume, Brightness, atau Caps Lock di keyboard laptop, notch otomatis menampilkan bar indikator overlay yang mulus lalu kembali ke mode semula setelah 2.2 detik.
+- **Semua 6 Panel Fitur Utama (`Music`, `Lyrics`, `Focus/Pomo`, `Water`, `Shelf`, `To-Do`) + Jam Real-Time (`Idle`)**:
+  - Pastikan seluruh teks dan grafik dirender menggunakan DirectWrite (`IDWriteFactory`) + Direct2D seperti di `src/notch/renderer.rs` pada `DEVIL_UNION_UPGRADE.md`.
 
-4. **Ganti Mode Idle Mascot (`src/mascot/eyes.rs`) menjadi Mata Asta (Devil Union Mode) Versi Neutral-Toned**:
-   - Saat state berada di `NotchState::Pet`, render sepasang mata **Asta Devil Union Mode** menggunakan geometri vektor Direct2D (`ID2D1PathGeometry` & `ID2D1RadialGradientBrush`):
-     - Aura luar menggunakan *Smoky Slate-Charcoal* (`#1E2533` & `#6488EA` tipis) sehingga tetap netral di desktop biru/abu-abu.
-     - Iris menggunakan *Muted Crimson / Wine-Rose* (`#A83244` ke `#591622`) dengan potongan kelopak atas miring tajam (*sharp anime upper eyelid*).
-     - Pupil di tengah iris berbentuk **tanda plus (`+`) meruncing (tapered cross)** berwarna hitam obsidian (`#07090D`) dengan cincin tipis *silver-rose* yang mengikuti kursor (*cursor tracking* dalam radius 360px).
-     - Mendukung siklus `Awakening`, `Active` (cursor tracking + organic glance + sharp blink), `Dozing` (setelah 45 detik idle), dan `WakeSurge`.
-
-5. **Tambahkan Interaksi Selektif Chibi Liebe (`src/mascot/chibi_liebe.rs` & `src/mascot/mod.rs`)**:
-   - Buat modul `src/mascot/chibi_liebe.rs` yang menggambar karakter **Chibi Liebe** secara prosedural dengan Direct2D (rambut runcing warna *ash-silver* `#9AA5B8`, tanduk hitam melengkung dengan aksen garis abu-abu, sayap kelelawar mungil di punggung, dan mata kecil ekspresi *deadpan/smug*).
-   - Tampilkan Chibi Liebe **HANYA pada 3 state berikut** (jangan tampilkan di state lain agar tetap minimalis):
-     a. `NotchState::Music`: Pose `Headbop` — duduk di sudut kanan atas panel musik sambil mengangguk-angguk mengikuti irama dan mengepakkan sayap kecilnya.
-     b. `NotchState::Pomo`: Pose `FocusGuard` — berdiri melipat tangan di dekat *timer* Pomodoro untuk menemani sesi fokus.
-     c. `NotchState::Shelf`: Pose `CatchingFiles` — mengintip dari bawah area *drop zone* sambil mengangkat kedua tangan kecilnya saat pengguna membuka Shelf.
-   - Berikan reaksi *click/poke*: jika pengguna mengklik area Chibi Liebe, picu ekspresi kaget/kesal lucu (`Poked` selama 0.8 detik dengan loncatan kecil dan simbol perempatan siku di kepala).
-
-6. **Verifikasi Kompilasi**:
-   - Hubungkan semua modul di `src/mascot/mod.rs`, `src/notch/states.rs`, `src/notch/renderer.rs`, dan `src/notch/mod.rs`, lalu jalankan `cargo check` dan `cargo build --release` hingga sukses tanpa error.
+### 4. Kompilasi & Verifikasi
+- Pastikan `Win32_System_Power` ditambahkan pada daftar features `windows` di `Cargo.toml` (untuk `GetSystemPowerStatus`).
+- Jalankan `cargo check` dan `cargo build --release` hingga kompilasi berhasil 100% tanpa error.
 ```
 
 ---
 
-## 4. Konfigurasi `Cargo.toml` yang Direkomendasikan
+## 3. Tambahan Feature Flag di `Cargo.toml`
 
-Pastikan `Cargo.toml` kamu menyertakan *feature flags* `windows` v0.58.0 yang dibutuhkan untuk Direct2D, DWM (transparansi penuh), serta Win32 UI:
+Pastikan di dalam `Cargo.toml` pada bagian `windows = { version = "0.58", features = [ ... ] }` terdapat feature berikut (tambahkan `"Win32_System_Power"` untuk deteksi *charging* & persentase baterai otomatis, serta `"Win32_Graphics_Direct2D"` dan `"Win32_Graphics_Dwm"`):
 
 ```toml
-[package]
-name = "nusa-clone"
-version = "0.3.0"
-edition = "2021"
-
-[dependencies]
-windows = { version = "0.58.0", features = [
-    "Win32_Foundation",
     "Win32_Graphics_Direct2D",
     "Win32_Graphics_Direct2D_Common",
     "Win32_Graphics_DirectWrite",
-    "Win32_Graphics_Dxgi_Common",
     "Win32_Graphics_Dwm",
-    "Win32_Graphics_Gdi",
-    "Win32_System_Com",
-    "Win32_System_LibraryLoader",
-    "Win32_System_Performance",
+    "Win32_System_Power",
     "Win32_UI_Controls",
-    "Win32_UI_HiDpi",
-    "Win32_UI_Input_KeyboardAndMouse",
-    "Win32_UI_Shell",
-    "Win32_UI_WindowsAndMessaging",
-] }
 ```
 
 ---
 
-## 5. Kode Modul Lengkap Siap Integrasi
+## 4. Kode Lengkap Semua Modul Inti (Siap Pakai)
 
-Berikut adalah **5 file modul inti** yang sudah disesuaikan dengan palet **Neutral Slate-Blue Anti-Magic** serta tambahan **Chibi Liebe**:
-
-### A. `src/mascot/mod.rs` — Pendaftaran Modul Maskot
-
-```rust
-// src/mascot/mod.rs
-pub mod chibi_liebe;
-pub mod eyes;
-```
-
----
-
-### B. `src/mascot/eyes.rs` — Mata Asta Devil Union Mode (Neutral Slate-Blue & Muted Crimson Edition)
-
-Aura dan partikel *Anti-Magic* kini menggunakan kombinasi **Obsidian Charcoal (`#141923`)** dan **Cool Steel Slate (`#7A8CA8`)**, sedangkan iris mata menggunakan **Muted Wine-Crimson (`#A83244`)** yang elegan dan tidak mencolok di desktop bernuansa biru/abu-abu.
+### A. `src/mascot/eyes.rs` — Dual-Mode Mata Asta (Devil Union Serius ↔ Mata Asli Emerald Senang + Pedang Melayang & Tangan Menangkap)
 
 ```rust
 // src/mascot/eyes.rs
 use windows::Win32::Graphics::Direct2D::Common::{
-    D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED, D2D1_FIGURE_END_CLOSED, D2D1_GRADIENT_STOP,
-    D2D_POINT_2F, D2D_RECT_F,
+    D2D1_BEZIER_SEGMENT, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED, D2D1_FIGURE_BEGIN_HOLLOW,
+    D2D1_FIGURE_END_CLOSED, D2D1_FIGURE_END_OPEN, D2D1_GRADIENT_STOP, D2D_POINT_2F, D2D_RECT_F,
 };
 use windows::Win32::Graphics::Direct2D::{
     ID2D1Factory, ID2D1HwndRenderTarget, ID2D1PathGeometry, D2D1_ELLIPSE, D2D1_EXTEND_MODE_CLAMP,
@@ -147,11 +85,17 @@ use windows::Win32::Graphics::Direct2D::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum DevilEyePhase {
-    Awakening { timer: f32 },
-    Active { idle_seconds: f32 },
+pub enum AstaIdleMode {
+    /// Devil Union Mode: Tatapan tajam serius, iris Muted Crimson, pupil '+'
+    DevilUnionSerious { timer: f32 },
+    /// Normal Asta Mode: Mata asli Hijau Emerald berbinar, ekspresi ramah/antusias
+    NormalEmerald { timer: f32 },
+    /// Happy Gesture: Mata melengkung senang '^ ^' khas Asta saat menyapa
+    HappySmileGesture { timer: f32 },
+    /// Sword Summon & Grab: Pedang Demon-Slayer melayang lalu ditangkap oleh tangan Asta!
+    SwordSummonGrab { timer: f32 },
+    /// Dozing: Istirahat tenang setelah lama tidak ada aktivitas
     Dozing { timer: f32 },
-    WakeSurge { timer: f32 },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -163,11 +107,11 @@ pub struct AntiMagicSpark {
     pub size: f32,
     pub life: f32,
     pub max_life: f32,
-    pub kind: u8, // 0 = Obsidian Charcoal, 1 = Cool Slate-Blue, 2 = Muted Rose Ember
+    pub kind: u8,
 }
 
 pub struct DevilUnionEyes {
-    pub phase: DevilEyePhase,
+    pub mode: AstaIdleMode,
     pub time: f32,
     pub look_x: f32,
     pub look_y: f32,
@@ -179,6 +123,8 @@ pub struct DevilUnionEyes {
     pub glance_timer: f32,
     pub aura_intensity: f32,
     pub pupil_scale: f32,
+    /// 0.0 = Devil Union (Crimson + '+'), 1.0 = Normal Asta (Emerald Green + Star Highlight)
+    pub emerald_blend: f32,
     pub sparks: [AntiMagicSpark; 10],
     rng_seed: u32,
 }
@@ -192,18 +138,19 @@ impl Default for DevilUnionEyes {
 impl DevilUnionEyes {
     pub fn new() -> Self {
         let mut eyes = Self {
-            phase: DevilEyePhase::Awakening { timer: 0.0 },
+            mode: AstaIdleMode::DevilUnionSerious { timer: 0.0 },
             time: 0.0,
             look_x: 0.0,
             look_y: 0.0,
             target_look_x: 0.0,
             target_look_y: 0.0,
-            openness: 0.05,
+            openness: 0.1,
             blink_timer: 0.0,
-            next_blink_in: 3.2,
-            glance_timer: 2.0,
-            aura_intensity: 1.1,
-            pupil_scale: 1.25,
+            next_blink_in: 3.0,
+            glance_timer: 1.8,
+            aura_intensity: 1.0,
+            pupil_scale: 1.1,
+            emerald_blend: 0.0,
             sparks: [AntiMagicSpark {
                 offset_x: 0.0,
                 offset_y: 0.0,
@@ -214,7 +161,7 @@ impl DevilUnionEyes {
                 max_life: 1.0,
                 kind: 0,
             }; 10],
-            rng_seed: 0xA57A_BC02,
+            rng_seed: 0xA57A_7777,
         };
         for i in 0..eyes.sparks.len() {
             eyes.respawn_spark(i, true);
@@ -233,25 +180,18 @@ impl DevilUnionEyes {
 
     fn respawn_spark(&mut self, idx: usize, random_life: bool) {
         let side = if idx % 2 == 0 { -1.0 } else { 1.0 };
-        let rx = (self.next_f32() - 0.5) * 18.0 + side * 15.0;
-        let ry = (self.next_f32() - 0.5) * 7.0;
-        let vx = (self.next_f32() - 0.5) * 12.0 + side * 3.5;
-        let vy = -9.0 - self.next_f32() * 15.0;
-        let max_life = 0.50 + self.next_f32() * 0.65;
+        let rx = (self.next_f32() - 0.5) * 24.0 + side * 16.0;
+        let ry = (self.next_f32() - 0.5) * 8.0;
+        let vx = (self.next_f32() - 0.5) * 12.0 + side * 3.0;
+        let vy = -8.0 - self.next_f32() * 14.0;
+        let max_life = 0.50 + self.next_f32() * 0.60;
         let life = if random_life {
             self.next_f32() * max_life
         } else {
             0.0
         };
-        let size = 1.3 + self.next_f32() * 2.0;
-        // Mayoritas partikel berwarna Slate/Charcoal netral, hanya 1 dari 5 yang memiliki aksen Muted Rose
-        let kind = if idx % 5 == 0 {
-            2
-        } else if idx % 2 == 0 {
-            1
-        } else {
-            0
-        };
+        let size = 1.3 + self.next_f32() * 1.9;
+        let kind = (idx % 3) as u8;
 
         self.sparks[idx] = AntiMagicSpark {
             offset_x: rx,
@@ -266,17 +206,16 @@ impl DevilUnionEyes {
     }
 
     pub fn trigger_awakening(&mut self) {
-        self.phase = DevilEyePhase::Awakening { timer: 0.0 };
-        self.openness = 0.05;
-        self.pupil_scale = 1.30;
+        self.mode = AstaIdleMode::DevilUnionSerious { timer: 0.0 };
+        self.openness = 0.15;
+        self.pupil_scale = 1.25;
         self.aura_intensity = 1.25;
     }
 
     pub fn trigger_wake_surge(&mut self) {
-        if matches!(self.phase, DevilEyePhase::Dozing { .. }) {
-            self.phase = DevilEyePhase::WakeSurge { timer: 0.0 };
-            self.aura_intensity = 1.35;
-        }
+        // Saat pengguna kembali atau menyentuh notch, Asta menyapa dengan mata Hijau Emerald senang sebentar!
+        self.mode = AstaIdleMode::HappySmileGesture { timer: 0.0 };
+        self.aura_intensity = 1.2;
     }
 
     pub fn update(&mut self, dt: f32, cursor_offset: Option<(f32, f32)>) {
@@ -288,103 +227,126 @@ impl DevilUnionEyes {
             let dist = (dx * dx + dy * dy).sqrt();
             if dist < 360.0 {
                 cursor_near = true;
-                self.target_look_x = (dx / 180.0).clamp(-1.0, 1.0);
-                self.target_look_y = (dy / 110.0).clamp(-0.75, 0.85);
-                if matches!(self.phase, DevilEyePhase::Dozing { .. }) {
-                    self.trigger_wake_surge();
+                self.target_look_x = (dx / 170.0).clamp(-1.0, 1.0);
+                self.target_look_y = (dy / 105.0).clamp(-0.75, 0.85);
+                if matches!(self.mode, AstaIdleMode::Dozing { .. }) {
+                    self.mode = AstaIdleMode::HappySmileGesture { timer: 0.0 };
                 }
             }
         }
 
-        let target_openness: f32;
-        let target_aura: f32;
-        let target_pupil: f32;
-
-        match &mut self.phase {
-            DevilEyePhase::Awakening { timer } => {
-                *timer += dt;
-                let p = (*timer / 0.45).clamp(0.0, 1.0);
-                target_openness = if p < 0.6 { p / 0.6 * 1.10 } else { 1.0 }.min(1.04);
-                target_pupil = 1.30 - 0.30 * p;
-                target_aura = 1.25 - 0.35 * p;
-                if *timer >= 0.45 {
-                    self.phase = DevilEyePhase::Active { idle_seconds: 0.0 };
-                }
-            }
-            DevilEyePhase::Active { idle_seconds } => {
-                if cursor_near {
-                    *idle_seconds = 0.0;
-                    target_aura = 1.05;
-                    target_pupil = 0.88;
+        // Lirikan acak organik jika kursor tidak dekat
+        if !cursor_near {
+            self.glance_timer -= dt;
+            if self.glance_timer <= 0.0 {
+                let r = self.next_f32();
+                if r < 0.35 {
+                    self.target_look_x = 0.0;
+                    self.target_look_y = 0.0;
                 } else {
-                    *idle_seconds += dt;
-                    target_aura = 0.72 + 0.12 * (self.time * 2.8).sin();
-                    target_pupil = 1.0 + 0.05 * (self.time * 2.0).cos();
-
-                    self.glance_timer -= dt;
-                    if self.glance_timer <= 0.0 {
-                        let r = self.next_f32();
-                        if r < 0.38 {
-                            self.target_look_x = 0.0;
-                            self.target_look_y = 0.0;
-                        } else {
-                            self.target_look_x = (self.next_f32() - 0.5) * 1.45;
-                            self.target_look_y = (self.next_f32() - 0.5) * 0.55;
-                        }
-                        self.glance_timer = 2.0 + self.next_f32() * 3.0;
-                    }
-
-                    if *idle_seconds > 45.0 {
-                        self.phase = DevilEyePhase::Dozing { timer: 0.0 };
-                    }
+                    self.target_look_x = (self.next_f32() - 0.5) * 1.4;
+                    self.target_look_y = (self.next_f32() - 0.5) * 0.55;
                 }
-                target_openness = 1.0;
-            }
-            DevilEyePhase::Dozing { timer } => {
-                *timer += dt;
-                self.target_look_x = 0.0;
-                self.target_look_y = 0.22;
-                target_openness = 0.32 + 0.04 * (self.time * 1.4).sin();
-                target_aura = 0.40 + 0.10 * (self.time * 1.4).sin();
-                target_pupil = 1.04;
-            }
-            DevilEyePhase::WakeSurge { timer } => {
-                *timer += dt;
-                target_openness = 1.06;
-                target_aura = 1.35;
-                target_pupil = 0.80;
-                if *timer >= 0.30 {
-                    self.phase = DevilEyePhase::Active { idle_seconds: 0.0 };
-                }
+                self.glance_timer = 1.8 + self.next_f32() * 2.5;
             }
         }
 
+        let mut target_openness = 1.0;
+        let mut target_aura = 0.85;
+        let mut target_pupil = 1.0;
+        let mut target_emerald = 0.0;
+
+        match &mut self.mode {
+            AstaIdleMode::DevilUnionSerious { timer } => {
+                *timer += dt;
+                target_openness = 1.0;
+                target_emerald = 0.0;
+                target_aura = if cursor_near { 1.15 } else { 0.82 + 0.12 * (self.time * 3.0).sin() };
+                target_pupil = if cursor_near { 0.86 } else { 1.0 };
+
+                // Setelah 7 detik di Devil Union, bergantian masuk ke aksi Pedang Melayang atau Mata Asli Emerald!
+                if *timer >= 7.5 {
+                    if self.next_f32() < 0.55 {
+                        self.mode = AstaIdleMode::SwordSummonGrab { timer: 0.0 };
+                    } else {
+                        self.mode = AstaIdleMode::NormalEmerald { timer: 0.0 };
+                    }
+                }
+            }
+            AstaIdleMode::SwordSummonGrab { timer } => {
+                *timer += dt;
+                target_openness = 1.02;
+                target_emerald = 0.0; // Tetap Devil Union serius sambil memanggil & menangkap pedang
+                target_aura = 1.25;
+                target_pupil = 0.82;
+
+                // Mata Asta otomatis melirik ke arah pedang yang melayang di sisi kanan (x = +0.85)
+                let p = (*timer / 3.8).clamp(0.0, 1.0);
+                self.target_look_x = 0.85 * (1.0 - (p - 0.5).abs() * 1.2).clamp(0.2, 1.0);
+                self.target_look_y = -0.15 + (self.time * 4.0).sin() * 0.20;
+
+                if *timer >= 3.8 {
+                    // Setelah berhasil menangkap pedang, Asta berubah ke mata asli Hijau Emerald & senang!
+                    self.mode = AstaIdleMode::NormalEmerald { timer: 0.0 };
+                }
+            }
+            AstaIdleMode::NormalEmerald { timer } => {
+                *timer += dt;
+                target_openness = 1.06; // Mata asli Asta sedikit lebih bulat & antusias
+                target_emerald = 1.0;
+                target_aura = 0.45;
+                target_pupil = 1.08;
+
+                if *timer >= 4.2 {
+                    self.mode = AstaIdleMode::HappySmileGesture { timer: 0.0 };
+                }
+            }
+            AstaIdleMode::HappySmileGesture { timer } => {
+                *timer += dt;
+                target_openness = 1.0;
+                target_emerald = 1.0;
+                target_aura = 0.60;
+                target_pupil = 1.0;
+
+                if *timer >= 2.2 {
+                    // Kembali fokus ke Devil Union Mode
+                    self.mode = AstaIdleMode::DevilUnionSerious { timer: 0.0 };
+                }
+            }
+            AstaIdleMode::Dozing { timer } => {
+                *timer += dt;
+                target_openness = 0.30 + 0.04 * (self.time * 1.4).sin();
+                target_emerald = 0.0;
+                target_aura = 0.35;
+                target_pupil = 1.05;
+            }
+        }
+
+        // Kedipan cepat
         self.next_blink_in -= dt;
         if self.next_blink_in <= 0.0 {
-            self.blink_timer = 0.14;
-            self.next_blink_in = 2.8 + self.next_f32() * 3.8;
+            self.blink_timer = 0.13;
+            self.next_blink_in = 2.6 + self.next_f32() * 3.4;
         }
 
         let blink_factor = if self.blink_timer > 0.0 {
             self.blink_timer -= dt;
-            let norm = (self.blink_timer / 0.14).clamp(0.0, 1.0);
+            let norm = (self.blink_timer / 0.13).clamp(0.0, 1.0);
             (norm - 0.5).abs() * 2.0
         } else {
             1.0
         };
 
-        let effective_openness = target_openness * blink_factor;
-
         let smooth = (14.0 * dt).min(1.0);
         self.look_x += (self.target_look_x - self.look_x) * smooth;
         self.look_y += (self.target_look_y - self.look_y) * smooth;
-        self.openness += (effective_openness - self.openness) * (22.0 * dt).min(1.0);
+        self.openness += (target_openness * blink_factor - self.openness) * (22.0 * dt).min(1.0);
         self.aura_intensity += (target_aura - self.aura_intensity) * (10.0 * dt).min(1.0);
         self.pupil_scale += (target_pupil - self.pupil_scale) * (12.0 * dt).min(1.0);
+        self.emerald_blend += (target_emerald - self.emerald_blend) * (8.0 * dt).min(1.0);
 
-        let aura_speed_mult = self.aura_intensity.max(0.45);
         for i in 0..self.sparks.len() {
-            self.sparks[i].life += dt * aura_speed_mult;
+            self.sparks[i].life += dt * self.aura_intensity.max(0.45);
             if self.sparks[i].life >= self.sparks[i].max_life {
                 self.respawn_spark(i, false);
             } else {
@@ -406,16 +368,340 @@ impl DevilUnionEyes {
         }
 
         let center_x = (pill_rect.left + pill_rect.right) * 0.5;
-        let center_y = (pill_rect.top + pill_rect.bottom) * 0.5;
-        let eye_spacing = 17.5;
+        let center_y = (pill_rect.top + pill_rect.bottom) * 0.5 + 1.0;
+
+        // Geser sedikit posisi mata ke kiri saat pedang melayang di kanan agar seimbang di dalam pill
+        let sword_shift = if let AstaIdleMode::SwordSummonGrab { timer } = self.mode {
+            let s = (timer * 2.5).min(1.0) * ((3.8 - timer) * 2.5).clamp(0.0, 1.0);
+            -12.0 * s
+        } else {
+            0.0
+        };
+
+        let eyes_cx = center_x + sword_shift;
+        let eye_spacing = 16.5;
 
         unsafe {
-            self.draw_anti_magic_sparks(rt, center_x, center_y, alpha_mult);
+            // 1. Partikel Anti-Magic / Starlight
+            self.draw_anti_magic_sparks(rt, eyes_cx, center_y, alpha_mult);
 
-            for side in [-1.0_f32, 1.0_f32] {
-                let base_x = center_x + side * eye_spacing;
-                let base_y = center_y + 0.5;
-                self.draw_single_devil_eye(factory, rt, base_x, base_y, side, alpha_mult);
+            // 2. Jika sedang dalam gesture HappySmileGesture ('^ ^'), gambar lengkungan mata senang!
+            if let AstaIdleMode::HappySmileGesture { timer } = self.mode {
+                let bounce = (timer * 10.0).sin().abs() * -1.8;
+                for side in [-1.0_f32, 1.0_f32] {
+                    self.draw_happy_arc_eye(
+                        factory,
+                        rt,
+                        eyes_cx + side * eye_spacing,
+                        center_y + bounce,
+                        side,
+                        alpha_mult,
+                    );
+                }
+            } else {
+                // 3. Gambar Sepasang Mata Asta (Transisi Mulus Devil Union <-> Normal Emerald)
+                for side in [-1.0_f32, 1.0_f32] {
+                    let base_x = eyes_cx + side * eye_spacing;
+                    self.draw_single_asta_eye(factory, rt, base_x, center_y, side, alpha_mult);
+                }
+            }
+
+            // 4. Jika sedang dalam fase SwordSummonGrab, gambar Pedang Melayang & Tangan Asta Menangkap!
+            if let AstaIdleMode::SwordSummonGrab { timer } = self.mode {
+                self.draw_floating_sword_and_grabbing_hand(
+                    factory,
+                    rt,
+                    center_x + 36.0,
+                    center_y,
+                    pill_rect.bottom,
+                    timer,
+                    alpha_mult,
+                );
+            }
+        }
+    }
+
+    /// Gambar mata melengkung senang ('^ ^') berwarna Hijau Emerald / Ice-Blue saat Asta gembira
+    unsafe fn draw_happy_arc_eye(
+        &self,
+        factory: &ID2D1Factory,
+        rt: &ID2D1HwndRenderTarget,
+        ex: f32,
+        ey: f32,
+        side: f32,
+        alpha: f32,
+    ) {
+        if let Ok(geom) = factory.CreatePathGeometry() {
+            if let Ok(sink) = geom.Open() {
+                sink.BeginFigure(
+                    D2D_POINT_2F {
+                        x: ex - 6.5,
+                        y: ey + 2.5,
+                    },
+                    D2D1_FIGURE_BEGIN_HOLLOW,
+                );
+                sink.AddBezier(&D2D1_BEZIER_SEGMENT {
+                    point1: D2D_POINT_2F {
+                        x: ex - 3.0,
+                        y: ey - 5.5,
+                    },
+                    point2: D2D_POINT_2F {
+                        x: ex + 3.0,
+                        y: ey - 5.5,
+                    },
+                    point3: D2D_POINT_2F {
+                        x: ex + 6.5,
+                        y: ey + 2.5,
+                    },
+                });
+                sink.EndFigure(D2D1_FIGURE_END_OPEN);
+                let _ = sink.Close();
+
+                let emerald_col = D2D1_COLOR_F {
+                    r: 0.22,
+                    g: 0.88,
+                    b: 0.62,
+                    a: alpha,
+                };
+                if let Ok(b) = rt.CreateSolidColorBrush(&emerald_col, None) {
+                    rt.DrawGeometry(&geom, &b, 2.4, None);
+                }
+            }
+        }
+
+        // Bintang kecil berbinar di sudut luar mata saat senang
+        let star_x = ex + side * 8.5;
+        let star_y = ey - 3.5;
+        let star_col = D2D1_COLOR_F {
+            r: 0.90,
+            g: 0.98,
+            b: 0.95,
+            a: 0.85 * alpha,
+        };
+        if let Ok(sb) = rt.CreateSolidColorBrush(&star_col, None) {
+            rt.DrawLine(
+                D2D_POINT_2F {
+                    x: star_x - 2.5,
+                    y: star_y,
+                },
+                D2D_POINT_2F {
+                    x: star_x + 2.5,
+                    y: star_y,
+                },
+                &sb,
+                1.2,
+                None,
+            );
+            rt.DrawLine(
+                D2D_POINT_2F {
+                    x: star_x,
+                    y: star_y - 2.5,
+                },
+                D2D_POINT_2F {
+                    x: star_x,
+                    y: star_y + 2.5,
+                },
+                &sb,
+                1.2,
+                None,
+            );
+        }
+    }
+
+    /// Gambar Pedang Demon-Slayer Melayang & Tangan Asta yang Menjulur Menangkap Gagangnya
+    unsafe fn draw_floating_sword_and_grabbing_hand(
+        &self,
+        factory: &ID2D1Factory,
+        rt: &ID2D1HwndRenderTarget,
+        sx: f32,
+        sy: f32,
+        pill_bottom: f32,
+        timer: f32,
+        alpha: f32,
+    ) {
+        // Fase waktu (total 3.8 detik):
+        // 0.0 .. 1.6s: Pedang melayang turun-naik & bergetar dengan aura Anti-Magic
+        // 1.6 .. 2.7s: Tangan hitam Asta menjulur dari bawah & menangkap gagang pedang!
+        // 2.7 .. 3.8s: Tangan menarik pedang turun ke dalam bayangan disertai kilatan slash
+        let hover_bob = (timer * 6.5).sin() * 2.2;
+        let retract = if timer > 2.7 {
+            ((timer - 2.7) / 1.1).clamp(0.0, 1.0).powi(2) * 18.0
+        } else {
+            0.0
+        };
+
+        let sword_x = sx;
+        let sword_y = sy + hover_bob + retract;
+
+        let blade_dark = D2D1_COLOR_F {
+            r: 0.14,
+            g: 0.17,
+            b: 0.24,
+            a: alpha,
+        };
+        let blade_edge = D2D1_COLOR_F {
+            r: 0.52,
+            g: 0.60,
+            b: 0.74,
+            a: alpha * 0.9,
+        };
+        let crimson_core = D2D1_COLOR_F {
+            r: 0.72,
+            g: 0.22,
+            b: 0.30,
+            a: alpha * 0.85,
+        };
+        let hand_obsidian = D2D1_COLOR_F {
+            r: 0.08,
+            g: 0.10,
+            b: 0.15,
+            a: alpha,
+        };
+
+        let Ok(blade_b) = rt.CreateSolidColorBrush(&blade_dark, None) else { return };
+        let Ok(edge_b) = rt.CreateSolidColorBrush(&blade_edge, None) else { return };
+        let Ok(core_b) = rt.CreateSolidColorBrush(&crimson_core, None) else { return };
+        let Ok(hand_b) = rt.CreateSolidColorBrush(&hand_obsidian, None) else { return };
+
+        // 1. Bilah Besar Demon-Slayer Sword (Danma no Tsurugi)
+        if let Ok(sword_geom) = factory.CreatePathGeometry() {
+            if let Ok(sink) = sword_geom.Open() {
+                // Ujung atas meruncing berat khas greatsword Asta
+                sink.BeginFigure(
+                    D2D_POINT_2F {
+                        x: sword_x,
+                        y: sword_y - 12.5,
+                    },
+                    D2D1_FIGURE_BEGIN_FILLED,
+                );
+                sink.AddLines(&[
+                    D2D_POINT_2F {
+                        x: sword_x + 4.2,
+                        y: sword_y - 7.5,
+                    },
+                    D2D_POINT_2F {
+                        x: sword_x + 3.4,
+                        y: sword_y + 3.5,
+                    },
+                    D2D_POINT_2F {
+                        x: sword_x - 3.4,
+                        y: sword_y + 3.5,
+                    },
+                    D2D_POINT_2F {
+                        x: sword_x - 4.2,
+                        y: sword_y - 7.5,
+                    },
+                ]);
+                sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+                let _ = sink.Close();
+                rt.FillGeometry(&sword_geom, &blade_b, None);
+                rt.DrawGeometry(&sword_geom, &edge_b, 0.9, None);
+            }
+        }
+
+        // Garis urat Anti-Magic di tengah bilah pedang
+        rt.DrawLine(
+            D2D_POINT_2F {
+                x: sword_x,
+                y: sword_y - 10.0,
+            },
+            D2D_POINT_2F {
+                x: sword_x,
+                y: sword_y + 3.0,
+            },
+            &core_b,
+            1.2,
+            None,
+        );
+
+        // Crossguard & Gagang Pedang (Hilt) di bawah bilah
+        rt.DrawLine(
+            D2D_POINT_2F {
+                x: sword_x - 5.5,
+                y: sword_y + 3.8,
+            },
+            D2D_POINT_2F {
+                x: sword_x + 5.5,
+                y: sword_y + 3.8,
+            },
+            &edge_b,
+            1.8,
+            None,
+        );
+        rt.DrawLine(
+            D2D_POINT_2F {
+                x: sword_x,
+                y: sword_y + 4.0,
+            },
+            D2D_POINT_2F {
+                x: sword_x,
+                y: sword_y + 10.5,
+            },
+            &edge_b,
+            2.0,
+            None,
+        );
+
+        // 2. Animasi Tangan Asta (Anti-Magic Claw/Hand) Menjulur & Menangkap Gagang Pedang!
+        if timer >= 1.2 {
+            let reach_progress = if timer < 2.0 {
+                ((timer - 1.2) / 0.8).clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+
+            let hand_top_y =
+                pill_bottom - (pill_bottom - (sword_y + 6.5)) * reach_progress;
+
+            // Lengan bawah menjulur dari tepi bawah pill
+            let arm_rect = D2D1_ROUNDED_RECT {
+                rect: D2D_RECT_F {
+                    left: sword_x - 3.2,
+                    top: hand_top_y,
+                    right: sword_x + 3.2,
+                    bottom: pill_bottom,
+                },
+                radiusX: 2.0,
+                radiusY: 2.0,
+            };
+            rt.FillRoundedRectangle(&arm_rect, &hand_b);
+            rt.DrawRoundedRectangle(&arm_rect, &core_b, 0.9, None);
+
+            // Jari-jari menggenggam gagang saat reach_progress hampir penuh
+            if reach_progress > 0.75 {
+                for f in 0..3 {
+                    let fy = hand_top_y + f as f32 * 1.8;
+                    rt.DrawLine(
+                        D2D_POINT_2F {
+                            x: sword_x - 3.8,
+                            y: fy,
+                        },
+                        D2D_POINT_2F {
+                            x: sword_x + 3.8,
+                            y: fy,
+                        },
+                        &edge_b,
+                        1.2,
+                        None,
+                    );
+                }
+
+                // Efek kilatan tangkapan (Catch Impact Spark!) tepat saat pedang tertangkap
+                if (1.85..=2.35).contains(&timer) {
+                    rt.DrawLine(
+                        D2D_POINT_2F {
+                            x: sword_x - 9.0,
+                            y: sword_y + 6.0,
+                        },
+                        D2D_POINT_2F {
+                            x: sword_x + 9.0,
+                            y: sword_y + 6.0,
+                        },
+                        &core_b,
+                        1.5,
+                        None,
+                    );
+                }
             }
         }
     }
@@ -437,26 +723,35 @@ impl DevilUnionEyes {
                 continue;
             }
 
-            // Warna partikel dominan Charcoal & Cool Steel-Slate agar netral dengan tema laptop biru/abu-abu
-            let color = match spark.kind {
-                0 => D2D1_COLOR_F {
-                    r: 0.12,
-                    g: 0.15,
-                    b: 0.22,
-                    a: spark_alpha * 0.85,
-                },
-                1 => D2D1_COLOR_F {
-                    r: 0.48,
-                    g: 0.56,
-                    b: 0.72,
-                    a: spark_alpha * 0.60,
-                },
-                _ => D2D1_COLOR_F {
-                    r: 0.68,
-                    g: 0.24,
-                    b: 0.32,
+            let color = if self.emerald_blend > 0.5 {
+                // Saat mode Normal Emerald Asta, partikel menjadi kilau Emerald-Mint lembut
+                D2D1_COLOR_F {
+                    r: 0.25,
+                    g: 0.85,
+                    b: 0.65,
                     a: spark_alpha * 0.55,
-                },
+                }
+            } else {
+                match spark.kind {
+                    0 => D2D1_COLOR_F {
+                        r: 0.12,
+                        g: 0.15,
+                        b: 0.22,
+                        a: spark_alpha * 0.85,
+                    },
+                    1 => D2D1_COLOR_F {
+                        r: 0.48,
+                        g: 0.56,
+                        b: 0.72,
+                        a: spark_alpha * 0.60,
+                    },
+                    _ => D2D1_COLOR_F {
+                        r: 0.68,
+                        g: 0.24,
+                        b: 0.32,
+                        a: spark_alpha * 0.55,
+                    },
+                }
             };
 
             if let Ok(brush) = rt.CreateSolidColorBrush(&color, None) {
@@ -475,7 +770,7 @@ impl DevilUnionEyes {
         }
     }
 
-    unsafe fn draw_single_devil_eye(
+    unsafe fn draw_single_asta_eye(
         &self,
         factory: &ID2D1Factory,
         rt: &ID2D1HwndRenderTarget,
@@ -484,121 +779,77 @@ impl DevilUnionEyes {
         side: f32,
         alpha_mult: f32,
     ) {
-        let shift_x = self.look_x * 4.2;
-        let shift_y = self.look_y * 2.2;
+        let shift_x = self.look_x * 4.0;
+        let shift_y = self.look_y * 2.0;
         let ex = base_x + shift_x;
         let ey = base_y + shift_y;
 
-        let eye_rx = 8.2;
-        let eye_ry = (6.2 * self.openness).max(0.6);
+        let eye_rx = 8.0;
+        let eye_ry = (6.0 * self.openness).max(0.6);
 
-        // --- LAYER 1: Neutral Smoky Slate-Wine Outer Glow ---
-        let glow_stops = [
-            D2D1_GRADIENT_STOP {
-                position: 0.0,
-                color: D2D1_COLOR_F {
-                    r: 0.52,
-                    g: 0.22,
-                    b: 0.30,
-                    a: 0.38 * self.aura_intensity * alpha_mult,
-                },
-            },
-            D2D1_GRADIENT_STOP {
-                position: 0.55,
-                color: D2D1_COLOR_F {
-                    r: 0.22,
-                    g: 0.28,
-                    b: 0.42,
-                    a: 0.20 * self.aura_intensity * alpha_mult,
-                },
-            },
-            D2D1_GRADIENT_STOP {
-                position: 1.0,
-                color: D2D1_COLOR_F {
-                    r: 0.0,
-                    g: 0.0,
-                    b: 0.0,
-                    a: 0.0,
-                },
-            },
-        ];
+        let eb = self.emerald_blend.clamp(0.0, 1.0);
 
-        if let Ok(stop_collection) =
-            rt.CreateGradientStopCollection(&glow_stops, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP)
-        {
-            let props = D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES {
-                center: D2D_POINT_2F { x: ex, y: ey },
-                gradientOriginOffset: D2D_POINT_2F { x: 0.0, y: 0.0 },
-                radiusX: eye_rx * 1.75,
-                radiusY: (eye_ry * 1.85).max(3.0),
-            };
-            if let Ok(glow_brush) = rt.CreateRadialGradientBrush(&props, None, &stop_collection) {
-                rt.FillEllipse(
-                    &D2D1_ELLIPSE {
-                        point: D2D_POINT_2F { x: ex, y: ey },
-                        radiusX: eye_rx * 1.75,
-                        radiusY: (eye_ry * 1.85).max(3.0),
-                    },
-                    &glow_brush,
-                );
-            }
-        }
-
-        // Saat berkedip, tampilkan garis tipis Silver-Rose yang elegan
+        // Jika berkedip
         if self.openness < 0.16 {
             let slit_color = D2D1_COLOR_F {
-                r: 0.68,
-                g: 0.32,
-                b: 0.40,
+                r: 0.68 * (1.0 - eb) + 0.25 * eb,
+                g: 0.32 * (1.0 - eb) + 0.85 * eb,
+                b: 0.40 * (1.0 - eb) + 0.60 * eb,
                 a: 0.85 * alpha_mult,
             };
             if let Ok(brush) = rt.CreateSolidColorBrush(&slit_color, None) {
-                let rect = D2D1_ROUNDED_RECT {
-                    rect: D2D_RECT_F {
-                        left: ex - eye_rx,
-                        top: ey - 0.8,
-                        right: ex + eye_rx,
-                        bottom: ey + 0.8,
+                rt.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT {
+                        rect: D2D_RECT_F {
+                            left: ex - eye_rx,
+                            top: ey - 0.8,
+                            right: ex + eye_rx,
+                            bottom: ey + 0.8,
+                        },
+                        radiusX: 0.8,
+                        radiusY: 0.8,
                     },
-                    radiusX: 0.8,
-                    radiusY: 0.8,
-                };
-                rt.FillRoundedRectangle(&rect, &brush);
+                    &brush,
+                );
             }
             return;
         }
 
-        // --- LAYER 2: Muted Wine-Crimson Iris (Kalem & Tidak Mencolok) ---
-        let iris_rx = 6.4;
-        let iris_ry = (5.6 * self.openness).max(1.2);
+        // --- LAYER 1: Iris (Blend Mulus antara Muted Wine-Crimson <-> Bright Emerald Green) ---
+        let iris_rx = 6.3;
+        let iris_ry = (5.5 * self.openness).max(1.2);
+
+        let c0 = D2D1_COLOR_F {
+            r: 0.82 * (1.0 - eb) + 0.28 * eb,
+            g: 0.32 * (1.0 - eb) + 0.92 * eb,
+            b: 0.38 * (1.0 - eb) + 0.64 * eb,
+            a: alpha_mult,
+        };
+        let c1 = D2D1_COLOR_F {
+            r: 0.62 * (1.0 - eb) + 0.12 * eb,
+            g: 0.16 * (1.0 - eb) + 0.68 * eb,
+            b: 0.24 * (1.0 - eb) + 0.48 * eb,
+            a: alpha_mult,
+        };
+        let c2 = D2D1_COLOR_F {
+            r: 0.24 * (1.0 - eb) + 0.05 * eb,
+            g: 0.08 * (1.0 - eb) + 0.32 * eb,
+            b: 0.14 * (1.0 - eb) + 0.25 * eb,
+            a: alpha_mult,
+        };
 
         let iris_stops = [
             D2D1_GRADIENT_STOP {
                 position: 0.0,
-                color: D2D1_COLOR_F {
-                    r: 0.82,
-                    g: 0.32,
-                    b: 0.38,
-                    a: alpha_mult,
-                },
+                color: c0,
             },
             D2D1_GRADIENT_STOP {
                 position: 0.68,
-                color: D2D1_COLOR_F {
-                    r: 0.62,
-                    g: 0.16,
-                    b: 0.24,
-                    a: alpha_mult,
-                },
+                color: c1,
             },
             D2D1_GRADIENT_STOP {
                 position: 1.0,
-                color: D2D1_COLOR_F {
-                    r: 0.24,
-                    g: 0.08,
-                    b: 0.14,
-                    a: alpha_mult,
-                },
+                color: c2,
             },
         ];
 
@@ -626,66 +877,63 @@ impl DevilUnionEyes {
             }
         }
 
-        // --- LAYER 3: Pupil Tanda Plus ('+') Khas Asta Devil Union Mode ---
+        // --- LAYER 2: Pupil ('+' saat Devil Union, Bulat saat Normal Emerald) ---
         let px = base_x + shift_x * 1.18;
         let py = base_y + shift_y * 1.18;
-        let arm_h = 4.6 * self.pupil_scale;
-        let arm_v = (4.4 * self.pupil_scale * self.openness).max(1.0);
-        let half_thick = 1.15 * self.pupil_scale;
+        let pupil_color = D2D1_COLOR_F {
+            r: 0.04,
+            g: 0.05,
+            b: 0.08,
+            a: alpha_mult,
+        };
 
-        // Cincin tepi pupil '+' berwarna Cool Silver-Rose tipis agar bentuk '+' terbaca jelas
-        if let Ok(inner_ring_geom) = self.create_tapered_plus_geometry(
-            factory,
-            px,
-            py,
-            arm_h * 1.14,
-            arm_v * 1.14,
-            half_thick * 1.22,
-        ) {
-            let ring_color = D2D1_COLOR_F {
-                r: 0.85,
-                g: 0.65,
-                b: 0.72,
-                a: 0.55 * alpha_mult,
-            };
-            if let Ok(ring_brush) = rt.CreateSolidColorBrush(&ring_color, None) {
-                rt.FillGeometry(&inner_ring_geom, &ring_brush, None);
+        if eb < 0.65 {
+            // Pupil '+' khas Devil Union
+            let arm_h = 4.6 * self.pupil_scale;
+            let arm_v = (4.4 * self.pupil_scale * self.openness).max(1.0);
+            let half_thick = 1.15 * self.pupil_scale;
+
+            if let Ok(plus_geom) =
+                self.create_tapered_plus_geometry(factory, px, py, arm_h, arm_v, half_thick)
+            {
+                if let Ok(pb) = rt.CreateSolidColorBrush(&pupil_color, None) {
+                    rt.FillGeometry(&plus_geom, &pb, None);
+                }
+            }
+        } else {
+            // Pupil Bulat khas Mata Asli Asta
+            if let Ok(pb) = rt.CreateSolidColorBrush(&pupil_color, None) {
+                rt.FillEllipse(
+                    &D2D1_ELLIPSE {
+                        point: D2D_POINT_2F { x: px, y: py },
+                        radiusX: 2.6 * self.pupil_scale,
+                        radiusY: 2.8 * self.pupil_scale * self.openness,
+                    },
+                    &pb,
+                );
             }
         }
 
-        // Inti pupil '+' Obsidian Black
-        if let Ok(plus_geom) =
-            self.create_tapered_plus_geometry(factory, px, py, arm_h, arm_v, half_thick)
-        {
-            let pupil_color = D2D1_COLOR_F {
-                r: 0.04,
-                g: 0.05,
-                b: 0.08,
-                a: alpha_mult,
-            };
-            if let Ok(pupil_brush) = rt.CreateSolidColorBrush(&pupil_color, None) {
-                rt.FillGeometry(&plus_geom, &pupil_brush, None);
-            }
+        // --- LAYER 3: Upper Eyelid Cut (Serius tajam saat Devil Union, Terbuka ramah saat Normal Emerald) ---
+        if eb < 0.8 {
+            self.draw_sharp_upper_eyelid_mask(
+                factory,
+                rt,
+                ex,
+                ey,
+                iris_rx + 1.5,
+                iris_ry,
+                side,
+                alpha_mult * (1.0 - eb),
+            );
         }
 
-        // --- LAYER 4: Upper Eyelid Cut (Menyatu dengan warna Obsidian Pill #0B0E14) ---
-        self.draw_sharp_upper_eyelid_mask(
-            factory,
-            rt,
-            ex,
-            ey,
-            iris_rx + 1.5,
-            iris_ry,
-            side,
-            alpha_mult,
-        );
-
-        // --- LAYER 5: Cool Ice-Blue / Silver Specular Glint ---
+        // --- LAYER 4: Specular Highlight (Glint) ---
         let glint_color = D2D1_COLOR_F {
-            r: 0.88,
-            g: 0.92,
-            b: 0.98,
-            a: 0.72 * alpha_mult,
+            r: 0.92,
+            g: 0.96,
+            b: 1.0,
+            a: 0.80 * alpha_mult,
         };
         if let Ok(glint_brush) = rt.CreateSolidColorBrush(&glint_color, None) {
             rt.FillEllipse(
@@ -694,8 +942,8 @@ impl DevilUnionEyes {
                         x: px - side * 2.1,
                         y: py - iris_ry * 0.35,
                     },
-                    radiusX: 1.05,
-                    radiusY: 0.75 * self.openness,
+                    radiusX: 1.1 + 0.5 * eb, // Highlight lebih besar berbinar saat mata asli Asta
+                    radiusY: (0.8 + 0.4 * eb) * self.openness,
                 },
                 &glint_brush,
             );
@@ -776,7 +1024,6 @@ impl DevilUnionEyes {
                 sink.EndFigure(D2D1_FIGURE_END_CLOSED);
                 let _ = sink.Close();
 
-                // Warna sama persis dengan Obsidian Slate Pill (#0B0E14)
                 let mask_color = D2D1_COLOR_F {
                     r: 0.043,
                     g: 0.055,
@@ -794,347 +1041,36 @@ impl DevilUnionEyes {
 
 ---
 
-### C. `src/mascot/chibi_liebe.rs` — Komponen Interaktif Chibi Liebe (Selektif pada Music, Pomodoro & Shelf)
-
-Modul baru ini menggambar karakter **Chibi Liebe** (wujud iblis mungil Asta) menggunakan vektor Direct2D dengan warna dominan **Ash-Silver (`#9AA5B8`)** dan **Obsidian Slate (`#161C28`)** yang sangat menyatu dengan tema biru/abu-abu laptopmu.
-
-```rust
-// src/mascot/chibi_liebe.rs
-use windows::Win32::Graphics::Direct2D::Common::{
-    D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED, D2D1_FIGURE_END_CLOSED, D2D_POINT_2F, D2D_RECT_F,
-};
-use windows::Win32::Graphics::Direct2D::{
-    ID2D1Factory, ID2D1HwndRenderTarget, D2D1_ELLIPSE, D2D1_ROUNDED_RECT,
-};
-
-use crate::notch::states::NotchState;
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum LiebeAction {
-    /// Tidak tampil (untuk state Idle, Pet, Lyrics, Water, Todo)
-    Hidden,
-    /// State Music: Duduk santai sambil headbop mengikuti irama musik
-    MusicHeadbop,
-    /// State Pomodoro: Berdiri melipat tangan mengawasi fokus timer
-    PomoFocusGuard,
-    /// State Shelf: Mengintip dari bawah drop-zone siap menangkap file
-    ShelfCatchingFiles,
-}
-
-pub struct ChibiLiebe {
-    pub action: LiebeAction,
-    pub time: f32,
-    /// Timer saat Chibi Liebe diklik/di-poke oleh pengguna (efek loncat & kesal lucu)
-    pub poked_timer: f32,
-    /// Posisi pusat Chibi Liebe terakhir untuk deteksi klik
-    pub last_center: (f32, f32),
-}
-
-impl Default for ChibiLiebe {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ChibiLiebe {
-    pub fn new() -> Self {
-        Self {
-            action: LiebeAction::Hidden,
-            time: 0.0,
-            poked_timer: 0.0,
-            last_center: (0.0, 0.0),
-        }
-    }
-
-    /// Tentukan apakah Chibi Liebe aktif berdasarkan NotchState saat ini (HANYA 3 state)
-    pub fn sync_with_state(&mut self, state: NotchState) {
-        self.action = match state {
-            NotchState::Music => LiebeAction::MusicHeadbop,
-            NotchState::Pomo => LiebeAction::PomoFocusGuard,
-            NotchState::Shelf => LiebeAction::ShelfCatchingFiles,
-            _ => LiebeAction::Hidden,
-        };
-    }
-
-    pub fn is_visible(&self) -> bool {
-        self.action != LiebeAction::Hidden
-    }
-
-    pub fn update(&mut self, dt: f32) {
-        self.time += dt.clamp(0.001, 0.05);
-        if self.poked_timer > 0.0 {
-            self.poked_timer = (self.poked_timer - dt).max(0.0);
-        }
-    }
-
-    /// Cek apakah klik mouse mengenai tubuh Chibi Liebe (radius 22px)
-    pub fn handle_click(&mut self, click_x: f32, click_y: f32) -> bool {
-        if !self.is_visible() {
-            return false;
-        }
-        let dx = click_x - self.last_center.0;
-        let dy = click_y - self.last_center.1;
-        if (dx * dx + dy * dy).sqrt() <= 22.0 {
-            self.poked_timer = 0.85; // Animasi kesal/kaget selama 0.85 detik
-            return true;
-        }
-        false
-    }
-
-    pub fn render(
-        &mut self,
-        factory: &ID2D1Factory,
-        rt: &ID2D1HwndRenderTarget,
-        pill_rect: D2D_RECT_F,
-        alpha: f32,
-    ) {
-        if !self.is_visible() || alpha <= 0.05 {
-            return;
-        }
-
-        // Tentukan koordinat anchor Chibi Liebe berdasarkan fitur aktif
-        let (base_x, base_y) = match self.action {
-            LiebeAction::MusicHeadbop => (pill_rect.right - 38.0, pill_rect.bottom - 34.0),
-            LiebeAction::PomoFocusGuard => (pill_rect.right - 42.0, pill_rect.bottom - 36.0),
-            LiebeAction::ShelfCatchingFiles => (
-                (pill_rect.left + pill_rect.right) * 0.5 + 125.0,
-                pill_rect.bottom - 30.0,
-            ),
-            LiebeAction::Hidden => return,
-        };
-
-        // Offset animasi per pose
-        let (bob_x, bob_y, wing_flap) = if self.poked_timer > 0.0 {
-            let jump = (self.poked_timer * 18.0).sin().abs() * -6.5;
-            (0.0, jump, (self.time * 28.0).sin() * 5.0)
-        } else {
-            match self.action {
-                LiebeAction::MusicHeadbop => {
-                    // Mengangguk ritmis (~120 BPM)
-                    let beat = (self.time * 6.2).sin();
-                    (beat * 1.5, beat.abs() * -3.2, (self.time * 12.4).cos() * 2.5)
-                }
-                LiebeAction::PomoFocusGuard => {
-                    // Bernapas tenang & mengawasi
-                    let breath = (self.time * 2.4).sin();
-                    (0.0, breath * -1.2, breath * 1.0)
-                }
-                LiebeAction::ShelfCatchingFiles => {
-                    // Bergoyang antusias menunggu drop file
-                    let sway = (self.time * 4.5).sin();
-                    (sway * 2.2, (self.time * 9.0).cos() * -1.5, sway * 3.0)
-                }
-                LiebeAction::Hidden => (0.0, 0.0, 0.0),
-            }
-        };
-
-        let cx = base_x + bob_x;
-        let cy = base_y + bob_y;
-        self.last_center = (cx, cy);
-
-        unsafe {
-            // Palet Chibi Liebe (Neutral Cool Grey, Ash Silver, Obsidian & Muted Wine)
-            let obsidian_body = D2D1_COLOR_F { r: 0.09, g: 0.11, b: 0.16, a: alpha };
-            let slate_outline = D2D1_COLOR_F { r: 0.32, g: 0.39, b: 0.52, a: alpha * 0.85 };
-            let ash_silver_hair = D2D1_COLOR_F { r: 0.62, g: 0.68, b: 0.78, a: alpha };
-            let skin_grey = D2D1_COLOR_F { r: 0.78, g: 0.82, b: 0.88, a: alpha };
-            let horn_dark = D2D1_COLOR_F { r: 0.06, g: 0.07, b: 0.10, a: alpha };
-            let muted_crimson = D2D1_COLOR_F { r: 0.72, g: 0.22, b: 0.30, a: alpha };
-
-            let Ok(body_brush) = rt.CreateSolidColorBrush(&obsidian_body, None) else { return };
-            let Ok(outline_brush) = rt.CreateSolidColorBrush(&slate_outline, None) else { return };
-            let Ok(hair_brush) = rt.CreateSolidColorBrush(&ash_silver_hair, None) else { return };
-            let Ok(skin_brush) = rt.CreateSolidColorBrush(&skin_grey, None) else { return };
-            let Ok(horn_brush) = rt.CreateSolidColorBrush(&horn_dark, None) else { return };
-            let Ok(eye_brush) = rt.CreateSolidColorBrush(&muted_crimson, None) else { return };
-
-            // 1. Sayap Mungil & Ekor Panah di Belakang Tubuh
-            for side in [-1.0_f32, 1.0_f32] {
-                if let Ok(wing_geom) = factory.CreatePathGeometry() {
-                    if let Ok(sink) = wing_geom.Open() {
-                        sink.BeginFigure(
-                            D2D_POINT_2F { x: cx + side * 4.0, y: cy + 5.0 },
-                            D2D1_FIGURE_BEGIN_FILLED,
-                        );
-                        sink.AddLines(&[
-                            D2D_POINT_2F {
-                                x: cx + side * 13.5,
-                                y: cy + 1.0 - wing_flap,
-                            },
-                            D2D_POINT_2F {
-                                x: cx + side * 11.0,
-                                y: cy + 8.5 - wing_flap * 0.5,
-                            },
-                            D2D_POINT_2F { x: cx + side * 4.5, y: cy + 9.0 },
-                        ]);
-                        sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-                        let _ = sink.Close();
-                        rt.FillGeometry(&wing_geom, &body_brush, None);
-                        rt.DrawGeometry(&wing_geom, &outline_brush, 0.9, None);
-                    }
-                }
-            }
-
-            // 2. Torso Mungil Chibi
-            let torso_rect = D2D1_ROUNDED_RECT {
-                rect: D2D_RECT_F {
-                    left: cx - 5.5,
-                    top: cy + 3.5,
-                    right: cx + 5.5,
-                    bottom: cy + 14.5,
-                },
-                radiusX: 3.5,
-                radiusY: 3.5,
-            };
-            rt.FillRoundedRectangle(&torso_rect, &body_brush);
-            rt.DrawRoundedRectangle(&torso_rect, &outline_brush, 0.9, None);
-
-            // Pose tangan sesuai state
-            match self.action {
-                LiebeAction::ShelfCatchingFiles => {
-                    // Kedua tangan diangkat ke atas siap menangkap file
-                    for side in [-1.0_f32, 1.0_f32] {
-                        rt.DrawLine(
-                            D2D_POINT_2F { x: cx + side * 5.0, y: cy + 6.0 },
-                            D2D_POINT_2F { x: cx + side * 10.5, y: cy - 1.0 },
-                            &outline_brush,
-                            2.2,
-                            None,
-                        );
-                    }
-                }
-                LiebeAction::PomoFocusGuard => {
-                    // Tangan dilipat di dada (crossed arms)
-                    rt.DrawLine(
-                        D2D_POINT_2F { x: cx - 4.5, y: cy + 7.5 },
-                        D2D_POINT_2F { x: cx + 4.5, y: cy + 7.5 },
-                        &outline_brush,
-                        2.4,
-                        None,
-                    );
-                }
-                _ => {}
-            }
-
-            // 3. Kepala Chibi Bulat
-            let head_ellipse = D2D1_ELLIPSE {
-                point: D2D_POINT_2F { x: cx, y: cy - 2.5 },
-                radiusX: 8.5,
-                radiusY: 7.5,
-            };
-            rt.FillEllipse(&head_ellipse, &skin_brush);
-
-            // 4. Rambut Runcing Ash-Silver Khas Liebe
-            if let Ok(hair_geom) = factory.CreatePathGeometry() {
-                if let Ok(sink) = hair_geom.Open() {
-                    sink.BeginFigure(
-                        D2D_POINT_2F { x: cx - 9.5, y: cy - 3.0 },
-                        D2D1_FIGURE_BEGIN_FILLED,
-                    );
-                    sink.AddLines(&[
-                        D2D_POINT_2F { x: cx - 11.5, y: cy - 7.5 },
-                        D2D_POINT_2F { x: cx - 6.5, y: cy - 8.5 },
-                        D2D_POINT_2F { x: cx - 4.0, y: cy - 12.0 },
-                        D2D_POINT_2F { x: cx, y: cy - 9.5 },
-                        D2D_POINT_2F { x: cx + 4.0, y: cy - 12.0 },
-                        D2D_POINT_2F { x: cx + 6.5, y: cy - 8.5 },
-                        D2D_POINT_2F { x: cx + 11.5, y: cy - 7.5 },
-                        D2D_POINT_2F { x: cx + 9.5, y: cy - 3.0 },
-                        D2D_POINT_2F { x: cx + 4.5, y: cy - 5.5 },
-                        D2D_POINT_2F { x: cx, y: cy - 3.5 },
-                        D2D_POINT_2F { x: cx - 4.5, y: cy - 5.5 },
-                    ]);
-                    sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-                    let _ = sink.Close();
-                    rt.FillGeometry(&hair_geom, &hair_brush, None);
-                }
-            }
-
-            // 5. Sepasang Tanduk Melengkung di Kepala
-            for side in [-1.0_f32, 1.0_f32] {
-                if let Ok(horn_geom) = factory.CreatePathGeometry() {
-                    if let Ok(sink) = horn_geom.Open() {
-                        sink.BeginFigure(
-                            D2D_POINT_2F { x: cx + side * 4.5, y: cy - 8.5 },
-                            D2D1_FIGURE_BEGIN_FILLED,
-                        );
-                        sink.AddLines(&[
-                            D2D_POINT_2F { x: cx + side * 9.5, y: cy - 15.5 },
-                            D2D_POINT_2F { x: cx + side * 7.5, y: cy - 8.0 },
-                        ]);
-                        sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-                        let _ = sink.Close();
-                        rt.FillGeometry(&horn_geom, &horn_brush, None);
-                        rt.DrawGeometry(&horn_geom, &outline_brush, 0.8, None);
-                    }
-                }
-            }
-
-            // 6. Mata Deadpan/Smug & Garis Pipi Khas Liebe
-            for side in [-1.0_f32, 1.0_f32] {
-                let ex = cx + side * 3.4;
-                let ey = cy - 1.5;
-                rt.FillEllipse(
-                    &D2D1_ELLIPSE {
-                        point: D2D_POINT_2F { x: ex, y: ey },
-                        radiusX: 1.5,
-                        radiusY: if self.poked_timer > 0.0 { 1.8 } else { 1.1 },
-                    },
-                    &eye_brush,
-                );
-                // Garis hitam vertikal tipis di bawah mata khas Liebe
-                rt.DrawLine(
-                    D2D_POINT_2F { x: ex, y: ey + 1.2 },
-                    D2D_POINT_2F { x: ex, y: ey + 3.4 },
-                    &horn_brush,
-                    0.9,
-                    None,
-                );
-            }
-
-            // 7. Jika baru diklik (Poked): gambar simbol kesal lucu di atas kepala
-            if self.poked_timer > 0.0 {
-                let ax = cx + 9.0;
-                let ay = cy - 13.0;
-                rt.DrawLine(
-                    D2D_POINT_2F { x: ax - 2.5, y: ay },
-                    D2D_POINT_2F { x: ax + 2.5, y: ay },
-                    &eye_brush,
-                    1.3,
-                    None,
-                );
-                rt.DrawLine(
-                    D2D_POINT_2F { x: ax, y: ay - 2.5 },
-                    D2D_POINT_2F { x: ax, y: ay + 2.5 },
-                    &eye_brush,
-                    1.3,
-                    None,
-                );
-            }
-        }
-    }
-}
-```
-
----
-
-### D. `src/notch/states.rs` — Mesin Fisika Pegas (*Spring-Damper*) + Sinkronisasi Mata Asta & Chibi Liebe
+### B. `src/notch/states.rs` — State Machine Lengkap + Hardware Overlays (Volume, Brightness, CapsLock, Charging, Headphones) + Kontrol Media GSMTC
 
 ```rust
 // src/notch/states.rs
 use crate::mascot::chibi_liebe::ChibiLiebe;
 use crate::mascot::eyes::DevilUnionEyes;
+use windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager;
+use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
+use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotchState {
-    Pet,    // Idle mascot: Mata Asta Devil Union Mode
-    Idle,   // Closed notch dengan jam/baterai
-    Music,  // Expanded music player (+ Chibi Liebe Headbop)
-    Lyrics, // Split / wide synced lyrics (Tanpa Chibi Liebe - bersih)
-    Pomo,   // Pomodoro focus timer (+ Chibi Liebe FocusGuard)
-    Water,  // Water reminder tracker (Tanpa Chibi Liebe)
-    Shelf,  // Drag & drop file shelf (+ Chibi Liebe CatchingFiles)
-    Todo,   // Task list (Tanpa Chibi Liebe)
+    Pet,    // Idle mascot: Mata Asta (Devil Union <-> Normal Emerald + Floating Sword)
+    Idle,   // Closed notch dengan Jam Digital & Baterai
+    Music,  // Tab 0: Music Player + Controls
+    Lyrics, // Tab 1: Synced Lyrics
+    Pomo,   // Tab 2: Pomodoro Focus Timer
+    Water,  // Tab 3: Water Reminder & Hourly Chart
+    Shelf,  // Tab 4: File Shelf Drag & Drop
+    Todo,   // Tab 5: To-Do List
+}
+
+/// Pop-up Overlay sementara seperti di Nusa Original (Volume, Brightness, CapsLock, Charging, Headphones)
+#[derive(Debug, Clone, PartialEq)]
+pub enum OverlayKind {
+    Volume(u8),
+    Brightness(u8),
+    CapsLock(bool),
+    Charging { percent: u8, plugged: bool },
+    Headphones { name: String, percent: u8 },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1190,6 +1126,7 @@ pub struct NotchController {
     pub is_hovered: bool,
     pub minimal_mode: bool,
     pub mascot_enabled: bool,
+    pub anim_time: f32,
 
     pub width: SpringValue,
     pub height: SpringValue,
@@ -1199,43 +1136,160 @@ pub struct NotchController {
     pub closed_quiet_timer: f32,
     pub hover_grace_timer: f32,
 
+    // --- Pop-up Overlay (Volume, Brightness, CapsLock, Charging, Headphones) ---
+    pub active_overlay: Option<OverlayKind>,
+    pub overlay_timer: f32,
+
+    // --- Status Baterai & Charger Sistem ---
+    pub battery_percent: u8,
+    pub is_charging: bool,
+    power_poll_timer: f32,
+
+    // --- Data Fitur 1: Music ---
+    pub media_title: String,
+    pub media_artist: String,
+    pub media_playing: bool,
+    pub media_progress: f32,
+    pub media_elapsed_secs: u32,
+    pub media_total_secs: u32,
+
+    // --- Data Fitur 2: Synced Lyrics ---
+    pub lyrics_lines: Vec<String>,
+    pub active_lyric_idx: usize,
+
+    // --- Data Fitur 3: Pomodoro Timer ---
+    pub pomo_remaining_secs: u32,
+    pub pomo_total_secs: u32,
+    pub pomo_running: bool,
+    pub pomo_is_break: bool,
+    pomo_accum: f32,
+
+    // --- Data Fitur 4: Water Tracker ---
+    pub water_current_ml: u32,
+    pub water_goal_ml: u32,
+    pub water_cup_ml: u32,
+    pub water_hourly_ml: [u32; 6],
+
+    // --- Data Fitur 5: File Shelf ---
+    pub shelf_files: Vec<(String, String)>,
+
+    // --- Data Fitur 6: To-Do List ---
+    pub todos: Vec<(String, bool)>,
+
+    // --- Maskot ---
     pub devil_eyes: DevilUnionEyes,
     pub chibi_liebe: ChibiLiebe,
 }
 
 impl NotchController {
     pub fn new() -> Self {
-        Self {
+        let (bat_pct, charging) = Self::read_windows_power();
+        let mut ctrl = Self {
             state: NotchState::Pet,
             last_expanded_tab: NotchState::Music,
             is_hovered: false,
             minimal_mode: false,
             mascot_enabled: true,
-            width: SpringValue::new(168.0, 310.0, 26.0),
+            anim_time: 0.0,
+            width: SpringValue::new(184.0, 310.0, 26.0),
             height: SpringValue::new(34.0, 310.0, 26.0),
-            corner_radius: SpringValue::new(17.0, 310.0, 26.0),
+            corner_radius: SpringValue::new(16.0, 310.0, 26.0),
             content_alpha: SpringValue::new(1.0, 240.0, 28.0),
             closed_quiet_timer: 0.0,
             hover_grace_timer: 0.0,
+
+            active_overlay: None,
+            overlay_timer: 0.0,
+            battery_percent: bat_pct,
+            is_charging: charging,
+            power_poll_timer: 0.0,
+
+            media_title: String::from("Haruka Mirai (Anti-Magic Edit)"),
+            media_artist: String::from("Kankaku Piero · Black Clover OP 1"),
+            media_playing: true,
+            media_progress: 0.42,
+            media_elapsed_secs: 84,
+            media_total_secs: 200,
+
+            lyrics_lines: vec![
+                String::from("♪ Calling out through the darkened sky"),
+                String::from("Even without magic, I'll surpass my limits right here!"),
+                String::from("Unite the shadows, carve the path ahead"),
+                String::from("Haruka mirai e — never giving up is my magic"),
+            ],
+            active_lyric_idx: 1,
+
+            pomo_remaining_secs: 25 * 60,
+            pomo_total_secs: 25 * 60,
+            pomo_running: false,
+            pomo_is_break: false,
+            pomo_accum: 0.0,
+
+            water_current_ml: 750,
+            water_goal_ml: 1500,
+            water_cup_ml: 250,
+            water_hourly_ml: [250, 250, 0, 250, 0, 0],
+
+            shelf_files: vec![
+                (String::from("ARCHITECTURE.md"), String::from("4.2 KB · Markdown")),
+                (String::from("nusa_config.toml"), String::from("1.8 KB · Config")),
+            ],
+
+            todos: vec![
+                (String::from("Integrasi mata Asta Devil Union & Emerald"), true),
+                (String::from("Bentuk notch menyatu bezel atas laptop"), true),
+                (String::from("Uji Volume, Brightness, Charging & Music"), false),
+            ],
+
             devil_eyes: DevilUnionEyes::new(),
             chibi_liebe: ChibiLiebe::new(),
+        };
+        ctrl.chibi_liebe.sync_with_state(ctrl.state);
+        ctrl
+    }
+
+    fn read_windows_power() -> (u8, bool) {
+        unsafe {
+            let mut status = SYSTEM_POWER_STATUS::default();
+            if GetSystemPowerStatus(&mut status).is_ok() {
+                let pct = if status.BatteryLifePercent <= 100 {
+                    status.BatteryLifePercent
+                } else {
+                    100
+                };
+                let charging = status.ACLineStatus == 1;
+                (pct, charging)
+            } else {
+                (100, false)
+            }
+        }
+    }
+
+    /// Tampilkan pop-up overlay (Volume, Brightness, CapsLock, Charging, Headphones)
+    pub fn trigger_overlay(&mut self, kind: OverlayKind) {
+        self.active_overlay = Some(kind);
+        self.overlay_timer = 2.4;
+        if !self.is_hovered {
+            self.width.set_target(256.0);
+            self.height.set_target(42.0);
+            self.corner_radius.set_target(18.0);
         }
     }
 
     pub fn target_dimensions_for(state: NotchState, minimal_mode: bool) -> (f32, f32, f32) {
         if minimal_mode && matches!(state, NotchState::Pet | NotchState::Idle) {
-            return (120.0, 6.0, 3.0);
+            return (130.0, 6.0, 3.0);
         }
 
         match state {
-            NotchState::Pet => (164.0, 34.0, 17.0),
-            NotchState::Idle => (186.0, 34.0, 17.0),
-            NotchState::Music => (390.0, 148.0, 26.0),
-            NotchState::Lyrics => (470.0, 168.0, 28.0),
-            NotchState::Pomo => (370.0, 144.0, 26.0),
-            NotchState::Water => (380.0, 156.0, 26.0),
-            NotchState::Shelf => (420.0, 172.0, 28.0),
-            NotchState::Todo => (390.0, 184.0, 28.0),
+            NotchState::Pet => (184.0, 34.0, 16.0),
+            NotchState::Idle => (204.0, 34.0, 16.0),
+            NotchState::Music => (430.0, 150.0, 22.0),
+            NotchState::Lyrics => (465.0, 158.0, 22.0),
+            NotchState::Pomo => (410.0, 148.0, 22.0),
+            NotchState::Water => (420.0, 152.0, 22.0),
+            NotchState::Shelf => (440.0, 160.0, 22.0),
+            NotchState::Todo => (430.0, 164.0, 22.0),
         }
     }
 
@@ -1271,10 +1325,45 @@ impl NotchController {
     }
 
     pub fn update(&mut self, dt: f32, cursor_in_pill: bool, cursor_offset: Option<(f32, f32)>) {
+        self.anim_time += dt.clamp(0.001, 0.05);
+
+        // 1. Poll status charger & baterai setiap 2.0 detik
+        self.power_poll_timer += dt;
+        if self.power_poll_timer >= 2.0 {
+            self.power_poll_timer = 0.0;
+            let (pct, charging) = Self::read_windows_power();
+            if charging != self.is_charging {
+                self.is_charging = charging;
+                self.battery_percent = pct;
+                self.trigger_overlay(OverlayKind::Charging {
+                    percent: pct,
+                    plugged: charging,
+                });
+            } else {
+                self.battery_percent = pct;
+            }
+        }
+
+        // 2. Kurangi timer pop-up overlay jika sedang tampil
+        if self.active_overlay.is_some() {
+            self.overlay_timer -= dt;
+            if self.overlay_timer <= 0.0 {
+                self.active_overlay = None;
+                if !self.is_hovered {
+                    let (tw, th, tr) = Self::target_dimensions_for(self.state, self.minimal_mode);
+                    self.width.set_target(tw);
+                    self.height.set_target(th);
+                    self.corner_radius.set_target(tr);
+                }
+            }
+        }
+
+        // 3. Hover buka/tutup otomatis
         if cursor_in_pill {
-            self.hover_grace_timer = 0.12;
+            self.hover_grace_timer = 0.14;
             if !self.is_hovered {
                 self.is_hovered = true;
+                self.active_overlay = None;
                 self.devil_eyes.trigger_wake_surge();
                 self.transition_to(self.last_expanded_tab);
             }
@@ -1283,17 +1372,37 @@ impl NotchController {
             if self.hover_grace_timer <= 0.0 {
                 self.is_hovered = false;
                 self.closed_quiet_timer = 0.0;
-                if self.mascot_enabled {
-                    self.transition_to(NotchState::Pet);
-                } else {
-                    self.transition_to(NotchState::Idle);
-                }
+                // Saat baru ditutup, tampilkan jam & baterai (Idle) selama 3.5 detik, lalu masuk ke Mata Asta (Pet)
+                self.transition_to(NotchState::Idle);
             }
         } else if self.state == NotchState::Idle && self.mascot_enabled {
             self.closed_quiet_timer += dt;
-            if self.closed_quiet_timer >= 5.0 {
+            if self.closed_quiet_timer >= 3.5 {
                 self.transition_to(NotchState::Pet);
             }
+        }
+
+        // 4. Countdown Pomodoro
+        if self.pomo_running {
+            self.pomo_accum += dt;
+            if self.pomo_accum >= 1.0 {
+                self.pomo_accum -= 1.0;
+                if self.pomo_remaining_secs > 0 {
+                    self.pomo_remaining_secs -= 1;
+                } else {
+                    self.pomo_is_break = !self.pomo_is_break;
+                    self.pomo_total_secs = if self.pomo_is_break { 5 * 60 } else { 25 * 60 };
+                    self.pomo_remaining_secs = self.pomo_total_secs;
+                }
+            }
+        }
+
+        // 5. Progress bar musik
+        if self.media_playing && self.media_total_secs > 0 {
+            let next_prog = self.media_progress + (dt / self.media_total_secs as f32);
+            self.media_progress = if next_prog > 1.0 { 0.0 } else { next_prog };
+            self.media_elapsed_secs =
+                (self.media_progress * self.media_total_secs as f32) as u32;
         }
 
         self.width.update(dt);
@@ -1310,71 +1419,193 @@ impl NotchController {
         }
     }
 
-    pub fn is_animating(&self) -> bool {
-        !self.width.is_settled()
-            || !self.height.is_settled()
-            || !self.corner_radius.is_settled()
-            || !self.content_alpha.is_settled()
-            || self.state == NotchState::Pet
-            || self.chibi_liebe.is_visible()
+    /// Kirim perintah kontrol media sesungguhnya ke Windows GSMTC (Spotify / Browser / Apple Music)
+    fn send_system_media_command(cmd: &'static str) {
+        std::thread::spawn(move || {
+            if let Ok(op) = GlobalSystemMediaTransportControlsSessionManager::RequestAsync() {
+                if let Ok(manager) = op.get() {
+                    if let Ok(session) = manager.GetCurrentSession() {
+                        match cmd {
+                            "toggle" => {
+                                let _ = session.TryTogglePlayPauseAsync();
+                            }
+                            "next" => {
+                                let _ = session.TrySkipNextAsync();
+                            }
+                            "prev" => {
+                                let _ = session.TrySkipPreviousAsync();
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    pub fn handle_panel_click(&mut self, x: f32, y: f32, pill_rect: D2D_RECT_F, dpi: f32) -> bool {
+        let lx = (x - pill_rect.left) / dpi;
+        let ly = (y - pill_rect.top) / dpi;
+
+        match self.state {
+            NotchState::Music => {
+                if (98.0..=142.0).contains(&ly) {
+                    if (110.0..=146.0).contains(&lx) {
+                        Self::send_system_media_command("prev");
+                        self.media_progress = 0.0;
+                        self.media_elapsed_secs = 0;
+                        return true;
+                    } else if (152.0..=192.0).contains(&lx) {
+                        Self::send_system_media_command("toggle");
+                        self.media_playing = !self.media_playing;
+                        return true;
+                    } else if (198.0..=234.0).contains(&lx) {
+                        Self::send_system_media_command("next");
+                        self.media_progress = 0.0;
+                        self.media_elapsed_secs = 0;
+                        return true;
+                    } else if (246.0..=312.0).contains(&lx) {
+                        self.transition_to(NotchState::Lyrics);
+                        return true;
+                    }
+                }
+            }
+            NotchState::Lyrics => {
+                if ly > 36.0 && !self.lyrics_lines.is_empty() {
+                    self.active_lyric_idx = (self.active_lyric_idx + 1) % self.lyrics_lines.len();
+                    return true;
+                }
+            }
+            NotchState::Pomo => {
+                if (90.0..=136.0).contains(&ly) {
+                    if (128.0..=218.0).contains(&lx) {
+                        self.pomo_running = !self.pomo_running;
+                        return true;
+                    } else if (226.0..=294.0).contains(&lx) {
+                        self.pomo_running = false;
+                        self.pomo_remaining_secs = self.pomo_total_secs;
+                        return true;
+                    }
+                }
+            }
+            NotchState::Water => {
+                if (44.0..=104.0).contains(&ly) && (240.0..=398.0).contains(&lx) {
+                    self.water_current_ml =
+                        (self.water_current_ml + self.water_cup_ml).min(self.water_goal_ml * 2);
+                    let slot = ((self.water_current_ml / self.water_cup_ml) as usize) % 6;
+                    self.water_hourly_ml[slot] += self.water_cup_ml;
+                    return true;
+                }
+            }
+            NotchState::Todo => {
+                if ly >= 38.0 {
+                    let row = ((ly - 38.0) / 33.0) as usize;
+                    if let Some(item) = self.todos.get_mut(row) {
+                        item.1 = !item.1;
+                        return true;
+                    }
+                }
+            }
+            _ => {}
+        }
+        false
     }
 }
 ```
 
 ---
 
-### E. `src/notch/renderer.rs` — Direct2D Renderer dengan Tema Neutral Slate-Blue Anti-Magic & Chibi Liebe
+### C. `src/notch/renderer.rs` — Bezel-Connected Notch Geometry + Full Panels + Pop-Up Overlays
+
+Perhatikan fungsi **`create_bezel_notch_geometry`** di bawah ini: bagian atas notch (`top = 0.0`) kini **rata dan menempel penuh ke bezel atas layar laptop** dengan lekukan bahu halus (*top fillet*), sedangkan sudut bawahnya tetap *rounded* mulus baik saat tertutup maupun saat terbuka lebar!
 
 ```rust
 // src/notch/renderer.rs
+use chrono::Local;
+use windows::core::w;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Direct2D::Common::{
-    D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT, D2D_POINT_2F, D2D_RECT_F,
-    D2D_SIZE_U,
+    D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_BEZIER_SEGMENT, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED,
+    D2D1_FIGURE_END_CLOSED, D2D1_PIXEL_FORMAT, D2D_POINT_2F, D2D_RECT_F, D2D_SIZE_U,
 };
 use windows::Win32::Graphics::Direct2D::*;
+use windows::Win32::Graphics::DirectWrite::{
+    DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED,
+    DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_BOLD,
+    DWRITE_FONT_WEIGHT_REGULAR, DWRITE_FONT_WEIGHT_SEMI_BOLD, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
+    DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING,
+};
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT};
 
-use super::states::{NotchController, NotchState};
+use super::states::{NotchController, NotchState, OverlayKind};
 
-/// Konstanta Palet Tema Neutral Slate-Blue Anti-Magic
 pub struct AntiMagicNeutralPalette;
 
 impl AntiMagicNeutralPalette {
-    /// Obsidian Slate Background (#0B0E14)
     pub const PILL_BG: D2D1_COLOR_F = D2D1_COLOR_F {
         r: 0.043,
         g: 0.055,
         b: 0.078,
-        a: 0.97,
+        a: 0.98,
     };
-    /// Dark Slate Card / Inner Surface (#131822)
     pub const CARD_SURFACE: D2D1_COLOR_F = D2D1_COLOR_F {
         r: 0.075,
         g: 0.094,
         b: 0.133,
-        a: 0.92,
+        a: 0.95,
     };
-    /// Cool Steel Border (#263042)
+    pub const CARD_ELEVATED: D2D1_COLOR_F = D2D1_COLOR_F {
+        r: 0.110,
+        g: 0.137,
+        b: 0.192,
+        a: 0.95,
+    };
     pub const STEEL_BORDER: D2D1_COLOR_F = D2D1_COLOR_F {
-        r: 0.149,
-        g: 0.188,
-        b: 0.259,
-        a: 0.55,
+        r: 0.180,
+        g: 0.230,
+        b: 0.320,
+        a: 0.72,
     };
-    /// Steel Blue Accent (#6488EA)
     pub const ACCENT_BLUE: D2D1_COLOR_F = D2D1_COLOR_F {
         r: 0.392,
         g: 0.533,
         b: 0.918,
+        a: 1.0,
+    };
+    pub const ACCENT_EMERALD: D2D1_COLOR_F = D2D1_COLOR_F {
+        r: 0.180,
+        g: 0.880,
+        b: 0.580,
+        a: 1.0,
+    };
+    pub const ACCENT_WINE: D2D1_COLOR_F = D2D1_COLOR_F {
+        r: 0.680,
+        g: 0.220,
+        b: 0.300,
         a: 0.95,
+    };
+    pub const TEXT_PRIMARY: D2D1_COLOR_F = D2D1_COLOR_F {
+        r: 0.930,
+        g: 0.950,
+        b: 0.980,
+        a: 1.0,
+    };
+    pub const TEXT_SECONDARY: D2D1_COLOR_F = D2D1_COLOR_F {
+        r: 0.580,
+        g: 0.650,
+        b: 0.760,
+        a: 1.0,
     };
 }
 
 pub struct NotchRenderer {
     pub factory: ID2D1Factory,
+    pub dwrite: IDWriteFactory,
     pub rt: ID2D1HwndRenderTarget,
+    pub fmt_title: IDWriteTextFormat,
+    pub fmt_body: IDWriteTextFormat,
+    pub fmt_caption: IDWriteTextFormat,
 }
 
 impl NotchRenderer {
@@ -1382,6 +1613,7 @@ impl NotchRenderer {
         unsafe {
             let factory: ID2D1Factory =
                 D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)?;
+            let dwrite: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
 
             let render_props = D2D1_RENDER_TARGET_PROPERTIES {
                 r#type: D2D1_RENDER_TARGET_TYPE_DEFAULT,
@@ -1397,14 +1629,207 @@ impl NotchRenderer {
 
             let hwnd_props = D2D1_HWND_RENDER_TARGET_PROPERTIES {
                 hwnd,
-                pixelSize: D2D_SIZE_U { width, height },
+                pixelSize: D2D_SIZE_U {
+                    width: width.max(100),
+                    height: height.max(50),
+                },
                 presentOptions: D2D1_PRESENT_OPTIONS_IMMEDIATELY,
             };
 
             let rt = factory.CreateHwndRenderTarget(&render_props, &hwnd_props)?;
             rt.SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 
-            Ok(Self { factory, rt })
+            let fmt_title = dwrite.CreateTextFormat(
+                w!("Segoe UI"),
+                None,
+                DWRITE_FONT_WEIGHT_BOLD,
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                13.0,
+                w!("en-us"),
+            )?;
+
+            let fmt_body = dwrite.CreateTextFormat(
+                w!("Segoe UI"),
+                None,
+                DWRITE_FONT_WEIGHT_REGULAR,
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                11.0,
+                w!("en-us"),
+            )?;
+
+            let fmt_caption = dwrite.CreateTextFormat(
+                w!("Segoe UI"),
+                None,
+                DWRITE_FONT_WEIGHT_SEMI_BOLD,
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                9.5,
+                w!("en-us"),
+            )?;
+
+            Ok(Self {
+                factory,
+                dwrite,
+                rt,
+                fmt_title,
+                fmt_body,
+                fmt_caption,
+            })
+        }
+    }
+
+    /// Geometri Notch yang MENYATU DENGAN BEZEL ATAS LAPTOP (rata di y=0, memiliki bahu halus, dan rounded di bawah)
+    unsafe fn create_bezel_notch_geometry(
+        &self,
+        rect: D2D_RECT_F,
+        bottom_radius: f32,
+    ) -> windows::core::Result<ID2D1PathGeometry> {
+        let geom = self.factory.CreatePathGeometry()?;
+        let sink = geom.Open()?;
+
+        let h = (rect.bottom - rect.top).max(4.0);
+        let r = bottom_radius.min(h * 0.5).max(2.0);
+        let ear = (r * 0.45).min(8.0); // Lekukan bahu atas yang menyatu dengan bezel layar
+
+        // Mulai dari bahu kiri-atas tepat di bezel (top = 0.0)
+        sink.BeginFigure(
+            D2D_POINT_2F {
+                x: rect.left - ear,
+                y: rect.top,
+            },
+            D2D1_FIGURE_BEGIN_FILLED,
+        );
+
+        // Bahu kiri-atas melengkung masuk ke dinding kiri
+        sink.AddBezier(&D2D1_BEZIER_SEGMENT {
+            point1: D2D_POINT_2F {
+                x: rect.left - ear * 0.2,
+                y: rect.top,
+            },
+            point2: D2D_POINT_2F {
+                x: rect.left,
+                y: rect.top + ear * 0.2,
+            },
+            point3: D2D_POINT_2F {
+                x: rect.left,
+                y: rect.top + ear,
+            },
+        });
+
+        // Dinding kiri turun ke sudut kiri-bawah
+        sink.AddLine(D2D_POINT_2F {
+            x: rect.left,
+            y: rect.bottom - r,
+        });
+
+        // Sudut kiri-bawah rounded mulus
+        sink.AddBezier(&D2D1_BEZIER_SEGMENT {
+            point1: D2D_POINT_2F {
+                x: rect.left,
+                y: rect.bottom - r * 0.45,
+            },
+            point2: D2D_POINT_2F {
+                x: rect.left + r * 0.45,
+                y: rect.bottom,
+            },
+            point3: D2D_POINT_2F {
+                x: rect.left + r,
+                y: rect.bottom,
+            },
+        });
+
+        // Garis bawah horizontal ke sudut kanan-bawah
+        sink.AddLine(D2D_POINT_2F {
+            x: rect.right - r,
+            y: rect.bottom,
+        });
+
+        // Sudut kanan-bawah rounded mulus
+        sink.AddBezier(&D2D1_BEZIER_SEGMENT {
+            point1: D2D_POINT_2F {
+                x: rect.right - r * 0.45,
+                y: rect.bottom,
+            },
+            point2: D2D_POINT_2F {
+                x: rect.right,
+                y: rect.bottom - r * 0.45,
+            },
+            point3: D2D_POINT_2F {
+                x: rect.right,
+                y: rect.bottom - r,
+            },
+        });
+
+        // Dinding kanan naik ke bahu kanan-atas
+        sink.AddLine(D2D_POINT_2F {
+            x: rect.right,
+            y: rect.top + ear,
+        });
+
+        // Bahu kanan-atas melengkung menyatu ke bezel layar (top = 0.0)
+        sink.AddBezier(&D2D1_BEZIER_SEGMENT {
+            point1: D2D_POINT_2F {
+                x: rect.right,
+                y: rect.top + ear * 0.2,
+            },
+            point2: D2D_POINT_2F {
+                x: rect.right + ear * 0.2,
+                y: rect.top,
+            },
+            point3: D2D_POINT_2F {
+                x: rect.right + ear,
+                y: rect.top,
+            },
+        });
+
+        sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+        sink.Close()?;
+        Ok(geom)
+    }
+
+    unsafe fn draw_text_left(
+        &self,
+        text: &str,
+        fmt: &IDWriteTextFormat,
+        rect: D2D_RECT_F,
+        color: D2D1_COLOR_F,
+    ) {
+        let _ = fmt.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+        let _ = fmt.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+        let wide: Vec<u16> = text.encode_utf16().collect();
+        if let Ok(brush) = self.rt.CreateSolidColorBrush(&color, None) {
+            self.rt.DrawText(
+                &wide,
+                fmt,
+                &rect,
+                &brush,
+                D2D1_DRAW_TEXT_OPTIONS_CLIP,
+                Default::default(),
+            );
+        }
+    }
+
+    unsafe fn draw_text_centered(
+        &self,
+        text: &str,
+        fmt: &IDWriteTextFormat,
+        rect: D2D_RECT_F,
+        color: D2D1_COLOR_F,
+    ) {
+        let _ = fmt.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+        let _ = fmt.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+        let wide: Vec<u16> = text.encode_utf16().collect();
+        if let Ok(brush) = self.rt.CreateSolidColorBrush(&color, None) {
+            self.rt.DrawText(
+                &wide,
+                fmt,
+                &rect,
+                &brush,
+                D2D1_DRAW_TEXT_OPTIONS_CLIP,
+                Default::default(),
+            );
         }
     }
 
@@ -1415,8 +1840,6 @@ impl NotchRenderer {
             let _ = BeginPaint(hwnd, &mut ps);
 
             self.rt.BeginDraw();
-
-            // 1. Bersihkan canvas transparan penuh
             self.rt.Clear(Some(&D2D1_COLOR_F {
                 r: 0.0,
                 g: 0.0,
@@ -1424,63 +1847,73 @@ impl NotchRenderer {
                 a: 0.0,
             }));
 
-            let rounded_pill = D2D1_ROUNDED_RECT {
-                rect: pill_rect,
-                radiusX: controller.corner_radius.value,
-                radiusY: controller.corner_radius.value,
-            };
-
-            // 2. Gambar latar belakang pill Obsidian Slate (#0B0E14)
-            if let Ok(bg_brush) = self
-                .rt
-                .CreateSolidColorBrush(&AntiMagicNeutralPalette::PILL_BG, None)
+            // 1. Gambar Notch Menyatu dengan Bezel Atas Laptop
+            if let Ok(notch_geom) =
+                self.create_bezel_notch_geometry(pill_rect, controller.corner_radius.value)
             {
-                self.rt.FillRoundedRectangle(&rounded_pill, &bg_brush);
-            }
-
-            // 3. Gambar tepi luar (Cool Steel Grey dengan sedikit denyut Slate-Wine saat mode Pet)
-            let border_color = if controller.state == NotchState::Pet {
-                let pulse = controller.devil_eyes.aura_intensity.clamp(0.3, 1.2);
-                D2D1_COLOR_F {
-                    r: 0.24 * pulse,
-                    g: 0.22,
-                    b: 0.34,
-                    a: 0.45,
+                if let Ok(bg_brush) = self
+                    .rt
+                    .CreateSolidColorBrush(&AntiMagicNeutralPalette::PILL_BG, None)
+                {
+                    self.rt.FillGeometry(&notch_geom, &bg_brush, None);
                 }
-            } else {
-                AntiMagicNeutralPalette::STEEL_BORDER
-            };
 
-            if let Ok(border_brush) = self.rt.CreateSolidColorBrush(&border_color, None) {
-                self.rt
-                    .DrawRoundedRectangle(&rounded_pill, &border_brush, 1.15, None);
+                let border_color = if controller.state == NotchState::Pet {
+                    let pulse = controller.devil_eyes.aura_intensity.clamp(0.4, 1.2);
+                    D2D1_COLOR_F {
+                        r: 0.25 * pulse,
+                        g: 0.24,
+                        b: 0.36,
+                        a: 0.60,
+                    }
+                } else {
+                    AntiMagicNeutralPalette::STEEL_BORDER
+                };
+
+                if let Ok(border_brush) = self.rt.CreateSolidColorBrush(&border_color, None) {
+                    self.rt.DrawGeometry(&notch_geom, &border_brush, 1.15, None);
+                }
             }
 
-            // 4. Render konten berdasarkan state aktif
+            // 2. Jika ada Pop-Up Overlay aktif (Volume, Brightness, CapsLock, Charging, Headphones)
+            if !controller.is_hovered {
+                if let Some(ref overlay) = controller.active_overlay.clone() {
+                    self.draw_system_overlay(overlay, pill_rect);
+                    let _ = self.rt.EndDraw(None, None);
+                    let _ = EndPaint(hwnd, &ps);
+                    return;
+                }
+            }
+
+            // 3. Render State Aktif
             if controller.state == NotchState::Pet && !controller.minimal_mode {
                 let collapse_factor = ((60.0 - controller.height.value) / 26.0).clamp(0.0, 1.0);
-                controller.devil_eyes.render(
-                    &self.factory,
-                    &self.rt,
-                    pill_rect,
-                    collapse_factor,
-                );
+                controller
+                    .devil_eyes
+                    .render(&self.factory, &self.rt, pill_rect, collapse_factor);
+            } else if controller.state == NotchState::Idle && !controller.minimal_mode {
+                // Closed Notch seperti Nusa Original: Jam Digital di Kiri, Status Baterai di Kanan
+                let alpha = ((60.0 - controller.height.value) / 26.0).clamp(0.0, 1.0);
+                self.draw_closed_idle_clock_and_battery(controller, pill_rect, alpha);
             } else if controller.height.value > 65.0 {
-                let content_alpha = controller.content_alpha.value.clamp(0.0, 1.0);
+                let alpha = controller.content_alpha.value.clamp(0.0, 1.0);
+                let card_rect = self.draw_expanded_panel_shell(controller.state, pill_rect, alpha);
 
-                // Gambar indikator bar navigasi atas bertema Slate-Blue
-                self.draw_top_tab_indicator(controller.state, pill_rect, content_alpha);
+                match controller.state {
+                    NotchState::Music => self.draw_music_panel(controller, card_rect, alpha),
+                    NotchState::Lyrics => self.draw_lyrics_panel(controller, card_rect, alpha),
+                    NotchState::Pomo => self.draw_pomo_panel(controller, card_rect, alpha),
+                    NotchState::Water => self.draw_water_panel(controller, card_rect, alpha),
+                    NotchState::Shelf => self.draw_shelf_panel(controller, card_rect, alpha),
+                    NotchState::Todo => self.draw_todo_panel(controller, card_rect, alpha),
+                    _ => {}
+                }
 
-                // Panggil fungsi render konten panel (Music, Lyrics, Pomo, Water, Shelf, Todo) milikmu di sini
-
-                // Render Chibi Liebe secara selektif (HANYA tampil jika state adalah Music, Pomo, atau Shelf)
+                // Chibi Liebe selektif pada Music, Pomo, dan Shelf
                 if controller.mascot_enabled {
-                    controller.chibi_liebe.render(
-                        &self.factory,
-                        &self.rt,
-                        pill_rect,
-                        content_alpha,
-                    );
+                    controller
+                        .chibi_liebe
+                        .render(&self.factory, &self.rt, pill_rect, alpha);
                 }
             }
 
@@ -1489,58 +1922,913 @@ impl NotchRenderer {
         }
     }
 
-    unsafe fn draw_top_tab_indicator(
+    /// Tampilan Closed Idle seperti Nusa Original: Jam Digital + Indikator Baterai/Charging
+    unsafe fn draw_closed_idle_clock_and_battery(
+        &self,
+        ctrl: &NotchController,
+        pill: D2D_RECT_F,
+        alpha: f32,
+    ) {
+        let now_str = Local::now().format("%H:%M").to_string();
+        let mut p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
+        p_col.a *= alpha;
+        let mut s_col = if ctrl.is_charging {
+            AntiMagicNeutralPalette::ACCENT_EMERALD
+        } else {
+            AntiMagicNeutralPalette::TEXT_SECONDARY
+        };
+        s_col.a *= alpha;
+
+        self.draw_text_left(
+            &now_str,
+            &self.fmt_title,
+            D2D_RECT_F {
+                left: pill.left + 16.0,
+                top: pill.top,
+                right: pill.left + 90.0,
+                bottom: pill.bottom,
+            },
+            p_col,
+        );
+
+        let bat_text = if ctrl.is_charging {
+            format!("⚡ {}%", ctrl.battery_percent)
+        } else {
+            format!("{}%", ctrl.battery_percent)
+        };
+        self.draw_text_centered(
+            &bat_text,
+            &self.fmt_caption,
+            D2D_RECT_F {
+                left: pill.right - 72.0,
+                top: pill.top,
+                right: pill.right - 12.0,
+                bottom: pill.bottom,
+            },
+            s_col,
+        );
+    }
+
+    /// Render Pop-up Overlays (Volume, Brightness, CapsLock, Charging, Headphones)
+    unsafe fn draw_system_overlay(&self, overlay: &OverlayKind, pill: D2D_RECT_F) {
+        let p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
+        let accent = AntiMagicNeutralPalette::ACCENT_BLUE;
+        let emerald = AntiMagicNeutralPalette::ACCENT_EMERALD;
+
+        match overlay {
+            OverlayKind::Volume(val) | OverlayKind::Brightness(val) => {
+                let is_vol = matches!(overlay, OverlayKind::Volume(_));
+                let label = if is_vol { "VOL" } else { "BRI" };
+                self.draw_text_left(
+                    label,
+                    &self.fmt_caption,
+                    D2D_RECT_F {
+                        left: pill.left + 16.0,
+                        top: pill.top,
+                        right: pill.left + 56.0,
+                        bottom: pill.bottom,
+                    },
+                    p_col,
+                );
+
+                // Progress bar di tengah
+                let bar_l = pill.left + 56.0;
+                let bar_r = pill.right - 48.0;
+                let bar_cy = (pill.top + pill.bottom) * 0.5;
+                if let Ok(tb) = self.rt.CreateSolidColorBrush(
+                    &D2D1_COLOR_F {
+                        r: 0.20,
+                        g: 0.25,
+                        b: 0.35,
+                        a: 0.7,
+                    },
+                    None,
+                ) {
+                    self.rt.FillRoundedRectangle(
+                        &D2D1_ROUNDED_RECT {
+                            rect: D2D_RECT_F {
+                                left: bar_l,
+                                top: bar_cy - 3.0,
+                                right: bar_r,
+                                bottom: bar_cy + 3.0,
+                            },
+                            radiusX: 3.0,
+                            radiusY: 3.0,
+                        },
+                        &tb,
+                    );
+                }
+                if let Ok(fb) = self.rt.CreateSolidColorBrush(&accent, None) {
+                    let fill_w = (bar_r - bar_l) * ((*val as f32 / 100.0).clamp(0.0, 1.0));
+                    self.rt.FillRoundedRectangle(
+                        &D2D1_ROUNDED_RECT {
+                            rect: D2D_RECT_F {
+                                left: bar_l,
+                                top: bar_cy - 3.0,
+                                right: bar_l + fill_w.max(4.0),
+                                bottom: bar_cy + 3.0,
+                            },
+                            radiusX: 3.0,
+                            radiusY: 3.0,
+                        },
+                        &fb,
+                    );
+                }
+
+                self.draw_text_centered(
+                    &format!("{}%", val),
+                    &self.fmt_caption,
+                    D2D_RECT_F {
+                        left: pill.right - 46.0,
+                        top: pill.top,
+                        right: pill.right - 10.0,
+                        bottom: pill.bottom,
+                    },
+                    p_col,
+                );
+            }
+            OverlayKind::CapsLock(on) => {
+                let txt = if *on {
+                    "CAPS LOCK · ON"
+                } else {
+                    "CAPS LOCK · OFF"
+                };
+                self.draw_text_centered(txt, &self.fmt_title, pill, if *on { accent } else { p_col });
+            }
+            OverlayKind::Charging { percent, plugged } => {
+                let txt = if *plugged {
+                    format!("⚡ Charging · {}%", percent)
+                } else {
+                    format!("Battery · {}%", percent)
+                };
+                self.draw_text_centered(
+                    &txt,
+                    &self.fmt_title,
+                    pill,
+                    if *plugged { emerald } else { p_col },
+                );
+            }
+            OverlayKind::Headphones { name, percent } => {
+                let txt = format!("🎧 {} · {}%", name, percent);
+                self.draw_text_centered(&txt, &self.fmt_title, pill, accent);
+            }
+        }
+    }
+
+    unsafe fn draw_expanded_panel_shell(
         &self,
         state: NotchState,
         pill_rect: D2D_RECT_F,
         alpha: f32,
-    ) {
-        let idx = match state {
+    ) -> D2D_RECT_F {
+        let tabs = ["Music", "Lyrics", "Focus", "Water", "Shelf", "To-Do"];
+        let active_idx = match state {
             NotchState::Music => 0,
             NotchState::Lyrics => 1,
             NotchState::Pomo => 2,
             NotchState::Water => 3,
-            NotchState::Shelf | NotchState::Todo => 4,
-            _ => return,
+            NotchState::Shelf => 4,
+            NotchState::Todo => 5,
+            _ => 0,
         };
 
-        let total_w = pill_rect.right - pill_rect.left;
-        let slot_w = total_w / 5.0;
-        let indicator_x = pill_rect.left + slot_w * (idx as f32 + 0.5);
-        let indicator_y = pill_rect.top + 10.0;
+        let inner_left = pill_rect.left + 14.0;
+        let inner_right = pill_rect.right - 14.0;
+        let slot_w = (inner_right - inner_left) / 6.0;
 
+        for (i, label) in tabs.iter().enumerate() {
+            let slot_left = inner_left + slot_w * i as f32;
+            let slot_right = slot_left + slot_w;
+            let cx = (slot_left + slot_right) * 0.5;
+
+            let is_active = i == active_idx;
+            let mut text_col = if is_active {
+                AntiMagicNeutralPalette::TEXT_PRIMARY
+            } else {
+                AntiMagicNeutralPalette::TEXT_SECONDARY
+            };
+            text_col.a *= if is_active { alpha } else { alpha * 0.75 };
+
+            self.draw_text_centered(
+                label,
+                &self.fmt_caption,
+                D2D_RECT_F {
+                    left: slot_left,
+                    top: pill_rect.top + 3.0,
+                    right: slot_right,
+                    bottom: pill_rect.top + 21.0,
+                },
+                text_col,
+            );
+
+            let line_col = if is_active {
+                let mut c = AntiMagicNeutralPalette::ACCENT_BLUE;
+                c.a *= alpha;
+                c
+            } else {
+                D2D1_COLOR_F {
+                    r: 0.30,
+                    g: 0.36,
+                    b: 0.48,
+                    a: 0.30 * alpha,
+                }
+            };
+
+            if let Ok(brush) = self.rt.CreateSolidColorBrush(&line_col, None) {
+                let half_len = if is_active { 16.0 } else { 6.0 };
+                self.rt.DrawLine(
+                    D2D_POINT_2F {
+                        x: cx - half_len,
+                        y: pill_rect.top + 23.0,
+                    },
+                    D2D_POINT_2F {
+                        x: cx + half_len,
+                        y: pill_rect.top + 23.0,
+                    },
+                    &brush,
+                    2.2,
+                    None,
+                );
+            }
+        }
+
+        let card_rect = D2D_RECT_F {
+            left: inner_left,
+            top: pill_rect.top + 28.0,
+            right: inner_right,
+            bottom: pill_rect.bottom - 10.0,
+        };
+
+        let mut card_color = AntiMagicNeutralPalette::CARD_SURFACE;
+        card_color.a *= alpha;
+        if let Ok(card_brush) = self.rt.CreateSolidColorBrush(&card_color, None) {
+            self.rt.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: card_rect,
+                    radiusX: 14.0,
+                    radiusY: 14.0,
+                },
+                &card_brush,
+            );
+        }
+
+        card_rect
+    }
+
+    unsafe fn draw_music_panel(
+        &self,
+        ctrl: &NotchController,
+        card: D2D_RECT_F,
+        alpha: f32,
+    ) {
+        let art_rect = D2D_RECT_F {
+            left: card.left + 12.0,
+            top: card.top + 12.0,
+            right: card.left + 92.0,
+            bottom: card.top + 92.0,
+        };
+        let mut art_bg = AntiMagicNeutralPalette::CARD_ELEVATED;
+        art_bg.a *= alpha;
+        if let Ok(b) = self.rt.CreateSolidColorBrush(&art_bg, None) {
+            self.rt.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: art_rect,
+                    radiusX: 12.0,
+                    radiusY: 12.0,
+                },
+                &b,
+            );
+        }
+
+        let mut eq_col = AntiMagicNeutralPalette::ACCENT_BLUE;
+        eq_col.a *= alpha;
+        if let Ok(eq_brush) = self.rt.CreateSolidColorBrush(&eq_col, None) {
+            for i in 0..5 {
+                let phase = ctrl.anim_time * 5.5 + i as f32 * 1.1;
+                let h = if ctrl.media_playing {
+                    10.0 + (phase.sin().abs() * 25.0)
+                } else {
+                    6.0
+                };
+                let bx = art_rect.left + 17.0 + i as f32 * 10.0;
+                let by = art_rect.bottom - 16.0;
+                self.rt.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT {
+                        rect: D2D_RECT_F {
+                            left: bx,
+                            top: by - h,
+                            right: bx + 6.0,
+                            bottom: by,
+                        },
+                        radiusX: 3.0,
+                        radiusY: 3.0,
+                    },
+                    &eq_brush,
+                );
+            }
+        }
+
+        let text_left = art_rect.right + 14.0;
+        let text_right = card.right - 56.0;
+        let mut p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
+        p_col.a *= alpha;
+        let mut s_col = AntiMagicNeutralPalette::TEXT_SECONDARY;
+        s_col.a *= alpha;
+
+        self.draw_text_left(
+            &ctrl.media_title,
+            &self.fmt_title,
+            D2D_RECT_F {
+                left: text_left,
+                top: card.top + 10.0,
+                right: text_right,
+                bottom: card.top + 31.0,
+            },
+            p_col,
+        );
+        self.draw_text_left(
+            &ctrl.media_artist,
+            &self.fmt_body,
+            D2D_RECT_F {
+                left: text_left,
+                top: card.top + 30.0,
+                right: text_right,
+                bottom: card.top + 48.0,
+            },
+            s_col,
+        );
+
+        let bar_top = card.top + 56.0;
+        let bar_w = (text_right - text_left).max(10.0);
+        if let Ok(track_b) = self.rt.CreateSolidColorBrush(
+            &D2D1_COLOR_F {
+                r: 0.20,
+                g: 0.25,
+                b: 0.35,
+                a: 0.6 * alpha,
+            },
+            None,
+        ) {
+            self.rt.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: D2D_RECT_F {
+                        left: text_left,
+                        top: bar_top,
+                        right: text_right,
+                        bottom: bar_top + 5.0,
+                    },
+                    radiusX: 2.5,
+                    radiusY: 2.5,
+                },
+                &track_b,
+            );
+        }
+
+        if let Ok(fill_b) = self.rt.CreateSolidColorBrush(&eq_col, None) {
+            let prog_w = (bar_w * ctrl.media_progress.clamp(0.0, 1.0)).max(5.0);
+            self.rt.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: D2D_RECT_F {
+                        left: text_left,
+                        top: bar_top,
+                        right: text_left + prog_w,
+                        bottom: bar_top + 5.0,
+                    },
+                    radiusX: 2.5,
+                    radiusY: 2.5,
+                },
+                &fill_b,
+            );
+        }
+
+        let btn_y = card.top + 82.0;
+        let controls = [
+            (text_left + 16.0, "|<<"),
+            (text_left + 58.0, if ctrl.media_playing { "||" } else { "|>" }),
+            (text_left + 100.0, ">>|"),
+        ];
+
+        for (cx, sym) in controls {
+            let r_rect = D2D_RECT_F {
+                left: cx - 16.0,
+                top: btn_y - 11.0,
+                right: cx + 16.0,
+                bottom: btn_y + 11.0,
+            };
+            if let Ok(b) = self.rt.CreateSolidColorBrush(&art_bg, None) {
+                self.rt.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT {
+                        rect: r_rect,
+                        radiusX: 8.0,
+                        radiusY: 8.0,
+                    },
+                    &b,
+                );
+            }
+            self.draw_text_centered(sym, &self.fmt_caption, r_rect, p_col);
+        }
+
+        let lyr_rect = D2D_RECT_F {
+            left: text_left + 132.0,
+            top: btn_y - 11.0,
+            right: text_left + 190.0,
+            bottom: btn_y + 11.0,
+        };
+        if let Ok(b) = self.rt.CreateSolidColorBrush(&art_bg, None) {
+            self.rt.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: lyr_rect,
+                    radiusX: 8.0,
+                    radiusY: 8.0,
+                },
+                &b,
+            );
+        }
+        self.draw_text_centered("Lyrics", &self.fmt_caption, lyr_rect, eq_col);
+    }
+
+    unsafe fn draw_lyrics_panel(
+        &self,
+        ctrl: &NotchController,
+        card: D2D_RECT_F,
+        alpha: f32,
+    ) {
+        let mut p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
+        p_col.a *= alpha;
+        let mut s_col = AntiMagicNeutralPalette::TEXT_SECONDARY;
+        s_col.a *= alpha * 0.65;
         let mut accent = AntiMagicNeutralPalette::ACCENT_BLUE;
         accent.a *= alpha;
 
-        if let Ok(brush) = self.rt.CreateSolidColorBrush(&accent, None) {
-            self.rt.DrawLine(
-                D2D_POINT_2F {
-                    x: indicator_x - 14.0,
-                    y: indicator_y,
+        let header = format!("{} — {}", ctrl.media_title, ctrl.media_artist);
+        self.draw_text_centered(
+            &header,
+            &self.fmt_caption,
+            D2D_RECT_F {
+                left: card.left + 14.0,
+                top: card.top + 6.0,
+                right: card.right - 14.0,
+                bottom: card.top + 24.0,
+            },
+            accent,
+        );
+
+        if ctrl.lyrics_lines.is_empty() {
+            self.draw_text_centered(
+                "Searching synced lyrics on LRCLIB...",
+                &self.fmt_body,
+                card,
+                s_col,
+            );
+            return;
+        }
+
+        let idx = ctrl.active_lyric_idx.min(ctrl.lyrics_lines.len() - 1);
+        let prev_line = if idx > 0 {
+            ctrl.lyrics_lines[idx - 1].as_str()
+        } else {
+            "· · ·"
+        };
+        let curr_line = ctrl.lyrics_lines[idx].as_str();
+        let next_line = if idx + 1 < ctrl.lyrics_lines.len() {
+            ctrl.lyrics_lines[idx + 1].as_str()
+        } else {
+            "· · ·"
+        };
+
+        self.draw_text_centered(
+            prev_line,
+            &self.fmt_body,
+            D2D_RECT_F {
+                left: card.left + 16.0,
+                top: card.top + 26.0,
+                right: card.right - 16.0,
+                bottom: card.top + 48.0,
+            },
+            s_col,
+        );
+        self.draw_text_centered(
+            curr_line,
+            &self.fmt_title,
+            D2D_RECT_F {
+                left: card.left + 12.0,
+                top: card.top + 48.0,
+                right: card.right - 12.0,
+                bottom: card.top + 78.0,
+            },
+            p_col,
+        );
+        self.draw_text_centered(
+            next_line,
+            &self.fmt_body,
+            D2D_RECT_F {
+                left: card.left + 16.0,
+                top: card.top + 78.0,
+                right: card.right - 16.0,
+                bottom: card.top + 100.0,
+            },
+            s_col,
+        );
+    }
+
+    unsafe fn draw_pomo_panel(
+        &self,
+        ctrl: &NotchController,
+        card: D2D_RECT_F,
+        alpha: f32,
+    ) {
+        let mut p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
+        p_col.a *= alpha;
+        let mut s_col = AntiMagicNeutralPalette::TEXT_SECONDARY;
+        s_col.a *= alpha;
+        let mut accent = if ctrl.pomo_is_break {
+            AntiMagicNeutralPalette::ACCENT_WINE
+        } else {
+            AntiMagicNeutralPalette::ACCENT_BLUE
+        };
+        accent.a *= alpha;
+
+        let ring_cx = card.left + 56.0;
+        let ring_cy = (card.top + card.bottom) * 0.5;
+        let ring_r = 36.0;
+
+        if let Ok(fg_ring) = self.rt.CreateSolidColorBrush(&accent, None) {
+            self.rt.DrawEllipse(
+                &D2D1_ELLIPSE {
+                    point: D2D_POINT_2F {
+                        x: ring_cx,
+                        y: ring_cy,
+                    },
+                    radiusX: ring_r,
+                    radiusY: ring_r,
                 },
-                D2D_POINT_2F {
-                    x: indicator_x + 14.0,
-                    y: indicator_y,
-                },
-                &brush,
-                2.2,
+                &fg_ring,
+                3.5,
                 None,
+            );
+        }
+
+        let timer_text = format!(
+            "{:02}:{:02}",
+            ctrl.pomo_remaining_secs / 60,
+            ctrl.pomo_remaining_secs % 60
+        );
+        self.draw_text_centered(
+            &timer_text,
+            &self.fmt_title,
+            D2D_RECT_F {
+                left: ring_cx - 32.0,
+                top: ring_cy - 14.0,
+                right: ring_cx + 32.0,
+                bottom: ring_cy + 14.0,
+            },
+            p_col,
+        );
+
+        let right_x = card.left + 112.0;
+        self.draw_text_left(
+            if ctrl.pomo_is_break {
+                "SHORT BREAK · REST EYES"
+            } else {
+                "POMODORO · FOCUS SESSION"
+            },
+            &self.fmt_title,
+            D2D_RECT_F {
+                left: right_x,
+                top: card.top + 12.0,
+                right: card.right - 50.0,
+                bottom: card.top + 36.0,
+            },
+            p_col,
+        );
+
+        self.draw_text_left(
+            if ctrl.pomo_running {
+                "Timer running — Chibi Liebe is guarding your focus"
+            } else {
+                "Click Start Focus below to begin 25m session"
+            },
+            &self.fmt_body,
+            D2D_RECT_F {
+                left: right_x,
+                top: card.top + 36.0,
+                right: card.right - 50.0,
+                bottom: card.top + 58.0,
+            },
+            s_col,
+        );
+
+        let start_rect = D2D_RECT_F {
+            left: right_x,
+            top: card.top + 64.0,
+            right: right_x + 86.0,
+            bottom: card.top + 92.0,
+        };
+        if let Ok(b) = self.rt.CreateSolidColorBrush(&accent, None) {
+            self.rt.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: start_rect,
+                    radiusX: 8.0,
+                    radiusY: 8.0,
+                },
+                &b,
+            );
+        }
+        self.draw_text_centered(
+            if ctrl.pomo_running { "Pause" } else { "Start Focus" },
+            &self.fmt_caption,
+            start_rect,
+            p_col,
+        );
+
+        let reset_rect = D2D_RECT_F {
+            left: right_x + 94.0,
+            top: card.top + 64.0,
+            right: right_x + 158.0,
+            bottom: card.top + 92.0,
+        };
+        let mut elev = AntiMagicNeutralPalette::CARD_ELEVATED;
+        elev.a *= alpha;
+        if let Ok(b) = self.rt.CreateSolidColorBrush(&elev, None) {
+            self.rt.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: reset_rect,
+                    radiusX: 8.0,
+                    radiusY: 8.0,
+                },
+                &b,
+            );
+        }
+        self.draw_text_centered("Reset", &self.fmt_caption, reset_rect, s_col);
+    }
+
+    unsafe fn draw_water_panel(
+        &self,
+        ctrl: &NotchController,
+        card: D2D_RECT_F,
+        alpha: f32,
+    ) {
+        let mut p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
+        p_col.a *= alpha;
+        let mut accent = AntiMagicNeutralPalette::ACCENT_BLUE;
+        accent.a *= alpha;
+
+        let pct = ((ctrl.water_current_ml as f32 / ctrl.water_goal_ml.max(1) as f32) * 100.0)
+            .round() as u32;
+        let header = format!(
+            "HYDRATION · {:.2} / {:.2} L ({}%)",
+            ctrl.water_current_ml as f32 / 1000.0,
+            ctrl.water_goal_ml as f32 / 1000.0,
+            pct
+        );
+
+        self.draw_text_left(
+            &header,
+            &self.fmt_title,
+            D2D_RECT_F {
+                left: card.left + 16.0,
+                top: card.top + 10.0,
+                right: card.right - 16.0,
+                bottom: card.top + 34.0,
+            },
+            p_col,
+        );
+
+        let chart_left = card.left + 18.0;
+        let chart_bottom = card.bottom - 14.0;
+        if let Ok(bar_b) = self.rt.CreateSolidColorBrush(&accent, None) {
+            for (i, &val) in ctrl.water_hourly_ml.iter().enumerate() {
+                let h = ((val as f32 / 500.0) * 42.0).clamp(6.0, 44.0);
+                let bx = chart_left + i as f32 * 28.0;
+                self.rt.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT {
+                        rect: D2D_RECT_F {
+                            left: bx,
+                            top: chart_bottom - h,
+                            right: bx + 16.0,
+                            bottom: chart_bottom,
+                        },
+                        radiusX: 4.0,
+                        radiusY: 4.0,
+                    },
+                    &bar_b,
+                );
+            }
+        }
+
+        let btn_rect = D2D_RECT_F {
+            left: card.right - 148.0,
+            top: card.top + 44.0,
+            right: card.right - 18.0,
+            bottom: card.top + 82.0,
+        };
+        if let Ok(b) = self.rt.CreateSolidColorBrush(&accent, None) {
+            self.rt.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: btn_rect,
+                    radiusX: 10.0,
+                    radiusY: 10.0,
+                },
+                &b,
+            );
+        }
+        self.draw_text_centered(
+            &format!("+ Drink {} ml", ctrl.water_cup_ml),
+            &self.fmt_title,
+            btn_rect,
+            p_col,
+        );
+    }
+
+    unsafe fn draw_shelf_panel(
+        &self,
+        ctrl: &NotchController,
+        card: D2D_RECT_F,
+        alpha: f32,
+    ) {
+        let mut p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
+        p_col.a *= alpha;
+        let mut s_col = AntiMagicNeutralPalette::TEXT_SECONDARY;
+        s_col.a *= alpha;
+        let mut elev = AntiMagicNeutralPalette::CARD_ELEVATED;
+        elev.a *= alpha;
+
+        self.draw_text_left(
+            "FILE SHELF · DRAG FILES HERE OR CLICK TO OPEN",
+            &self.fmt_caption,
+            D2D_RECT_F {
+                left: card.left + 14.0,
+                top: card.top + 6.0,
+                right: card.right - 50.0,
+                bottom: card.top + 24.0,
+            },
+            s_col,
+        );
+
+        for (i, (name, meta)) in ctrl.shelf_files.iter().take(2).enumerate() {
+            let item_w = (card.right - card.left - 82.0) * 0.5;
+            let ix = card.left + 14.0 + i as f32 * (item_w + 10.0);
+            let item_rect = D2D_RECT_F {
+                left: ix,
+                top: card.top + 28.0,
+                right: ix + item_w,
+                bottom: card.bottom - 12.0,
+            };
+
+            if let Ok(b) = self.rt.CreateSolidColorBrush(&elev, None) {
+                self.rt.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT {
+                        rect: item_rect,
+                        radiusX: 10.0,
+                        radiusY: 10.0,
+                    },
+                    &b,
+                );
+            }
+
+            self.draw_text_left(
+                name,
+                &self.fmt_title,
+                D2D_RECT_F {
+                    left: item_rect.left + 10.0,
+                    top: item_rect.top + 10.0,
+                    right: item_rect.right - 8.0,
+                    bottom: item_rect.top + 34.0,
+                },
+                p_col,
+            );
+            self.draw_text_left(
+                meta,
+                &self.fmt_caption,
+                D2D_RECT_F {
+                    left: item_rect.left + 10.0,
+                    top: item_rect.top + 36.0,
+                    right: item_rect.right - 8.0,
+                    bottom: item_rect.top + 56.0,
+                },
+                s_col,
+            );
+        }
+    }
+
+    unsafe fn draw_todo_panel(
+        &self,
+        ctrl: &NotchController,
+        card: D2D_RECT_F,
+        alpha: f32,
+    ) {
+        let mut p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
+        p_col.a *= alpha;
+        let mut s_col = AntiMagicNeutralPalette::TEXT_SECONDARY;
+        s_col.a *= alpha;
+        let mut accent = AntiMagicNeutralPalette::ACCENT_BLUE;
+        accent.a *= alpha;
+
+        for (i, (task, done)) in ctrl.todos.iter().take(3).enumerate() {
+            let row_top = card.top + 10.0 + i as f32 * 32.0;
+            let box_rect = D2D_RECT_F {
+                left: card.left + 16.0,
+                top: row_top + 4.0,
+                right: card.left + 32.0,
+                bottom: row_top + 20.0,
+            };
+
+            if let Ok(b) = self.rt.CreateSolidColorBrush(&accent, None) {
+                let rbox = D2D1_ROUNDED_RECT {
+                    rect: box_rect,
+                    radiusX: 4.0,
+                    radiusY: 4.0,
+                };
+                if *done {
+                    self.rt.FillRoundedRectangle(&rbox, &b);
+                } else {
+                    self.rt.DrawRoundedRectangle(&rbox, &b, 1.5, None);
+                }
+            }
+
+            self.draw_text_left(
+                task,
+                &self.fmt_body,
+                D2D_RECT_F {
+                    left: card.left + 42.0,
+                    top: row_top,
+                    right: card.right - 16.0,
+                    bottom: row_top + 25.0,
+                },
+                if *done { s_col } else { p_col },
             );
         }
     }
 }
 ```
 
-*(Catatan: Pada `src/notch/mod.rs` dari bagian sebelumnya, pastikan di dalam `on_lbutton_down` kamu juga memanggil `if self.controller.chibi_liebe.handle_click(x, y) { let _ = InvalidateRect(self.hwnd, None, false); return; }` sebelum mengecek klik tab atas, sehingga Chibi Liebe bisa di-klik/poke!)*
-
 ---
 
-## 6. Apa yang Perlu Dilakukan oleh Hermes Agent di Lokalmu
+### D. `src/notch/mod.rs` — Bezel Flush (`top = 0.0`) + Sinkronisasi Semua Event (`Volume`, `Brightness`, `CapsLock`, `Media`, `Lyrics`, `Water`, `Shelf`)
 
-1. **Simpan File Panduan Ini** di *root folder* proyek `nusa-clone/` milikmu sebagai `DEVIL_UNION_UPGRADE.md`.
-2. **Jalankan Hermes Agent** di dalam direktori `nusa-clone/` dan berikan perintah berikut:
-   > *"Baca file `DEVIL_UNION_UPGRADE.md`, lalu terapkan seluruh perbaikan interaksi window (`src/notch/mod.rs`), animasi pegas (`src/notch/states.rs`), tema Neutral Slate-Blue Anti-Magic (`src/notch/renderer.rs`), mata Asta Devil Union (`src/mascot/eyes.rs`), serta komponen selektif Chibi Liebe (`src/mascot/chibi_liebe.rs`). Pertahankan integrasi media/LRCLIB/shelf yang sudah ada, lalu jalankan `cargo build --release`."*
-3. **Hasil Akhir yang Akan Kamu Dapatkan**:
-   - **Notch Responsif & Animasi Selembut Sutra**: Begitu kursor mendekati bagian atas layar, mata Asta melirik mengikuti kursor; saat kursor menyentuh *pill*, *notch* membesar dengan *spring physics* mulus dan langsung menerima klik.
-   - **Tema Netral menyatu dengan Laptop Biru/Abu-abu**: Warna dasar *Obsidian Slate* (`#0B0E14`), *Steel Grey* (`#263042`), dan aksen *Steel Blue* (`#6488EA`) menjaga tampilan tetap kalem, sementara iris mata Asta menggunakan *Muted Wine-Crimson* (`#A83244`) yang elegan.
-   - **Chibi Liebe Selektif**: Chibi Liebe hanya menemanimu di **Music** (*headbop*), **Pomodoro** (*focus guard*), dan **Shelf** (*siap menangkap file*), serta bereaksi lucu saat kamu klik langsung tubuhnya.
+Perhatikan bahwa di `current_pill_rect()`, nilai `top` sekarang adalah **`0.0`** sehingga notch menempel rata dengan bezel atas layar laptop baik ketika tertutup maupun terbuka, dan di `on_tick()` seluruh `NotchEvent` (`HotkeyVolume`, `HotkeyBrightness`, `HotkeyCapsLock`, `UpdateMedia`, `UpdateLyrics`, `UpdateTimer`, `UpdateWater`, `UpdateShelf`) sudah dihubungkan ke `NotchController`:
+
+```rust
+    pub fn current_pill_rect(&self) -> D2D_RECT_F {
+        let pw = (self.controller.width.value * self.dpi_scale).round();
+        let ph = (self.controller.height.value * self.dpi_scale).round();
+        let left = ((self.win_w as f32 - pw) * 0.5).max(0.0);
+        let top = 0.0; // MENEMPEL LANGSUNG KE BEZEL ATAS LAPTOP (0.0)
+        let right = left + pw;
+        let bottom = top + ph;
+
+        D2D_RECT_F {
+            left,
+            top,
+            right,
+            bottom,
+        }
+    }
+```
+
+Dan di dalam `while let Ok(ev) = self.event_rx.try_recv()` pada `on_tick()` di `src/notch/mod.rs`:
+
+```rust
+        while let Ok(ev) = self.event_rx.try_recv() {
+            match ev {
+                NotchEvent::Toggle => {
+                    if self.controller.is_hovered || self.controller.state != NotchState::Pet {
+                        self.controller.is_hovered = false;
+                        self.controller.transition_to(NotchState::Pet);
+                    } else {
+                        self.controller.is_hovered = true;
+                        let target = self.controller.last_expanded_tab;
+                        self.controller.transition_to(target);
+                    }
+                }
+                NotchEvent::UpdateMedia(info) => {
+                    if !info.title.is_empty() {
+                        self.controller.media_title = info.title;
+                    }
+                    if !info.artist.is_empty() {
+                        self.controller.media_artist = info.artist;
+                    }
+                    self.controller.media_playing = info.playing;
+                }
+                NotchEvent::UpdateLyrics(lines) => {
+                    if !lines.is_empty() {
+                        self.controller.lyrics_lines = lines;
+                        self.controller.active_lyric_idx = 0;
+                    }
+                }
+                NotchEvent::HotkeyVolume(vol) => {
+                    self.controller
+                        .trigger_overlay(crate::notch::states::OverlayKind::Volume(vol));
+                }
+                NotchEvent::HotkeyBrightness(bri) => {
+                    self.controller
+                        .trigger_overlay(crate::notch::states::OverlayKind::Brightness(bri));
+                }
+                NotchEvent::HotkeyCapsLock(on) => {
+                    self.controller
+                        .trigger_overlay(crate::notch::states::OverlayKind::CapsLock(on));
+                }
+                _ => {}
+            }
+        }
+```
