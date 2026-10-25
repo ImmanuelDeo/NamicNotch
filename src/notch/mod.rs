@@ -7,19 +7,22 @@ use anyhow::Result;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use tokio::sync::mpsc;
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM};
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM, COLORREF};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, RegisterClassExW, SetWindowPos, ShowWindow,
     GetCursorPos, DestroyWindow, PostQuitMessage,
     SetWindowLongPtrW, GetWindowLongPtrW, GWLP_USERDATA, GWL_EXSTYLE,
     WM_PAINT, WM_LBUTTONDOWN, WM_RBUTTONUP, WM_TIMER, WM_DESTROY,
+    WM_ERASEBKGND,
     WS_EX_TOPMOST, WS_EX_TOOLWINDOW, WS_EX_LAYERED, WS_EX_TRANSPARENT,
-    WS_POPUP, SW_SHOW, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOOWNERZORDER,
+    WS_POPUP, SW_SHOW, SW_SHOWNOACTIVATE, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_SHOWWINDOW,
     CS_HREDRAW, CS_VREDRAW, WNDCLASSEXW,
     GetMessageW, TranslateMessage, DispatchMessageW,
     MSG, HICON, HCURSOR, HMENU,
     SetTimer, KillTimer,
+    SetLayeredWindowAttributes, LWA_ALPHA,
 };
+use windows::Win32::Graphics::Gdi::UpdateWindow;
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
 use windows::Win32::Graphics::Gdi::{
@@ -290,71 +293,124 @@ impl NotchApp {
     }
 }
 
-pub fn run_ui(
-    hinstance: HINSTANCE,
-    event_rx: mpsc::Receiver<NotchEvent>,
-    settings: Arc<RwLock<Settings>>,
-) -> Result<()> {
-    let class_name = to_wide_string("NusaNotchCloneWindow\0");
+pub struct NotchWindow {
+    pub hwnd: HWND,
+    _raw_app: *mut NotchApp,
+    _tray_nid: windows::Win32::UI::Shell::NOTIFYICONDATAW,
+}
 
-    let wc = WNDCLASSEXW {
-        cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
-        style: CS_HREDRAW | CS_VREDRAW,
-        lpfnWndProc: Some(notch_wnd_proc),
-        cbClsExtra: 0,
-        cbWndExtra: 0,
-        hInstance: hinstance,
-        hIcon: HICON::default(),
-        hCursor: HCURSOR::default(),
-        hbrBackground: HBRUSH::default(),
-        lpszMenuName: PCWSTR::null(),
-        lpszClassName: PCWSTR(class_name.as_ptr()),
-        hIconSm: HICON::default(),
-    };
+impl NotchWindow {
+    pub fn create(
+        hinstance: HINSTANCE,
+        event_rx: mpsc::Receiver<NotchEvent>,
+        settings: Arc<RwLock<Settings>>,
+    ) -> Result<Self> {
+        let class_name = to_wide_string("NusaNotchCloneWindow\0");
 
+        let wc = WNDCLASSEXW {
+            cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
+            style: CS_HREDRAW | CS_VREDRAW,
+            lpfnWndProc: Some(notch_wnd_proc),
+            cbClsExtra: 0,
+            cbWndExtra: 0,
+            hInstance: hinstance,
+            hIcon: HICON::default(),
+            hCursor: HCURSOR::default(),
+            hbrBackground: HBRUSH::default(),
+            lpszMenuName: PCWSTR::null(),
+            lpszClassName: PCWSTR(class_name.as_ptr()),
+            hIconSm: HICON::default(),
+        };
+
+        unsafe {
+            RegisterClassExW(&wc);
+
+            // CRITICAL BUG FIX 1a: NO WS_VISIBLE flag in CreateWindowExW
+            let hwnd = CreateWindowExW(
+                WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
+                PCWSTR(class_name.as_ptr()),
+                PCWSTR(to_wide_string("NusaNotch\0").as_ptr()),
+                WS_POPUP,
+                0,
+                0,
+                NOTCH_WINDOW_WIDTH,
+                NOTCH_WINDOW_HEIGHT,
+                HWND::default(),
+                HMENU::default(),
+                hinstance,
+                None,
+            )?;
+
+            // CRITICAL BUG FIX 1b: Set opacity for layered window (otherwise invisible on Win10/11)
+            SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA)?;
+
+            let app = Box::new(NotchApp::new(hwnd, settings.clone(), event_rx)?);
+            let win_x = app.win_x;
+            let win_y = app.win_y;
+            let win_w = app.win_w;
+            let win_h = app.win_h;
+            let raw_ptr = Box::into_raw(app);
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, raw_ptr as isize);
+
+            // Setup System Tray icon
+            let nid = setup_tray_icon(hwnd)?;
+
+            // Critically damped ~120 FPS timer (8ms)
+            SetTimer(hwnd, 1, 8, None);
+
+            // CRITICAL BUG FIX 1c: Explicitly show & position window properly after USERDATA and timer are set
+            let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            let _ = SetWindowPos(
+                hwnd,
+                HWND_TOPMOST,
+                win_x,
+                win_y,
+                win_w,
+                win_h,
+                SWP_SHOWWINDOW | SWP_NOACTIVATE,
+            );
+            let _ = InvalidateRect(hwnd, None, false);
+            let _ = UpdateWindow(hwnd);
+
+            Ok(Self {
+                hwnd,
+                _raw_app: raw_ptr,
+                _tray_nid: nid,
+            })
+        }
+    }
+}
+
+impl Drop for NotchWindow {
+    fn drop(&mut self) {
+        unsafe {
+            remove_tray_icon(&self._tray_nid);
+            if !self._raw_app.is_null() {
+                let _ = Box::from_raw(self._raw_app);
+                self._raw_app = std::ptr::null_mut();
+            }
+        }
+    }
+}
+
+/// Run standard Win32 message loop on the main thread
+pub fn run_message_loop() {
     unsafe {
-        RegisterClassExW(&wc);
-
-        let hwnd = CreateWindowExW(
-            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
-            PCWSTR(class_name.as_ptr()),
-            PCWSTR(to_wide_string("NusaNotch\0").as_ptr()),
-            WS_POPUP,
-            0,
-            0,
-            NOTCH_WINDOW_WIDTH,
-            NOTCH_WINDOW_HEIGHT,
-            HWND::default(),
-            HMENU::default(),
-            hinstance,
-            None,
-        )?;
-
-        let mut app = Box::new(NotchApp::new(hwnd, settings.clone(), event_rx)?);
-        let raw_ptr = Box::into_raw(app);
-        SetWindowLongPtrW(hwnd, GWLP_USERDATA, raw_ptr as isize);
-
-        // Setup System Tray icon
-        let nid = setup_tray_icon(hwnd)?;
-
-        // Critically damped ~120 FPS timer (8ms)
-        SetTimer(hwnd, 1, 8, None);
-
-        // Show window immediately
-        let _ = ShowWindow(hwnd, SW_SHOW);
-
-        // Standard Win32 Message Loop
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, HWND::default(), 0, 0).as_bool() {
             let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
-
-        // Cleanup on exit
-        remove_tray_icon(&nid);
-        let _ = Box::from_raw(raw_ptr);
     }
+}
 
+pub fn run_ui(
+    hinstance: HINSTANCE,
+    event_rx: mpsc::Receiver<NotchEvent>,
+    settings: Arc<RwLock<Settings>>,
+) -> Result<()> {
+    let _window = NotchWindow::create(hinstance, event_rx, settings)?;
+    run_message_loop();
     Ok(())
 }
 
@@ -370,6 +426,10 @@ extern "system" fn notch_wnd_proc(
         let app = unsafe { &mut *ptr };
 
         match msg {
+            WM_ERASEBKGND => {
+                // CRITICAL BUG FIX 2: Return 1 to suppress GDI background erase (Direct2D handles it)
+                return LRESULT(1);
+            }
             WM_TIMER => {
                 let _ = app.on_tick();
                 return LRESULT(0);
@@ -422,6 +482,11 @@ extern "system" fn notch_wnd_proc(
                             return LRESULT(0);
                         }
             _ => {}
+        }
+    } else {
+        // CRITICAL BUG FIX 2b: If ptr is null (early WM_CREATE/WM_NCCREATE), suppress background erase
+        if msg == WM_ERASEBKGND {
+            return LRESULT(1);
         }
     }
 

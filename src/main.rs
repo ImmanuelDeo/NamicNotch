@@ -60,7 +60,8 @@ fn main() -> Result<()> {
 
     // 6. Run GUI on Main Thread (Win32 requirement)
     let hinstance: HINSTANCE = unsafe { GetModuleHandleW(None)? }.into();
-    notch::run_ui(hinstance, notch_rx, settings)?;
+    let _notch_window = notch::NotchWindow::create(hinstance, notch_rx, settings)?;
+    notch::run_message_loop();
 
     Ok(())
 }

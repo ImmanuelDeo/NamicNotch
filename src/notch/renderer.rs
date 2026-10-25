@@ -88,7 +88,7 @@ impl NotchRenderer {
 
             self.rt.BeginDraw();
 
-            // 1. Bersihkan canvas transparan penuh
+            // 1. Clear with fully transparent black (DWM glass composition)
             self.rt.Clear(Some(&D2D1_COLOR_F {
                 r: 0.0,
                 g: 0.0,
