@@ -470,13 +470,13 @@ impl NotchController {
         }
 
         match state {
-            NotchState::Pet => (196.0, 38.0, 16.0),
-            NotchState::Idle => (216.0, 38.0, 16.0),
-            NotchState::Hub => (470.0, 172.0, 24.0),
-            NotchState::Music => (496.0, 174.0, 24.0),
-            NotchState::Control => (460.0, 168.0, 24.0),
-            NotchState::Pomo => (440.0, 162.0, 24.0),
-            NotchState::Shelf => (465.0, 168.0, 24.0),
+            NotchState::Pet => (196.0, 35.0, 15.0),
+            NotchState::Idle => (214.0, 35.0, 15.0),
+            NotchState::Hub => (468.0, 146.0, 22.0),
+            NotchState::Music => (492.0, 148.0, 22.0),
+            NotchState::Control => (456.0, 144.0, 22.0),
+            NotchState::Pomo => (436.0, 140.0, 22.0),
+            NotchState::Shelf => (460.0, 144.0, 22.0),
         }
     }
 

@@ -498,24 +498,17 @@ impl NotchRenderer {
             if let Ok(notch_geom) =
                 self.create_bezel_notch_geometry(pill_rect, controller.corner_radius.value)
             {
-                if let Ok(black_brush) = self
-                    .rt
-                    .CreateSolidColorBrush(&AntiMagicNeutralPalette::PILL_SOLID_BLACK, None)
-                {
-                    self.rt.FillGeometry(&notch_geom, &black_brush, None);
-                }
+                            if let Ok(black_brush) = self
+                                .rt
+                                .CreateSolidColorBrush(&AntiMagicNeutralPalette::PILL_SOLID_BLACK, None)
+                            {
+                                self.rt.FillGeometry(&notch_geom, &black_brush, None);
+                            }
 
-                // Garis tepi bawah tipis halus
-                let border_color = D2D1_COLOR_F {
-                    r: 0.20,
-                    g: 0.26,
-                    b: 0.38,
-                    a: 0.45,
-                };
-                if let Ok(border_brush) = self.rt.CreateSolidColorBrush(&border_color, None) {
-                    self.rt.DrawGeometry(&notch_geom, &border_brush, 1.2, None);
-                }
-            }
+                            // PENTING: HAPUS BORDER LINE agar notch 100% borderless, clean look,
+                            // menyatu sempurna dengan bezel hitam pekat laptop!
+                            // (Kode DrawGeometry untuk border dihapus total)
+                        }
 
             // 2. Pop-Up Interactive Overlay (Volume, Brightness, CapsLock, Charging)
             if !controller.is_hovered {
