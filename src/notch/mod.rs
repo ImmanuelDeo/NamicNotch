@@ -1,5 +1,5 @@
 // src/notch/mod.rs
-//! Notch window and rendering for Nusa Notch Clone
+//! Notch window and rendering for Nusa Notch Clone (v4.0)
 
 pub mod renderer;
 pub mod states;
@@ -18,6 +18,7 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::Shell::{DragAcceptFiles, DragFinish, DragQueryFileW, HDROP};
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::settings::Settings;
@@ -28,7 +29,7 @@ use crate::tray::{
 pub use renderer::NotchRenderer;
 pub use states::{NotchController, NotchState};
 
-pub const NOTCH_WINDOW_WIDTH: i32 = 520;
+pub const NOTCH_WINDOW_WIDTH: i32 = 540;
 pub const NOTCH_WINDOW_HEIGHT: i32 = 220;
 const TIMER_ID_ANIMATION: usize = 1;
 
@@ -83,7 +84,6 @@ impl NotchApp {
                 ..Default::default()
             };
             let _ = GetMonitorInfoW(monitor, &mut info);
-            // Gunakan rcMonitor (bukan rcWork) agar selalu menempel tepat di tepi paling atas layar (y = 0)
             info.rcMonitor
         };
 
@@ -94,7 +94,6 @@ impl NotchApp {
         let win_y = monitor_rect.top;
 
         unsafe {
-            // 1. PENTING: Set ukuran window terlebih dahulu SEBELUM membuat Direct2D HwndRenderTarget!
             let _ = SetWindowPos(
                 hwnd,
                 HWND_TOPMOST,
@@ -104,11 +103,8 @@ impl NotchApp {
                 win_h,
                 SWP_NOACTIVATE | SWP_NOZORDER,
             );
-
-            // 2. PENTING: Inisialisasi atribut Layered Window ke Alpha 255 (tanpa ini window 100% invisible!)
             let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA);
 
-            // 3. Perluas area kaca DWM ke seluruh window agar background Direct2D transparan mulus
             let margins = MARGINS {
                 cxLeftWidth: -1,
                 cxRightWidth: -1,
@@ -116,10 +112,12 @@ impl NotchApp {
                 cyBottomHeight: -1,
             };
             let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
+
+            // Aktifkan dukungan Drag & Drop file dari Windows Explorer / Aplikasi lain ke Notch!
+            DragAcceptFiles(hwnd, true);
         }
 
-        // 4. Buat Direct2D Renderer dengan ukuran pixel fisik window yang sudah di-set
-        let renderer = NotchRenderer::new(hwnd, win_w as u32, win_h as u32)?;
+        let renderer = NotchRenderer::new(hwnd, win_w as u32, win_h as u32, dpi_scale)?;
         let mut controller = NotchController::new();
 
         if let Ok(s) = settings.read() {
@@ -143,11 +141,13 @@ impl NotchApp {
         })
     }
 
+    /// Koordinat Logis (DIPs) yang 100% sinkron dengan Direct2D RenderTarget (`dpiX = 96.0 * dpi_scale`)
     pub fn current_pill_rect(&self) -> D2D_RECT_F {
-        let pw = (self.controller.width.value * self.dpi_scale).round();
-        let ph = (self.controller.height.value * self.dpi_scale).round();
-        let left = ((self.win_w as f32 - pw) * 0.5).max(0.0);
-        let top = 0.0; // MENEMPEL LANGSUNG KE BEZEL ATAS MONITOR (y = 0.0)
+        let logical_win_w = NOTCH_WINDOW_WIDTH as f32;
+        let pw = self.controller.width.value;
+        let ph = self.controller.height.value;
+        let left = ((logical_win_w - pw) * 0.5).max(0.0);
+        let top = 0.0; // Menempel langsung ke bezel atas laptop
         let right = left + pw;
         let bottom = top + ph;
 
@@ -164,12 +164,8 @@ impl NotchApp {
         let dt = now.duration_since(self.last_tick).as_secs_f32();
         self.last_tick = now;
 
-        // 1. Drain background events
         while let Ok(ev) = self.event_rx.try_recv() {
             match ev {
-                NotchEvent::SetState(s) => self.controller.transition_to(s),
-                NotchEvent::Show => unsafe { let _ = ShowWindow(self.hwnd, SW_SHOW); },
-                NotchEvent::Hide => unsafe { let _ = ShowWindow(self.hwnd, windows::Win32::UI::WindowsAndMessaging::SW_HIDE); },
                 NotchEvent::Toggle => {
                     if self.controller.is_hovered || self.controller.state != NotchState::Pet {
                         self.controller.is_hovered = false;
@@ -181,74 +177,59 @@ impl NotchApp {
                     }
                 }
                 NotchEvent::UpdateMedia(info) => {
-                    self.controller.media_title = info.title;
-                    self.controller.media_artist = info.artist;
+                    if !info.title.is_empty() {
+                        self.controller.media_title = info.title;
+                    }
+                    if !info.artist.is_empty() {
+                        self.controller.media_artist = info.artist;
+                    }
                     self.controller.media_playing = info.playing;
-                    self.controller.media_total_secs = info.duration;
-                    self.controller.media_elapsed_secs = info.position;
-                    if info.duration > 0 {
-                        self.controller.media_progress = info.position as f32 / info.duration as f32;
-                    }
-                    if info.playing && !self.controller.is_hovered {
-                        self.controller.transition_to(NotchState::Music);
-                    }
                 }
                 NotchEvent::UpdateLyrics(lines) => {
-                    self.controller.lyrics_lines = lines;
-                    self.controller.active_lyric_idx = 0;
-                }
-                NotchEvent::UpdateTimer(info) => {
-                    self.controller.pomo_remaining_secs = info.remaining_seconds;
-                    self.controller.pomo_total_secs = info.total_seconds;
-                    self.controller.pomo_running = info.running;
-                    self.controller.pomo_is_break = matches!(info.mode, crate::timers::PomodoroMode::ShortBreak | crate::timers::PomodoroMode::LongBreak);
-                }
-                NotchEvent::UpdateWater(info) => {
-                    self.controller.water_current_ml = info.current_ml;
-                    self.controller.water_goal_ml = info.goal_ml;
-                }
-                NotchEvent::UpdateShelf(items) => {
-                    self.controller.shelf_files = items.into_iter().map(|item| (item.name, format!("{} · {:?}", item.size, item.item_type))).collect();
+                    if !lines.is_empty() {
+                        self.controller.lyrics_lines = lines;
+                        self.controller.active_lyric_idx = 0;
+                    }
                 }
                 NotchEvent::HotkeyVolume(vol) => {
-                    self.controller.trigger_overlay(crate::notch::states::OverlayKind::Volume(vol));
+                    self.controller
+                        .trigger_overlay(crate::notch::states::OverlayKind::Volume(vol));
                 }
                 NotchEvent::HotkeyBrightness(bri) => {
-                    self.controller.trigger_overlay(crate::notch::states::OverlayKind::Brightness(bri));
+                    self.controller
+                        .trigger_overlay(crate::notch::states::OverlayKind::Brightness(bri));
                 }
-                NotchEvent::HotkeyCapsLock(state) => {
-                    self.controller.trigger_overlay(crate::notch::states::OverlayKind::CapsLock(state));
+                NotchEvent::HotkeyCapsLock(on) => {
+                    self.controller
+                        .trigger_overlay(crate::notch::states::OverlayKind::CapsLock(on));
                 }
+                _ => {}
             }
         }
 
-        // 2. Sync settings flags
         if let Ok(s) = self.settings.read() {
             self.controller.mascot_enabled = s.show_mascot;
             self.controller.minimal_mode = s.minimal_notch;
         }
 
-        // 3. Cek posisi kursor layar terhadap area pill
+        // Konversi posisi kursor layar fisik ke koordinat logis (DIPs)
         let pill_rect = self.current_pill_rect();
-        let pill_screen_left = self.win_x as f32 + pill_rect.left;
-        let pill_screen_right = self.win_x as f32 + pill_rect.right;
-        let pill_screen_top = self.win_y as f32 + pill_rect.top;
-        let pill_screen_bottom = self.win_y as f32 + pill_rect.bottom;
-
         let mut pt = POINT::default();
         unsafe {
             let _ = GetCursorPos(&mut pt);
         }
 
-        let pad = 6.0 * self.dpi_scale;
-        let cursor_in_pill = pt.x as f32 >= pill_screen_left - pad
-            && pt.x as f32 <= pill_screen_right + pad
-            && pt.y as f32 >= pill_screen_top - pad
-            && pt.y as f32 <= pill_screen_bottom + pad;
+        let local_logical_x = (pt.x - self.win_x) as f32 / self.dpi_scale;
+        let local_logical_y = (pt.y - self.win_y) as f32 / self.dpi_scale;
+
+        let pad = 6.0;
+        let cursor_in_pill = local_logical_x >= pill_rect.left - pad
+            && local_logical_x <= pill_rect.right + pad
+            && local_logical_y >= pill_rect.top - pad
+            && local_logical_y <= pill_rect.bottom + pad;
 
         self.cursor_in_pill = cursor_in_pill;
 
-        // 4. Dynamic click-through: cabut WS_EX_TRANSPARENT saat kursor di dalam pill
         unsafe {
             let style = GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE);
             if cursor_in_pill {
@@ -268,21 +249,18 @@ impl NotchApp {
             }
         }
 
-        // 5. Hitung offset kursor untuk dilirik oleh mata Asta Devil Union (radius 360px)
-        let pill_center_x = (pill_screen_left + pill_screen_right) * 0.5;
-        let pill_center_y = (pill_screen_top + pill_screen_bottom) * 0.5;
-        let dx = (pt.x as f32 - pill_center_x) / self.dpi_scale;
-        let dy = (pt.y as f32 - pill_center_y) / self.dpi_scale;
+        let pill_cx = (pill_rect.left + pill_rect.right) * 0.5;
+        let pill_cy = (pill_rect.top + pill_rect.bottom) * 0.5;
+        let dx = local_logical_x - pill_cx;
+        let dy = local_logical_y - pill_cy;
         let cursor_offset = if (dx * dx + dy * dy).sqrt() <= 360.0 {
             Some((dx, dy))
         } else {
             None
         };
 
-        // 6. Update fisika pegas, mata Asta, & Chibi Liebe
         self.controller.update(dt, cursor_in_pill, cursor_offset);
 
-        // 7. Trigger repaint
         unsafe {
             let _ = InvalidateRect(self.hwnd, None, false);
         }
@@ -290,8 +268,28 @@ impl NotchApp {
         Ok(())
     }
 
-    pub fn on_lbutton_down(&mut self, x: f32, y: f32) {
-        // Cek apakah pengguna mengklik Chibi Liebe (efek poke)
+    pub fn on_lbutton_down(&mut self, phys_x: f32, phys_y: f32) {
+        // Konversi koordinat klik fisik ke koordinat logis Direct2D (100% Presisi!)
+        let x = phys_x / self.dpi_scale;
+        let y = phys_y / self.dpi_scale;
+
+        let pill_rect = self.current_pill_rect();
+        let pill_w = pill_rect.right - pill_rect.left;
+        let lx = x - pill_rect.left;
+        let ly = y - pill_rect.top;
+
+        // 0. Jika Overlay Volume/Brightness sedang tampil, izinkan klik langsung pada slider-nya!
+        if !self.controller.is_hovered
+            && self.controller.active_overlay.is_some()
+            && self.controller.handle_overlay_click(lx, pill_w)
+        {
+            unsafe {
+                let _ = InvalidateRect(self.hwnd, None, false);
+            }
+            return;
+        }
+
+        // 1. Cek apakah Chibi Liebe diklik (Poke)
         if self.controller.chibi_liebe.handle_click(x, y) {
             unsafe {
                 let _ = InvalidateRect(self.hwnd, None, false);
@@ -299,30 +297,32 @@ impl NotchApp {
             return;
         }
 
-        let pill_rect = self.current_pill_rect();
-
-        // 1. Cek klik tombol interaktif di dalam panel (misal Play/Pause GSMTC, Next, Prev, Pomo Start, dsb)
-        if self.controller.handle_panel_click(x, y, pill_rect, self.dpi_scale) {
-            unsafe {
-                let _ = InvalidateRect(self.hwnd, None, false);
-            }
-            return;
-        }
-
-        // 2. Cek klik bar navigasi tab atas saat notch sedang terbuka
-        if self.controller.height.value > 65.0 && y <= pill_rect.top + 32.0 * self.dpi_scale {
-            let total_w = pill_rect.right - pill_rect.left;
-            let slot_w = total_w / 5.0;
-            let rel_x = x - pill_rect.left;
-            if rel_x >= 0.0 && rel_x <= total_w {
-                let slot = (rel_x / slot_w) as usize;
-                match slot {
-                    0 => self.controller.transition_to(NotchState::Music),
-                    1 => self.controller.transition_to(NotchState::Lyrics),
-                    2 => self.controller.transition_to(NotchState::Pomo),
-                    3 => self.controller.transition_to(NotchState::Water),
-                    _ => self.controller.transition_to(NotchState::Shelf),
+        // 2. Cek klik pada Bar Navigasi Atas (`<`, 6 Tab, dan `>`) saat notch terbuka
+        if self.controller.height.value > 65.0 && (0.0..=28.0).contains(&ly) {
+            if (10.0..=36.0).contains(&lx) {
+                self.controller.prev_tab();
+                unsafe {
+                    let _ = InvalidateRect(self.hwnd, None, false);
                 }
+                return;
+            } else if lx >= pill_w - 36.0 && lx <= pill_w - 10.0 {
+                self.controller.next_tab();
+                unsafe {
+                    let _ = InvalidateRect(self.hwnd, None, false);
+                }
+                return;
+            } else if lx > 38.0 && lx < pill_w - 38.0 {
+                let tabs_w = (pill_w - 76.0).max(1.0);
+                let slot = ((lx - 38.0) / (tabs_w / 6.0)) as usize;
+                let next = match slot {
+                    0 => NotchState::Hub,
+                    1 => NotchState::Music,
+                    2 => NotchState::Control,
+                    3 => NotchState::Pomo,
+                    4 => NotchState::Shelf,
+                    _ => NotchState::Todo,
+                };
+                self.controller.transition_to(next);
                 unsafe {
                     let _ = InvalidateRect(self.hwnd, None, false);
                 }
@@ -330,16 +330,24 @@ impl NotchApp {
             }
         }
 
-        // Toggle buka/tutup jika diklik di bagian tengah pill
-        if self.controller.state == NotchState::Pet {
+        // 3. Cek klik tombol/slider di dalam panel aktif
+        if self.controller.height.value > 65.0
+            && self.controller.handle_panel_click(lx, ly, pill_w)
+        {
+            unsafe {
+                let _ = InvalidateRect(self.hwnd, None, false);
+            }
+            return;
+        }
+
+        // 4. Jika tertutup, klik akan membuka tab terakhir
+        if matches!(self.controller.state, NotchState::Pet | NotchState::Idle) {
             self.controller.devil_eyes.trigger_wake_surge();
             let target = self.controller.last_expanded_tab;
             self.controller.transition_to(target);
-        } else {
-            self.controller.transition_to(NotchState::Pet);
-        }
-        unsafe {
-            let _ = InvalidateRect(self.hwnd, None, false);
+            unsafe {
+                let _ = InvalidateRect(self.hwnd, None, false);
+            }
         }
     }
 }
@@ -370,7 +378,7 @@ pub fn run_ui(
         RegisterClassExW(&wc);
 
         let hwnd = CreateWindowExW(
-            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_TRANSPARENT,
+            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_ACCEPTFILES,
             PCWSTR(class_name.as_ptr()),
             PCWSTR(to_wide_string("Nusa Notch\0").as_ptr()),
             WS_POPUP,
@@ -393,10 +401,8 @@ pub fn run_ui(
         let raw_ptr = Box::into_raw(app);
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, raw_ptr as isize);
 
-        // Setup System Tray icon
         let nid = setup_tray_icon(hwnd)?;
 
-        // Tampilkan window di posisi tengah-atas layar (Topmost)
         let _ = SetWindowPos(
             hwnd,
             HWND_TOPMOST,
@@ -407,15 +413,11 @@ pub fn run_ui(
             SWP_SHOWWINDOW | SWP_NOACTIVATE,
         );
         let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-
-        // PENTING: Nyalakan timer 8ms (~120 FPS) agar on_tick() dan animasi berjalan!
         let _ = SetTimer(hwnd, TIMER_ID_ANIMATION, 8, None);
 
-        // Paksa gambar frame pertama sekarang juga
         let _ = InvalidateRect(hwnd, None, false);
         let _ = UpdateWindow(hwnd);
 
-        // Standard Win32 Message Loop
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, HWND::default(), 0, 0).as_bool() {
             let _ = TranslateMessage(&msg);
@@ -440,15 +442,12 @@ extern "system" fn notch_wnd_proc(
     if !ptr.is_null() {
         let app = unsafe { &mut *ptr };
         match msg {
-            WM_ERASEBKGND => {
-                return LRESULT(1);
-            }
+            WM_ERASEBKGND => return LRESULT(1),
             WM_TIMER => {
                 let _ = app.on_tick();
                 return LRESULT(0);
             }
             WM_PAINT => {
-                // PENTING: Jangan panggil BeginPaint di sini karena render_frame sudah memanggil BeginPaint/EndPaint!
                 let pill_rect = app.current_pill_rect();
                 app.renderer.render_frame(&mut app.controller, pill_rect);
                 return LRESULT(0);
@@ -457,6 +456,35 @@ extern "system" fn notch_wnd_proc(
                 let x = (lparam.0 & 0xFFFF) as i16 as f32;
                 let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as f32;
                 app.on_lbutton_down(x, y);
+                return LRESULT(0);
+            }
+            WM_MOUSEWHEEL => {
+                let delta = ((wparam.0 >> 16) & 0xFFFF) as i16;
+                app.controller.on_mouse_wheel(delta);
+                unsafe {
+                    let _ = InvalidateRect(hwnd, None, false);
+                }
+                return LRESULT(0);
+            }
+            WM_DROPFILES => {
+                let hdrop = HDROP(wparam.0 as *mut core::ffi::c_void);
+                unsafe {
+                    let count = DragQueryFileW(hdrop, 0xFFFFFFFF, None);
+                    for i in 0..count {
+                        let len = DragQueryFileW(hdrop, i, None);
+                        if len > 0 {
+                            let mut buf = vec![0u16; (len + 1) as usize];
+                            DragQueryFileW(hdrop, i, Some(&mut buf));
+                            if let Some(pos) = buf.iter().position(|&c| c == 0) {
+                                buf.truncate(pos);
+                            }
+                            let path = String::from_utf16_lossy(&buf);
+                            app.controller.add_dropped_file(path);
+                        }
+                    }
+                    DragFinish(hdrop);
+                    let _ = InvalidateRect(hwnd, None, false);
+                }
                 return LRESULT(0);
             }
             TRAY_MESSAGE => {

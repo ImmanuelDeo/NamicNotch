@@ -320,25 +320,11 @@ impl TimerManager {
             return Ok(()); // Goal reached
         }
         
-        let now = Instant::now();
-        
-        if let Some(end) = self.water_reminder_end {
-            if now >= end {
-                // Show water reminder
-                let _ = self.notch_tx.try_send(NotchEvent::SetState(crate::notch::NotchState::Water));
-                self.water_reminder_end = Some(now + Duration::from_secs(self.water.reminder_hours as u64 * 3600));
-            }
-        } else {
-            // Initialize reminder timer
-            self.water_reminder_end = Some(now + Duration::from_secs(self.water.reminder_hours as u64 * 3600));
-        }
-        
         Ok(())
     }
     
     async fn send_notch_update(&self) -> Result<()> {
         let _ = self.notch_tx.try_send(NotchEvent::UpdateTimer(self.pomodoro.clone()));
-        let _ = self.notch_tx.try_send(NotchEvent::UpdateWater(self.water.clone()));
         Ok(())
     }
     
