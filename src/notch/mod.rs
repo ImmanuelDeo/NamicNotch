@@ -1,67 +1,43 @@
 //! Notch window and rendering for Nusa Notch Clone
 
+pub mod renderer;
+pub mod states;
+
 use anyhow::Result;
 use std::sync::{Arc, RwLock};
+use std::time::Instant;
 use tokio::sync::mpsc;
-use tracing::info;
-use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM, BOOL};
-use windows::Win32::Graphics::Direct2D::{
-    D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1CreateFactory, ID2D1Factory1, ID2D1HwndRenderTarget,
-    D2D1_RENDER_TARGET_PROPERTIES, D2D1_HWND_RENDER_TARGET_PROPERTIES,
-    D2D1_RENDER_TARGET_USAGE_NONE, D2D1_FEATURE_LEVEL_DEFAULT,
-    D2D1_ROUNDED_RECT, D2D1_ELLIPSE,
-};
-use windows::Win32::Graphics::Direct2D::Common::{
-    D2D1_PIXEL_FORMAT, D2D1_ALPHA_MODE_PREMULTIPLIED,
-    D2D_SIZE_U, D2D_RECT_F, D2D1_COLOR_F, D2D_POINT_2F,
-};
-use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
+use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, RegisterClassExW, SetWindowPos, ShowWindow,
-    GetClientRect, GetCursorPos, DestroyWindow, PostQuitMessage,
-    SetWindowLongPtrW, GetWindowLongPtrW, GWLP_USERDATA,
-    WM_PAINT, WM_MOUSEMOVE, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_RBUTTONUP,
-    WM_TIMER, WM_DESTROY,
-    WS_EX_TOPMOST, WS_EX_TOOLWINDOW,
+    GetCursorPos, DestroyWindow, PostQuitMessage,
+    SetWindowLongPtrW, GetWindowLongPtrW, GWLP_USERDATA, GWL_EXSTYLE,
+    WM_PAINT, WM_LBUTTONDOWN, WM_RBUTTONUP, WM_TIMER, WM_DESTROY,
+    WS_EX_TOPMOST, WS_EX_TOOLWINDOW, WS_EX_LAYERED, WS_EX_TRANSPARENT,
     WS_POPUP, SW_SHOW, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOOWNERZORDER,
     CS_HREDRAW, CS_VREDRAW, WNDCLASSEXW,
     GetMessageW, TranslateMessage, DispatchMessageW,
     MSG, HICON, HCURSOR, HMENU,
     SetTimer, KillTimer,
 };
+use windows::Win32::UI::Controls::MARGINS;
+use windows::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
-    HBRUSH, HDC, PAINTSTRUCT, BeginPaint, EndPaint, InvalidateRect,
-    CreateRoundRectRgn, SetWindowRgn,
+    HBRUSH, PAINTSTRUCT, BeginPaint, EndPaint, InvalidateRect,
 };
+use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::core::PCWSTR;
+
 use crate::settings::Settings;
 use crate::tray::{setup_tray_icon, remove_tray_icon, show_tray_menu, handle_tray_command, TRAY_MESSAGE};
+pub use renderer::NotchRenderer;
+pub use states::{NotchController, NotchState};
 
-/// Notch states matching the original Nusa
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum NotchState {
-    #[default]
-    Pet,
-    Idle,
-    Music,
-    Lyrics,
-    Pomo,
-    Water,
-    Shelf,
-    Todo,
-    Bt,
-    Charge,
-}
+pub const NOTCH_WINDOW_WIDTH: i32 = 540;
+pub const NOTCH_WINDOW_HEIGHT: i32 = 240;
 
-impl NotchState {
-    pub fn is_expanded(&self) -> bool {
-        !matches!(self, NotchState::Pet | NotchState::Idle)
-    }
-}
-
-/// Notch events for inter-component communication
 #[derive(Debug, Clone)]
 pub enum NotchEvent {
     SetState(NotchState),
@@ -76,44 +52,30 @@ pub enum NotchEvent {
     UpdateCharging(bool),
 }
 
-const NOTCH_CLOSED_WIDTH: i32 = 160;
-const NOTCH_CLOSED_HEIGHT: i32 = 32;
-const NOTCH_EXPANDED_WIDTH: i32 = 420;
-const NOTCH_EXPANDED_HEIGHT: i32 = 140;
-
-pub struct NotchUI {
-    hwnd: HWND,
-    factory: ID2D1Factory1,
-    render_target: Option<ID2D1HwndRenderTarget>,
-    settings: Arc<RwLock<Settings>>,
-    event_rx: mpsc::Receiver<NotchEvent>,
-    state: NotchState,
-    is_expanded: bool,
-    dpi_scale: f32,
-    monitor_rect: RECT,
-    cur_width: i32,
-    cur_height: i32,
-    
-    // Media & Timers
-    media_info: Option<crate::media::MediaInfo>,
-    timer_info: Option<crate::timers::TimerInfo>,
-    
-    // Mascot animation
-    eye_blink: f32,
-    eye_look: f32,
-    anim_tick: u32,
+pub struct NotchApp {
+    pub hwnd: HWND,
+    pub renderer: NotchRenderer,
+    pub controller: NotchController,
+    pub settings: Arc<RwLock<Settings>>,
+    pub event_rx: mpsc::Receiver<NotchEvent>,
+    pub dpi_scale: f32,
+    pub win_x: i32,
+    pub win_y: i32,
+    pub win_w: i32,
+    pub win_h: i32,
+    pub last_tick: Instant,
+    pub cursor_in_pill: bool,
 }
 
-impl NotchUI {
+impl NotchApp {
     pub fn new(
         hwnd: HWND,
-        factory: ID2D1Factory1,
         settings: Arc<RwLock<Settings>>,
         event_rx: mpsc::Receiver<NotchEvent>,
     ) -> Result<Self> {
         let dpi = unsafe { GetDpiForWindow(hwnd) };
         let dpi_scale = (dpi as f32 / 96.0).max(1.0);
-        
+
         let monitor_rect = unsafe {
             let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
             let mut info = MONITORINFO {
@@ -124,266 +86,207 @@ impl NotchUI {
             info.rcWork
         };
 
-        Ok(Self {
-            hwnd,
-            factory,
-            render_target: None,
-            settings,
-            event_rx,
-            state: NotchState::Pet,
-            is_expanded: false,
-            dpi_scale,
-            monitor_rect,
-            cur_width: NOTCH_CLOSED_WIDTH,
-            cur_height: NOTCH_CLOSED_HEIGHT,
-            media_info: None,
-            timer_info: None,
-            eye_blink: 1.0,
-            eye_look: 0.0,
-            anim_tick: 0,
-        })
-    }
-
-    pub fn recreate_render_target(&mut self) -> Result<()> {
-        let mut rect = RECT::default();
-        unsafe { GetClientRect(self.hwnd, &mut rect)?; }
-        let width = (rect.right - rect.left).max(1);
-        let height = (rect.bottom - rect.top).max(1);
-
-        let props = D2D1_RENDER_TARGET_PROPERTIES {
-            r#type: windows::Win32::Graphics::Direct2D::D2D1_RENDER_TARGET_TYPE_DEFAULT,
-            pixelFormat: D2D1_PIXEL_FORMAT {
-                format: DXGI_FORMAT_B8G8R8A8_UNORM,
-                alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
-            },
-            dpiX: 96.0 * self.dpi_scale,
-            dpiY: 96.0 * self.dpi_scale,
-            usage: D2D1_RENDER_TARGET_USAGE_NONE,
-            minLevel: D2D1_FEATURE_LEVEL_DEFAULT,
-        };
-
-        let hwnd_props = D2D1_HWND_RENDER_TARGET_PROPERTIES {
-            hwnd: self.hwnd,
-            pixelSize: D2D_SIZE_U { width: width as u32, height: height as u32 },
-            presentOptions: windows::Win32::Graphics::Direct2D::D2D1_PRESENT_OPTIONS_NONE,
-        };
-
-        let rt = unsafe { self.factory.CreateHwndRenderTarget(&props, &hwnd_props)? };
-        self.render_target = Some(rt);
-        Ok(())
-    }
-
-    pub fn update_layout(&mut self, expand: bool) -> Result<()> {
-        self.is_expanded = expand;
-        let (w, h) = if expand {
-            (NOTCH_EXPANDED_WIDTH, NOTCH_EXPANDED_HEIGHT)
-        } else {
-            let s = self.settings.read().unwrap();
-            if s.minimal_notch {
-                (NOTCH_CLOSED_WIDTH / 2, 4)
-            } else {
-                (NOTCH_CLOSED_WIDTH, NOTCH_CLOSED_HEIGHT)
-            }
-        };
-
-        self.cur_width = w;
-        self.cur_height = h;
-
-        let phys_w = (w as f32 * self.dpi_scale).round() as i32;
-        let phys_h = (h as f32 * self.dpi_scale).round() as i32;
-        let screen_w = self.monitor_rect.right - self.monitor_rect.left;
-        let x = self.monitor_rect.left + (screen_w - phys_w) / 2;
-        let y = self.monitor_rect.top;
+        let win_w = (NOTCH_WINDOW_WIDTH as f32 * dpi_scale).round() as i32;
+        let win_h = (NOTCH_WINDOW_HEIGHT as f32 * dpi_scale).round() as i32;
+        let screen_w = monitor_rect.right - monitor_rect.left;
+        let win_x = monitor_rect.left + (screen_w - win_w) / 2;
+        let win_y = monitor_rect.top;
 
         unsafe {
             let _ = SetWindowPos(
-                self.hwnd,
+                hwnd,
                 HWND_TOPMOST,
-                x,
-                y,
-                phys_w,
-                phys_h,
+                win_x,
+                win_y,
+                win_w,
+                win_h,
                 SWP_NOACTIVATE | SWP_NOOWNERZORDER,
             );
 
-            // Shape round bottom corners
-            let radius = (16.0 * self.dpi_scale).round() as i32;
-            let rgn = CreateRoundRectRgn(0, -radius, phys_w, phys_h, radius * 2, radius * 2);
-            SetWindowRgn(self.hwnd, rgn, true);
+            // True glass transparency via DWM
+            let margins = MARGINS {
+                cxLeftWidth: -1,
+                cxRightWidth: -1,
+                cyTopHeight: -1,
+                cyBottomHeight: -1,
+            };
+            let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
         }
 
-        self.recreate_render_target()?;
-        Ok(())
+        let renderer = NotchRenderer::new(hwnd, win_w as u32, win_h as u32)?;
+        let mut controller = NotchController::new();
+
+        {
+            let s = settings.read().unwrap();
+            controller.mascot_enabled = s.show_mascot;
+            controller.minimal_mode = s.minimal_notch;
+        }
+
+        Ok(Self {
+            hwnd,
+            renderer,
+            controller,
+            settings,
+            event_rx,
+            dpi_scale,
+            win_x,
+            win_y,
+            win_w,
+            win_h,
+            last_tick: Instant::now(),
+            cursor_in_pill: false,
+        })
     }
 
-    pub fn handle_timer(&mut self) -> Result<()> {
+    pub fn current_pill_rect(&self) -> D2D_RECT_F {
+        let pw = (self.controller.width.value * self.dpi_scale).round();
+        let ph = (self.controller.height.value * self.dpi_scale).round();
+        let left = ((self.win_w as f32 - pw) * 0.5).max(0.0);
+        let right = left + pw;
+        let top = 0.0;
+        let bottom = ph;
+
+        D2D_RECT_F {
+            left,
+            top,
+            right,
+            bottom,
+        }
+    }
+
+    pub fn on_tick(&mut self) -> Result<()> {
+        let now = Instant::now();
+        let dt = (now.duration_since(self.last_tick).as_secs_f32()).clamp(0.001, 0.05);
+        self.last_tick = now;
+
         // 1. Drain background events
         while let Ok(event) = self.event_rx.try_recv() {
             match event {
-                NotchEvent::SetState(s) => self.state = s,
-                NotchEvent::UpdateMedia(info) => {
-                    let playing = info.playing;
-                    self.media_info = Some(info);
-                    if playing && !self.is_expanded {
-                        self.state = NotchState::Music;
+                NotchEvent::SetState(s) => self.controller.transition_to(s),
+                NotchEvent::Show => unsafe { let _ = ShowWindow(self.hwnd, SW_SHOW); },
+                NotchEvent::Hide => unsafe { let _ = ShowWindow(self.hwnd, windows::Win32::UI::WindowsAndMessaging::SW_HIDE); },
+                NotchEvent::Toggle => {
+                    if self.controller.is_hovered || self.controller.state != NotchState::Pet {
+                        self.controller.is_hovered = false;
+                        self.controller.transition_to(NotchState::Pet);
+                    } else {
+                        self.controller.is_hovered = true;
+                        let target = self.controller.last_expanded_tab;
+                        self.controller.transition_to(target);
                     }
                 }
-                NotchEvent::UpdateTimer(info) => self.timer_info = Some(info),
+                NotchEvent::UpdateMedia(info) => {
+                    if info.playing && !self.controller.is_hovered {
+                        self.controller.transition_to(NotchState::Music);
+                    }
+                }
+                NotchEvent::UpdateTimer(_) => {}
                 _ => {}
             }
         }
 
-        // 2. Animate mascot
-        self.anim_tick += 1;
-        // Blink every ~120 frames (4 seconds)
-        let blink_phase = self.anim_tick % 120;
-        if blink_phase < 8 {
-            self.eye_blink = (blink_phase as f32 / 8.0) * 0.1; // closed
-        } else {
-            self.eye_blink = 1.0;
+        // 2. Sync settings flags
+        {
+            if let Ok(s) = self.settings.read() {
+                self.controller.mascot_enabled = s.show_mascot;
+                self.controller.minimal_mode = s.minimal_notch;
+            }
         }
 
-        // Look around every ~180 frames (6 seconds)
-        let look_phase = (self.anim_tick / 180) % 3;
-        self.eye_look = match look_phase {
-            1 => -0.5, // look left
-            2 => 0.5,  // look right
-            _ => 0.0,  // center
+        // 3. Dynamic Hit-Testing: check cursor against pill bounding box
+        let pill_rect = self.current_pill_rect();
+        let pill_screen_left = self.win_x as f32 + pill_rect.left;
+        let pill_screen_right = self.win_x as f32 + pill_rect.right;
+        let pill_screen_top = self.win_y as f32 + pill_rect.top;
+        let pill_screen_bottom = self.win_y as f32 + pill_rect.bottom;
+
+        let mut pt = POINT::default();
+        unsafe { let _ = GetCursorPos(&mut pt); }
+
+        let cursor_in_pill = pt.x as f32 >= pill_screen_left - 4.0
+            && pt.x as f32 <= pill_screen_right + 4.0
+            && pt.y as f32 >= pill_screen_top - 4.0
+            && pt.y as f32 <= pill_screen_bottom + 6.0;
+
+        self.cursor_in_pill = cursor_in_pill;
+
+        // Dynamic click-through: strip WS_EX_TRANSPARENT when inside pill so click works
+        unsafe {
+            let style = GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE);
+            if cursor_in_pill {
+                if (style & (WS_EX_TRANSPARENT.0 as isize)) != 0 {
+                    let _ = SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, style & !(WS_EX_TRANSPARENT.0 as isize));
+                }
+            } else {
+                if (style & (WS_EX_TRANSPARENT.0 as isize)) == 0 {
+                    let _ = SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, style | (WS_EX_TRANSPARENT.0 as isize));
+                }
+            }
+        }
+
+        // Eye cursor tracking offset (clamped to 360px radius)
+        let pill_center_x = (pill_screen_left + pill_screen_right) * 0.5;
+        let pill_center_y = (pill_screen_top + pill_screen_bottom) * 0.5;
+        let dx = pt.x as f32 - pill_center_x;
+        let dy = pt.y as f32 - pill_center_y;
+        let dist = (dx * dx + dy * dy).sqrt();
+        let cursor_offset = if dist < 380.0 {
+            Some((dx, dy))
+        } else {
+            None
         };
 
-        // 3. Check hover expansion
-        unsafe {
-            let mut pt = POINT::default();
-            GetCursorPos(&mut pt)?;
-            let mut rect = RECT::default();
-            windows::Win32::UI::WindowsAndMessaging::GetWindowRect(self.hwnd, &mut rect)?;
-            
-            // Inflate detect zone a bit
-            let hover = pt.x >= rect.left && pt.x <= rect.right && pt.y >= rect.top - 5 && pt.y <= rect.bottom + 10;
-            if hover && !self.is_expanded {
-                self.update_layout(true)?;
-            } else if !hover && self.is_expanded {
-                self.update_layout(false)?;
-            }
+        // 4. Update spring physics and animations
+        self.controller.update(dt, cursor_in_pill, cursor_offset);
 
+        // 5. Trigger repaint
+        unsafe {
             let _ = InvalidateRect(self.hwnd, None, false);
         }
 
         Ok(())
     }
 
-    pub fn render(&mut self) -> Result<()> {
-        let Some(rt) = &self.render_target else { return Ok(()); };
+    pub fn on_lbutton_down(&mut self, x: f32, y: f32) {
+        // First check if Chibi Liebe was poked
+        if self.controller.chibi_liebe.handle_click(x, y) {
+            unsafe { let _ = InvalidateRect(self.hwnd, None, false); }
+            return;
+        }
 
-        let mut rect = RECT::default();
-        unsafe { GetClientRect(self.hwnd, &mut rect)?; }
-        let w = (rect.right - rect.left) as f32;
-        let h = (rect.bottom - rect.top) as f32;
+        let pill_rect = self.current_pill_rect();
 
-        unsafe {
-            rt.BeginDraw();
-            rt.Clear(Some(&D2D1_COLOR_F { r: 0.07, g: 0.07, b: 0.07, a: 1.0 }));
-
-            // Background notch
-            let radius = 16.0 * self.dpi_scale;
-            let bg_rect = D2D1_ROUNDED_RECT {
-                rect: D2D_RECT_F { left: 0.0, top: 0.0, right: w, bottom: h },
-                radiusX: radius,
-                radiusY: radius,
-            };
-            let bg_brush = rt.CreateSolidColorBrush(&D2D1_COLOR_F { r: 0.05, g: 0.05, b: 0.05, a: 1.0 }, None)?;
-            rt.FillRoundedRectangle(&bg_rect, &bg_brush);
-
-            if !self.is_expanded {
-                // Draw cute mascot eyes in center
-                self.draw_eyes(rt, w / 2.0, h / 2.0)?;
-            } else {
-                // Draw expanded music / info view
-                self.draw_expanded(rt, w, h)?;
+        // Check top tab clicks when expanded
+        if self.controller.height.value > 65.0 && y <= pill_rect.top + 32.0 * self.dpi_scale {
+            let total_w = pill_rect.right - pill_rect.left;
+            let slot_w = total_w / 5.0;
+            let rel_x = x - pill_rect.left;
+            if rel_x >= 0.0 && rel_x <= total_w {
+                let slot = (rel_x / slot_w) as usize;
+                match slot {
+                    0 => self.controller.transition_to(NotchState::Music),
+                    1 => self.controller.transition_to(NotchState::Lyrics),
+                    2 => self.controller.transition_to(NotchState::Pomo),
+                    3 => self.controller.transition_to(NotchState::Water),
+                    4 => self.controller.transition_to(NotchState::Shelf),
+                    _ => {}
+                }
+                unsafe { let _ = InvalidateRect(self.hwnd, None, false); }
+                return;
             }
-
-            let _ = rt.EndDraw(None, None);
         }
 
-        Ok(())
-    }
-
-    fn draw_eyes(&self, rt: &ID2D1HwndRenderTarget, cx: f32, cy: f32) -> Result<()> {
-        let scale = self.dpi_scale;
-        let eye_r = 3.5 * scale;
-        let eye_spacing = 9.0 * scale;
-
-        unsafe {
-            let white_brush = rt.CreateSolidColorBrush(&D2D1_COLOR_F { r: 1.0, g: 1.0, b: 1.0, a: 1.0 }, None)?;
-            let black_brush = rt.CreateSolidColorBrush(&D2D1_COLOR_F { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }, None)?;
-
-            let left_center = D2D_POINT_2F { x: cx - eye_spacing, y: cy };
-            let right_center = D2D_POINT_2F { x: cx + eye_spacing, y: cy };
-
-            let l_eye = D2D1_ELLIPSE { point: left_center, radiusX: eye_r, radiusY: eye_r * self.eye_blink };
-            let r_eye = D2D1_ELLIPSE { point: right_center, radiusX: eye_r, radiusY: eye_r * self.eye_blink };
-
-            rt.FillEllipse(&l_eye, &white_brush);
-            rt.FillEllipse(&r_eye, &white_brush);
-
-            // Pupils with looking direction
-            let pupil_r = eye_r * 0.45;
-            let look_offset = self.eye_look * (eye_r * 0.35);
-            let l_pupil = D2D1_ELLIPSE {
-                point: D2D_POINT_2F { x: left_center.x + look_offset, y: left_center.y },
-                radiusX: pupil_r,
-                radiusY: pupil_r * self.eye_blink,
-            };
-            let r_pupil = D2D1_ELLIPSE {
-                point: D2D_POINT_2F { x: right_center.x + look_offset, y: right_center.y },
-                radiusX: pupil_r,
-                radiusY: pupil_r * self.eye_blink,
-            };
-
-            rt.FillEllipse(&l_pupil, &black_brush);
-            rt.FillEllipse(&r_pupil, &black_brush);
+        // Toggle state or awaken if clicked inside pill
+        if self.cursor_in_pill {
+            if self.controller.state == NotchState::Pet {
+                self.controller.devil_eyes.trigger_wake_surge();
+                let target = self.controller.last_expanded_tab;
+                self.controller.transition_to(target);
+            } else {
+                self.controller.transition_to(NotchState::Pet);
+            }
+            unsafe { let _ = InvalidateRect(self.hwnd, None, false); }
         }
-
-        Ok(())
-    }
-
-    fn draw_expanded(&self, rt: &ID2D1HwndRenderTarget, w: f32, h: f32) -> Result<()> {
-        let scale = self.dpi_scale;
-        unsafe {
-            // Draw header bar
-            let header_brush = rt.CreateSolidColorBrush(&D2D1_COLOR_F { r: 0.2, g: 0.2, b: 0.2, a: 1.0 }, None)?;
-            let text_brush = rt.CreateSolidColorBrush(&D2D1_COLOR_F { r: 0.9, g: 0.9, b: 0.9, a: 1.0 }, None)?;
-
-            // Small album art square on left
-            let art_rect = D2D1_ROUNDED_RECT {
-                rect: D2D_RECT_F { left: 20.0 * scale, top: 25.0 * scale, right: 80.0 * scale, bottom: 85.0 * scale },
-                radiusX: 6.0 * scale,
-                radiusY: 6.0 * scale,
-            };
-            rt.FillRoundedRectangle(&art_rect, &header_brush);
-
-            // Mascot eyes on right
-            self.draw_eyes(rt, w - (40.0 * scale), 30.0 * scale)?;
-
-            // Media progress bar at bottom
-            let bar_rect = D2D1_ROUNDED_RECT {
-                rect: D2D_RECT_F { left: 20.0 * scale, top: h - (25.0 * scale), right: w - (20.0 * scale), bottom: h - (21.0 * scale) },
-                radiusX: 2.0 * scale,
-                radiusY: 2.0 * scale,
-            };
-            rt.FillRoundedRectangle(&bar_rect, &header_brush);
-
-            // Progress fill (35%)
-            let fill_rect = D2D1_ROUNDED_RECT {
-                rect: D2D_RECT_F { left: 20.0 * scale, top: h - (25.0 * scale), right: (20.0 + (w - 40.0) * 0.35) * scale, bottom: h - (21.0 * scale) },
-                radiusX: 2.0 * scale,
-                radiusY: 2.0 * scale,
-            };
-            let accent_brush = rt.CreateSolidColorBrush(&D2D1_COLOR_F { r: 0.2, g: 0.8, b: 0.5, a: 1.0 }, None)?;
-            rt.FillRoundedRectangle(&fill_rect, &accent_brush);
-        }
-
-        Ok(())
     }
 }
 
@@ -413,33 +316,29 @@ pub fn run_ui(
         RegisterClassExW(&wc);
 
         let hwnd = CreateWindowExW(
-            WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
+            WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
             PCWSTR(class_name.as_ptr()),
             PCWSTR(to_wide_string("NusaNotch\0").as_ptr()),
             WS_POPUP,
             0,
             0,
-            NOTCH_CLOSED_WIDTH,
-            NOTCH_CLOSED_HEIGHT,
+            NOTCH_WINDOW_WIDTH,
+            NOTCH_WINDOW_HEIGHT,
             HWND::default(),
             HMENU::default(),
             hinstance,
             None,
         )?;
 
-        let factory: ID2D1Factory1 = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)?;
-
-        let mut ui = Box::new(NotchUI::new(hwnd, factory, settings.clone(), event_rx)?);
-        ui.update_layout(false)?;
-
-        let raw_ptr = Box::into_raw(ui);
+        let mut app = Box::new(NotchApp::new(hwnd, settings.clone(), event_rx)?);
+        let raw_ptr = Box::into_raw(app);
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, raw_ptr as isize);
 
-        // Setup System Tray icon bound directly to this window
+        // Setup System Tray icon
         let nid = setup_tray_icon(hwnd)?;
 
-        // Set 30 FPS timer
-        SetTimer(hwnd, 1, 33, None);
+        // Critically damped ~120 FPS timer (8ms)
+        SetTimer(hwnd, 1, 8, None);
 
         // Show window immediately
         let _ = ShowWindow(hwnd, SW_SHOW);
@@ -451,7 +350,7 @@ pub fn run_ui(
             DispatchMessageW(&msg);
         }
 
-        // Cleanup
+        // Cleanup on exit
         remove_tray_icon(&nid);
         let _ = Box::from_raw(raw_ptr);
     }
@@ -465,48 +364,63 @@ extern "system" fn notch_wnd_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    let ptr = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut NotchUI;
+    let ptr = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut NotchApp;
 
     if !ptr.is_null() {
-        let ui = unsafe { &mut *ptr };
+        let app = unsafe { &mut *ptr };
 
         match msg {
             WM_TIMER => {
-                let _ = ui.handle_timer();
+                let _ = app.on_tick();
                 return LRESULT(0);
             }
             WM_PAINT => {
                 let mut ps = PAINTSTRUCT::default();
                 unsafe {
                     BeginPaint(hwnd, &mut ps);
-                    let _ = ui.render();
-                    EndPaint(hwnd, &ps);
+                    let pill_rect = app.current_pill_rect();
+                    let _ = app.renderer.render_frame(&mut app.controller, pill_rect);
+                    let _ = EndPaint(hwnd, &ps);
                 }
+                return LRESULT(0);
+            }
+            WM_LBUTTONDOWN => {
+                let x = (lparam.0 & 0xFFFF) as i16 as f32;
+                let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as f32;
+                app.on_lbutton_down(x, y);
                 return LRESULT(0);
             }
             TRAY_MESSAGE => {
                 let event = lparam.0 as u32;
                 if event == WM_RBUTTONUP {
-                    if let Ok(cmd) = show_tray_menu(hwnd, &ui.settings) {
-                        if handle_tray_command(cmd, hwnd, &ui.settings).unwrap_or(false) {
+                    if let Ok(cmd) = show_tray_menu(hwnd, &app.settings) {
+                        if handle_tray_command(cmd, hwnd, &app.settings).unwrap_or(false) {
                             unsafe {
-                                KillTimer(hwnd, 1);
+                                let _ = KillTimer(hwnd, 1);
                                 let _ = DestroyWindow(hwnd);
                             }
                         }
                     }
-                } else if event == WM_LBUTTONUP {
-                    let _ = ui.update_layout(!ui.is_expanded);
+                } else if event == windows::Win32::UI::WindowsAndMessaging::WM_LBUTTONUP {
+                    if app.controller.is_hovered || app.controller.state != NotchState::Pet {
+                        app.controller.is_hovered = false;
+                        app.controller.transition_to(NotchState::Pet);
+                    } else {
+                        app.controller.is_hovered = true;
+                        let target = app.controller.last_expanded_tab;
+                        app.controller.transition_to(target);
+                    }
+                    unsafe { let _ = InvalidateRect(hwnd, None, false); }
                 }
                 return LRESULT(0);
             }
             WM_DESTROY => {
-                unsafe {
-                    KillTimer(hwnd, 1);
-                    PostQuitMessage(0);
-                }
-                return LRESULT(0);
-            }
+                            unsafe {
+                                let _ = KillTimer(hwnd, 1);
+                                PostQuitMessage(0);
+                            }
+                            return LRESULT(0);
+                        }
             _ => {}
         }
     }
