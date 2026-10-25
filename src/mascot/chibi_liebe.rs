@@ -39,12 +39,11 @@ impl ChibiLiebe {
     pub fn draw(
         &mut self,
         rt: &windows::Win32::Graphics::Direct2D::ID2D1HwndRenderTarget,
-        factory: &windows::Win32::Graphics::Direct2D::ID2D1Factory1,
+        factory: &windows::Win32::Graphics::Direct2D::ID2D1Factory,
         pill_rect: D2D_RECT_F,
         _state: NotchState,
     ) {
-        let f: windows::Win32::Graphics::Direct2D::ID2D1Factory = factory.clone().into();
-        self.render(&f, rt, pill_rect, 1.0);
+        self.render(factory, rt, pill_rect, 1.0);
     }
 }
 

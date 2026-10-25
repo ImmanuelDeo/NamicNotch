@@ -1,18 +1,19 @@
 // src/notch/renderer.rs
+use anyhow::Result;
 use chrono::Local;
-use windows::core::{Interface, PCWSTR};
+use windows::core::PCWSTR;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_BEZIER_SEGMENT, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED,
     D2D1_FIGURE_END_CLOSED, D2D1_PIXEL_FORMAT, D2D_POINT_2F, D2D_RECT_F, D2D_SIZE_U,
 };
 use windows::Win32::Graphics::Direct2D::{
-    D2D1CreateFactory, ID2D1Factory1, ID2D1HwndRenderTarget, ID2D1PathGeometry, ID2D1StrokeStyle,
-    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_CAP_STYLE_ROUND, D2D1_DASH_STYLE_DASH, D2D1_ELLIPSE,
-    D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_FEATURE_LEVEL_DEFAULT,
-    D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_LINE_JOIN_ROUND, D2D1_PRESENT_OPTIONS_IMMEDIATELY,
-    D2D1_RENDER_TARGET_PROPERTIES, D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE,
-    D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES1, D2D1_STROKE_TRANSFORM_TYPE_NORMAL,
+    D2D1CreateFactory, ID2D1Factory, ID2D1HwndRenderTarget, ID2D1PathGeometry, ID2D1StrokeStyle,
+    D2D1_CAP_STYLE_ROUND, D2D1_DASH_STYLE_DASH, D2D1_ELLIPSE, D2D1_FACTORY_TYPE_SINGLE_THREADED,
+    D2D1_FEATURE_LEVEL_DEFAULT, D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_LINE_JOIN_ROUND,
+    D2D1_PRESENT_OPTIONS_IMMEDIATELY, D2D1_RENDER_TARGET_PROPERTIES,
+    D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT,
+    D2D1_STROKE_STYLE_PROPERTIES,
 };
 use windows::Win32::Graphics::DirectWrite::{
     DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED,
@@ -25,20 +26,38 @@ use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 
 use crate::notch::states::{NotchController, NotchState, OverlayKind};
 
+/// Palet Warna Anti-Magic Biru-Hitam Netral (Didefinisikan langsung agar tidak butuh `mod theme`)
 pub struct AntiMagicNeutralPalette;
 
 impl AntiMagicNeutralPalette {
-    pub const PILL_SOLID_BLACK: D2D1_COLOR_F = D2D1_COLOR_F { r: 0.0, g: 0.0, b: 0.0, a: 1.0 };
-    pub const CARD_ELEVATED: D2D1_COLOR_F = D2D1_COLOR_F { r: 0.115, g: 0.148, b: 0.212, a: 0.92 };
-    pub const ACCENT_BLUE: D2D1_COLOR_F = D2D1_COLOR_F { r: 0.231, g: 0.510, b: 0.965, a: 1.0 }; // #3B82F6
-    pub const ACCENT_CYAN: D2D1_COLOR_F = D2D1_COLOR_F { r: 0.220, g: 0.741, b: 0.973, a: 1.0 }; // #38BDF8
-    pub const ACCENT_WINE: D2D1_COLOR_F = D2D1_COLOR_F { r: 0.680, g: 0.220, b: 0.310, a: 0.95 };
-    pub const TEXT_PRIMARY: D2D1_COLOR_F = D2D1_COLOR_F { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
-    pub const TEXT_SECONDARY: D2D1_COLOR_F = D2D1_COLOR_F { r: 0.612, g: 0.639, b: 0.686, a: 1.0 }; // #9CA3AF
+    pub const TEXT_PRIMARY: D2D1_COLOR_F = D2D1_COLOR_F {
+        r: 0.97,
+        g: 0.98,
+        b: 1.00,
+        a: 1.0,
+    };
+    pub const TEXT_SECONDARY: D2D1_COLOR_F = D2D1_COLOR_F {
+        r: 0.60,
+        g: 0.65,
+        b: 0.74,
+        a: 1.0,
+    };
+    pub const ACCENT_BLUE: D2D1_COLOR_F = D2D1_COLOR_F {
+        r: 0.23,
+        g: 0.51,
+        b: 0.96,
+        a: 1.0,
+    };
+    pub const ACCENT_CYAN: D2D1_COLOR_F = D2D1_COLOR_F {
+        r: 0.22,
+        g: 0.74,
+        b: 0.97,
+        a: 1.0,
+    };
 }
 
 pub struct NotchRenderer {
-    pub factory: ID2D1Factory1,
+    pub factory: ID2D1Factory,
     pub rt: ID2D1HwndRenderTarget,
     pub dwrite: IDWriteFactory,
     pub dashed_stroke: Option<ID2D1StrokeStyle>,
@@ -50,139 +69,137 @@ pub struct NotchRenderer {
 }
 
 impl NotchRenderer {
-    pub fn new(
-        hwnd: HWND,
-        width: u32,
-        height: u32,
-        dpi_scale: f32,
-    ) -> windows::core::Result<Self> {
+    pub fn new(hwnd: HWND, width: u32, height: u32, dpi_scale: f32) -> Result<Self> {
         unsafe {
-            Self::new_internal(hwnd, width, height, dpi_scale)
+            let factory: ID2D1Factory =
+                D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)?;
+
+            let rt_props = D2D1_RENDER_TARGET_PROPERTIES {
+                r#type: D2D1_RENDER_TARGET_TYPE_DEFAULT,
+                pixelFormat: D2D1_PIXEL_FORMAT {
+                    format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                    alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
+                },
+                dpiX: 96.0 * dpi_scale,
+                dpiY: 96.0 * dpi_scale,
+                usage: D2D1_RENDER_TARGET_USAGE_NONE,
+                minLevel: D2D1_FEATURE_LEVEL_DEFAULT,
+            };
+
+            let hwnd_props = D2D1_HWND_RENDER_TARGET_PROPERTIES {
+                hwnd,
+                pixelSize: D2D_SIZE_U {
+                    width: width.max(1),
+                    height: height.max(1),
+                },
+                presentOptions: D2D1_PRESENT_OPTIONS_IMMEDIATELY,
+            };
+
+            let rt = factory.CreateHwndRenderTarget(&rt_props, &hwnd_props)?;
+            let dwrite: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
+
+            let font_family: Vec<u16> = "Segoe UI\0".encode_utf16().collect();
+            let locale: Vec<u16> = "en-us\0".encode_utf16().collect();
+
+            let dashed_stroke = factory
+                .CreateStrokeStyle(
+                    &D2D1_STROKE_STYLE_PROPERTIES {
+                        startCap: D2D1_CAP_STYLE_ROUND,
+                        endCap: D2D1_CAP_STYLE_ROUND,
+                        dashCap: D2D1_CAP_STYLE_ROUND,
+                        lineJoin: D2D1_LINE_JOIN_ROUND,
+                        miterLimit: 10.0,
+                        dashStyle: D2D1_DASH_STYLE_DASH,
+                        dashOffset: 0.0,
+                    },
+                    None,
+                )
+                .ok();
+
+            let fmt_clock_hero = dwrite.CreateTextFormat(
+                PCWSTR(font_family.as_ptr()),
+                None,
+                DWRITE_FONT_WEIGHT_BOLD,
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                22.0,
+                PCWSTR(locale.as_ptr()),
+            )?;
+            fmt_clock_hero.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+
+            let fmt_title = dwrite.CreateTextFormat(
+                PCWSTR(font_family.as_ptr()),
+                None,
+                DWRITE_FONT_WEIGHT_BOLD,
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                13.0,
+                PCWSTR(locale.as_ptr()),
+            )?;
+            fmt_title.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+
+            let fmt_body = dwrite.CreateTextFormat(
+                PCWSTR(font_family.as_ptr()),
+                None,
+                DWRITE_FONT_WEIGHT_SEMI_BOLD,
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                11.5,
+                PCWSTR(locale.as_ptr()),
+            )?;
+            fmt_body.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+
+            let fmt_quote_italic = dwrite.CreateTextFormat(
+                PCWSTR(font_family.as_ptr()),
+                None,
+                DWRITE_FONT_WEIGHT_MEDIUM,
+                DWRITE_FONT_STYLE_ITALIC,
+                DWRITE_FONT_STRETCH_NORMAL,
+                11.0,
+                PCWSTR(locale.as_ptr()),
+            )?;
+            fmt_quote_italic.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+
+            let fmt_caption = dwrite.CreateTextFormat(
+                PCWSTR(font_family.as_ptr()),
+                None,
+                DWRITE_FONT_WEIGHT_MEDIUM,
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                10.0,
+                PCWSTR(locale.as_ptr()),
+            )?;
+            fmt_caption.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+
+            Ok(Self {
+                factory,
+                rt,
+                dwrite,
+                dashed_stroke,
+                fmt_clock_hero,
+                fmt_title,
+                fmt_body,
+                fmt_quote_italic,
+                fmt_caption,
+            })
         }
     }
 
-    unsafe fn new_internal(
-        hwnd: HWND,
-        width: u32,
-        height: u32,
-        dpi_scale: f32,
-    ) -> windows::core::Result<Self> {
-        let factory: ID2D1Factory1 =
-            D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)?;
-        let dwrite: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
+    /// Dipanggil langsung oleh `WM_PAINT` di `src/notch/mod.rs`
+    pub fn render_frame(&mut self, ctrl: &mut NotchController, pill_rect: D2D_RECT_F) {
+        unsafe {
+            self.rt.BeginDraw();
+            self.rt.Clear(Some(&D2D1_COLOR_F {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0,
+            }));
 
-        let dpi = 96.0 * dpi_scale.max(1.0);
-        let render_props = D2D1_RENDER_TARGET_PROPERTIES {
-            r#type: D2D1_RENDER_TARGET_TYPE_DEFAULT,
-            pixelFormat: D2D1_PIXEL_FORMAT {
-                format: DXGI_FORMAT_B8G8R8A8_UNORM,
-                alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
-            },
-            dpiX: dpi,
-            dpiY: dpi,
-            usage: D2D1_RENDER_TARGET_USAGE_NONE,
-            minLevel: D2D1_FEATURE_LEVEL_DEFAULT,
-        };
+            self.draw_frame(ctrl, pill_rect);
 
-        let hwnd_props = D2D1_HWND_RENDER_TARGET_PROPERTIES {
-            hwnd,
-            pixelSize: D2D_SIZE_U {
-                width: width.max(100),
-                height: height.max(50),
-            },
-            presentOptions: D2D1_PRESENT_OPTIONS_IMMEDIATELY,
-        };
-
-        let rt = factory.CreateHwndRenderTarget(&render_props, &hwnd_props)?;
-        rt.SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-        let font_family: Vec<u16> = "Segoe UI Variable Display\0".encode_utf16().collect();
-        let locale: Vec<u16> = "en-us\0".encode_utf16().collect();
-
-        // Stroke garis putus-putus (dashed border) untuk Dropzone Shelf seperti Nusa Original
-                let props = D2D1_STROKE_STYLE_PROPERTIES1 {
-                            startCap: D2D1_CAP_STYLE_ROUND,
-                            endCap: D2D1_CAP_STYLE_ROUND,
-                            dashCap: D2D1_CAP_STYLE_ROUND,
-                            lineJoin: D2D1_LINE_JOIN_ROUND,
-                            miterLimit: 10.0,
-                            dashStyle: D2D1_DASH_STYLE_DASH,
-                            dashOffset: 0.0,
-                            transformType: D2D1_STROKE_TRANSFORM_TYPE_NORMAL,
-                            };
-                            let dashed_stroke: Option<ID2D1StrokeStyle> = factory
-                            .CreateStrokeStyle(
-                                &props,
-                                None,
-                            )
-                            .ok()
-                            .map(|s| s.into());
-
-        let fmt_clock_hero = dwrite.CreateTextFormat(
-            PCWSTR(font_family.as_ptr()),
-            None,
-            DWRITE_FONT_WEIGHT_BOLD,
-            DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL,
-            22.0,
-            PCWSTR(locale.as_ptr()),
-        )?;
-        fmt_clock_hero.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
-
-        let fmt_title = dwrite.CreateTextFormat(
-            PCWSTR(font_family.as_ptr()),
-            None,
-            DWRITE_FONT_WEIGHT_BOLD,
-            DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL,
-            13.0,
-            PCWSTR(locale.as_ptr()),
-        )?;
-        fmt_title.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
-
-        let fmt_body = dwrite.CreateTextFormat(
-            PCWSTR(font_family.as_ptr()),
-            None,
-            DWRITE_FONT_WEIGHT_SEMI_BOLD,
-            DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL,
-            11.5,
-            PCWSTR(locale.as_ptr()),
-        )?;
-        fmt_body.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
-
-        let fmt_quote_italic = dwrite.CreateTextFormat(
-            PCWSTR(font_family.as_ptr()),
-            None,
-            DWRITE_FONT_WEIGHT_MEDIUM,
-            DWRITE_FONT_STYLE_ITALIC,
-            DWRITE_FONT_STRETCH_NORMAL,
-            11.0,
-            PCWSTR(locale.as_ptr()),
-        )?;
-        fmt_quote_italic.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
-
-        let fmt_caption = dwrite.CreateTextFormat(
-            PCWSTR(font_family.as_ptr()),
-            None,
-            DWRITE_FONT_WEIGHT_MEDIUM,
-            DWRITE_FONT_STYLE_NORMAL,
-            DWRITE_FONT_STRETCH_NORMAL,
-            10.0,
-            PCWSTR(locale.as_ptr()),
-        )?;
-        fmt_caption.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
-
-        Ok(Self {
-            factory,
-            rt,
-            dwrite,
-            dashed_stroke,
-            fmt_clock_hero,
-            fmt_title,
-            fmt_body,
-            fmt_quote_italic,
-            fmt_caption,
-        })
+            let _ = self.rt.EndDraw(None, None);
+        }
     }
 
     unsafe fn draw_text_left(
@@ -329,11 +346,10 @@ impl NotchRenderer {
         });
 
         sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-                sink.Close()?;
-                Ok(path.into())
-            }
+        sink.Close()?;
+        Ok(path)
+    }
 
-    /// Indikator Baterai Lingkaran Hijau (`⚡`) ala Nusa Original (`Screenshot 2026-10-25 210657.png`)
     unsafe fn draw_nusa_ring_battery(&self, cx: f32, cy: f32, pct: u8, charging: bool, alpha: f32) {
         let ring_col = if charging || pct > 20 {
             D2D1_COLOR_F {
@@ -383,11 +399,7 @@ impl NotchRenderer {
         );
     }
 
-    pub unsafe fn render_frame(&self, ctrl: &mut NotchController, pill_rect: D2D_RECT_F) {
-            self.draw_frame(ctrl, pill_rect);
-        }
-
-        pub unsafe fn draw_frame(&self, ctrl: &mut NotchController, pill_rect: D2D_RECT_F) {
+    pub unsafe fn draw_frame(&mut self, ctrl: &mut NotchController, pill_rect: D2D_RECT_F) {
         let radius = ctrl.corner_radius.value;
         let alpha = ctrl.content_alpha.value.clamp(0.0, 1.0);
         let flare = if pill_rect.bottom - pill_rect.top > 60.0 {
@@ -396,18 +408,18 @@ impl NotchRenderer {
             13.0
         };
 
-        // 1. BASE NOTCH SOLID BLACK (#000000) TANPA BORDER MENGGANGGU
-        let pure_black = D2D1_COLOR_F {
-            r: 0.0,
-            g: 0.0,
-            b: 0.0,
+        // Base Notch Obsidian Pitch-Black (#040406)
+        let pitch_black = D2D1_COLOR_F {
+            r: 0.016,
+            g: 0.016,
+            b: 0.022,
             a: 1.0,
         };
         if let Ok(bezel_geom) = self.create_top_bezel_notch_geometry(pill_rect, radius, flare) {
-            if let Ok(base_brush) = self.rt.CreateSolidColorBrush(&pure_black, None) {
+            if let Ok(base_brush) = self.rt.CreateSolidColorBrush(&pitch_black, None) {
                 self.rt.FillGeometry(&bezel_geom, &base_brush, None);
             }
-        } else if let Ok(base_brush) = self.rt.CreateSolidColorBrush(&pure_black, None) {
+        } else if let Ok(base_brush) = self.rt.CreateSolidColorBrush(&pitch_black, None) {
             self.rt.FillRoundedRectangle(
                 &D2D1_ROUNDED_RECT {
                     rect: pill_rect,
@@ -418,7 +430,6 @@ impl NotchRenderer {
             );
         }
 
-        // 2. SAAT TERTUTUP + ADA SYSTEM OVERLAY
         if !ctrl.is_hovered {
             if let Some(ref ov) = ctrl.active_overlay {
                 self.draw_system_overlay(ov, pill_rect, alpha);
@@ -426,12 +437,10 @@ impl NotchRenderer {
             }
         }
 
-        // 3. KONTEN SESUAI STATE
         if ctrl.height.value < 55.0 {
             if ctrl.state == NotchState::Idle {
                 self.draw_closed_clock_pill(ctrl, pill_rect, alpha);
             } else {
-                // ANIMASI AURA BACKGROUND DINAMIS SAAT IDLE (Merah-Hitam Petir / Hijau Healing -> Kembali Hitam)
                 ctrl.devil_eyes.draw_idle_aura_background(
                     &self.rt,
                     &self.factory,
@@ -455,7 +464,6 @@ impl NotchRenderer {
             }
         }
 
-        // 4. MASKOT CHIBI LIEBE
         ctrl.chibi_liebe
             .draw(&self.rt, &self.factory, pill_rect, ctrl.state);
     }
@@ -612,10 +620,6 @@ impl NotchRenderer {
         );
     }
 
-    /// Shell Expanded Notch Bersih Seperti Nusa Original (`Screenshot 2026-10-25 210657.png` & `210820.png`):
-    /// - TIDAK ADA nested card box pembungkus konten (langsung di atas background hitam `#000000`)
-    /// - Tombol navigasi bulat `<` dan `>` di tepi kiri & kanan tengah (`cy = pill_center_y`)
-    /// - Bar navigasi atas yang bersih + baterai bundar hijau & jam di kanan
     unsafe fn draw_clean_nusa_shell(
         &self,
         ctrl: &NotchController,
@@ -645,7 +649,6 @@ impl NotchRenderer {
             a: alpha * 0.85,
         };
 
-        // 1. Tombol Bulat `<` dan `>` di Tepi Kiri & Kanan Tengah (Persis Referensi Nusa Original!)
         let mid_y = (pill_rect.top + pill_rect.bottom) * 0.5 + 4.0;
         let left_circle = D2D_POINT_2F {
             x: pill_rect.left + 16.0,
@@ -705,7 +708,6 @@ impl NotchRenderer {
             white,
         );
 
-        // 2. Bar Navigasi 6-Slot di Atas (Tanpa Kotak Tebal, Bersih & Minimalis)
         let tabs_left = pill_rect.left + 36.0;
         let tabs_right = pill_rect.right - 36.0;
         let slot_w = (tabs_right - tabs_left) / 6.0;
@@ -736,7 +738,6 @@ impl NotchRenderer {
                 text_col,
             );
 
-            // Garis bawah tipis biru-putih hanya pada tab yang aktif
             if is_active {
                 if let Ok(lb) = self
                     .rt
@@ -759,7 +760,6 @@ impl NotchRenderer {
             }
         }
 
-        // 3. Indikator Titik / Pill Tipis di Bagian Paling Bawah Notch (Persis Nusa Original)
         let dot_y = pill_rect.bottom - 4.5;
         let total_dots = 5;
         let dots_w = 44.0;
@@ -795,7 +795,6 @@ impl NotchRenderer {
             }
         }
 
-        // Kembalikan area konten langsung di atas background hitam (tanpa menggambar card container!)
         D2D_RECT_F {
             left: pill_rect.left + 32.0,
             top: pill_rect.top + 26.0,
@@ -804,9 +803,6 @@ impl NotchRenderer {
         }
     }
 
-    // =========================================================================
-    // SECTION 0: HUB (Langsung di Atas Background Hitam, Tanpa Nested Cards!)
-    // =========================================================================
     unsafe fn draw_hub_panel(&self, ctrl: &NotchController, area: D2D_RECT_F, alpha: f32) {
         let white = D2D1_COLOR_F {
             r: 1.0,
@@ -825,7 +821,6 @@ impl NotchRenderer {
         let time_big = now.format("%H:%M").to_string();
         let date_str = now.format("%a %d %b %Y").to_string();
 
-        // Kolom Kiri (x: area.left .. area.left + 138.0): Jam Besar, Tanggal, & Ring Baterai Hijau
         self.draw_text_left(
             &time_big,
             &self.fmt_clock_hero,
@@ -874,7 +869,6 @@ impl NotchRenderer {
             white,
         );
 
-        // Garis pemisah vertikal tipis berwarna biru-abu gelap
         if let Ok(div_b) = self.rt.CreateSolidColorBrush(
             &D2D1_COLOR_F {
                 r: 0.18,
@@ -899,7 +893,6 @@ impl NotchRenderer {
             );
         }
 
-        // Kolom Kanan: Word / Quote of the Day langsung di atas background hitam
         let q_left = area.left + 154.0;
         let daily = ctrl.current_quote();
         let header = format!("✨ {}", daily.word_of_the_day);
@@ -941,9 +934,6 @@ impl NotchRenderer {
         );
     }
 
-    // =========================================================================
-    // SECTION 1: MUSIC (Persis Referensi `Screenshot 2026-10-25 210657.png` + Side Lyrics!)
-    // =========================================================================
     unsafe fn draw_music_panel(&self, ctrl: &NotchController, area: D2D_RECT_F, alpha: f32) {
         let white = D2D1_COLOR_F {
             r: 1.0,
@@ -965,7 +955,6 @@ impl NotchRenderer {
             area.right - 4.0
         };
 
-        // 1. Album Art Rounded Square di Kiri Atas (`48x48`)
         let art_rect = D2D_RECT_F {
             left: area.left + 4.0,
             top: area.top + 4.0,
@@ -992,7 +981,6 @@ impl NotchRenderer {
         }
         self.draw_text_centered("🎵", &self.fmt_title, art_rect, white);
 
-        // 2. Judul Lagu (Putih Tebal) & Nama Artis (Abu-abu) di Sebelah Kanan Cover
         self.draw_text_left(
             &ctrl.media_title,
             &self.fmt_title,
@@ -1016,7 +1004,6 @@ impl NotchRenderer {
             muted,
         );
 
-        // 3. Baris Timeline (`00:03  ●──────────  -04:37`) Langsung di Atas Hitam
         let elapsed_s = ctrl.media_elapsed_exact.max(0.0) as u32;
         let total_s = ctrl.media_total_secs.max(1.0) as u32;
         let rem_s = total_s.saturating_sub(elapsed_s);
@@ -1104,7 +1091,6 @@ impl NotchRenderer {
             );
         }
 
-        // 4. Baris Tombol Bawah: `[💬]` di kiri, `[⏮]  [▶/⏸]  [⏭]` di tengah
         let ctrl_y = area.top + 88.0;
         let mid_x = (area.left + player_right) * 0.52;
 
@@ -1158,7 +1144,6 @@ impl NotchRenderer {
             white,
         );
 
-        // 5. Panel Lirik Live di Sebelah Kanan (Langsung di Atas Hitam Tanpa Kotak Penuh)
         if ctrl.show_side_lyrics {
             let lyr_left = player_right + 10.0;
             if let Ok(div_b) = self.rt.CreateSolidColorBrush(
@@ -1242,9 +1227,6 @@ impl NotchRenderer {
         }
     }
 
-    // =========================================================================
-    // SECTION 2: CONTROL (Langsung di Atas Background Hitam Tanpa Kotak Kartu!)
-    // =========================================================================
     unsafe fn draw_control_panel(&self, ctrl: &NotchController, area: D2D_RECT_F, alpha: f32) {
         let white = D2D1_COLOR_F {
             r: 1.0,
@@ -1273,7 +1255,6 @@ impl NotchRenderer {
         for (ry, label, val, accent) in rows {
             let cy = ry + row_h * 0.5;
 
-            // 1. Kolom Label Kiri
             self.draw_text_left(
                 label,
                 &self.fmt_body,
@@ -1286,7 +1267,6 @@ impl NotchRenderer {
                 white,
             );
 
-            // 2. Track Slider Tipis di Tengah
             let track_l = area.left + 104.0;
             let track_r = (area.right - 52.0).max(track_l + 20.0);
 
@@ -1342,7 +1322,6 @@ impl NotchRenderer {
                 );
             }
 
-            // 3. Angka Persentase di Kanan
             self.draw_text_right(
                 &format!("{}%", val),
                 &self.fmt_body,
@@ -1357,9 +1336,6 @@ impl NotchRenderer {
         }
     }
 
-    // =========================================================================
-    // SECTION 3: POMODORO TIMER (Dengan Opsi Tombol `Focus 25m` & `Break 5m`!)
-    // =========================================================================
     unsafe fn draw_pomo_panel(&self, ctrl: &NotchController, area: D2D_RECT_F, alpha: f32) {
         let white = D2D1_COLOR_F {
             r: 1.0,
@@ -1378,7 +1354,6 @@ impl NotchRenderer {
         let secs = ctrl.pomo_remaining_secs % 60;
         let time_str = format!("{:02}:{:02}", mins, secs);
 
-        // Kiri: Angka Countdown Besar & Label Status
         self.draw_text_left(
             &time_str,
             &self.fmt_clock_hero,
@@ -1406,7 +1381,6 @@ impl NotchRenderer {
             AntiMagicNeutralPalette::ACCENT_CYAN,
         );
 
-        // Kanan Baris 1 (top + 12..42): Opsi Pemilih Mode [Focus 25m] dan [Break 5m]
         let focus_mode_rect = D2D_RECT_F {
             left: area.left + 118.0,
             top: area.top + 12.0,
@@ -1481,7 +1455,6 @@ impl NotchRenderer {
             if ctrl.pomo_is_break { white } else { muted },
         );
 
-        // Kanan Baris 2 (top + 54..86): Tombol [▶ Start / ⏸ Pause] dan [↺ Reset]
         let start_rect = D2D_RECT_F {
             left: area.left + 118.0,
             top: area.top + 54.0,
@@ -1537,9 +1510,6 @@ impl NotchRenderer {
         self.draw_text_centered("↺ Reset", &self.fmt_caption, reset_rect, muted);
     }
 
-    // =========================================================================
-    // SECTION 4: SHELF (Persis Referensi `Screenshot 2026-10-25 210820.png`: Dashed Border!)
-    // =========================================================================
     unsafe fn draw_shelf_panel(&self, ctrl: &NotchController, area: D2D_RECT_F, alpha: f32) {
         let white = D2D1_COLOR_F {
             r: 1.0,
@@ -1561,7 +1531,6 @@ impl NotchRenderer {
             bottom: area.bottom - 4.0,
         };
 
-        // Garis tepi putus-putus (Dashed Rounded Rect) langsung di atas background hitam!
         if let Ok(border_b) = self.rt.CreateSolidColorBrush(
             &D2D1_COLOR_F {
                 r: 0.32,

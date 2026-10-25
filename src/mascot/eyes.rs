@@ -4,7 +4,7 @@ use windows::Win32::Graphics::Direct2D::Common::{
     D2D1_FIGURE_END_CLOSED, D2D1_FIGURE_END_OPEN, D2D_POINT_2F, D2D_RECT_F,
 };
 use windows::Win32::Graphics::Direct2D::{
-    ID2D1Factory1, ID2D1HwndRenderTarget, D2D1_ELLIPSE, D2D1_ROUNDED_RECT,
+    ID2D1Factory, ID2D1HwndRenderTarget, D2D1_ELLIPSE, D2D1_ROUNDED_RECT,
 };
 
 pub struct DevilUnionEyes {
@@ -122,7 +122,7 @@ impl DevilUnionEyes {
     pub unsafe fn draw_idle_aura_background(
         &self,
         rt: &ID2D1HwndRenderTarget,
-        factory: &ID2D1Factory1,
+        factory: &ID2D1Factory,
         pill_rect: D2D_RECT_F,
         alpha: f32,
     ) {
@@ -349,13 +349,13 @@ impl DevilUnionEyes {
     }
 
     pub unsafe fn draw(
-            &self,
-            rt: &ID2D1HwndRenderTarget,
-            factory: &ID2D1Factory1,
-            center_x: f32,
-            center_y: f32,
-            alpha: f32,
-        ) {
+        &self,
+        rt: &ID2D1HwndRenderTarget,
+        factory: &ID2D1Factory,
+        center_x: f32,
+        center_y: f32,
+        alpha: f32,
+    ) {
         if alpha <= 0.02 {
             return;
         }

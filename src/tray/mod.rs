@@ -25,6 +25,7 @@ use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use crate::settings::Settings;
 
+pub const WM_TRAYICON: u32 = WM_USER + 1;
 pub const TRAY_MESSAGE: u32 = WM_USER + 1;
 pub const TRAY_ID: u32 = 1;
 
@@ -34,7 +35,7 @@ pub const ID_MINIMAL_NOTCH: u32 = 1003;
 pub const ID_ABOUT: u32 = 1004;
 pub const ID_EXIT: u32 = 1005;
 
-pub fn setup_tray_icon(hwnd: HWND) -> Result<NOTIFYICONDATAW> {
+pub fn create_tray_icon(hwnd: HWND) -> Result<NOTIFYICONDATAW> {
     let icon = crate::icon::create_antimagic_hicon();
     
     let mut nid = NOTIFYICONDATAW::default();
@@ -127,7 +128,7 @@ pub fn handle_tray_command(cmd: u32, hwnd: HWND, settings: &Arc<RwLock<Settings>
     }
 }
 
-fn create_tray_icon() -> Result<HICON> {
+fn load_tray_icon_fallback() -> Result<HICON> {
     unsafe {
         let hinstance = windows::Win32::System::LibraryLoader::GetModuleHandleW(None)?;
         

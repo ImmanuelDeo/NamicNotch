@@ -1,5 +1,5 @@
 // src/notch/mod.rs
-//! Notch window and rendering for Nusa Notch Clone (v7.0)
+//! Notch window and rendering for Nusa Notch Clone (v7.2 - D:\NusaNotch-RE)
 
 pub mod renderer;
 pub mod states;
@@ -13,8 +13,8 @@ use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POI
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
 use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, InvalidateRect, MonitorFromWindow, UpdateWindow, HBRUSH, MONITORINFO,
-    MONITOR_DEFAULTTOPRIMARY,
+    BeginPaint, EndPaint, GetMonitorInfoW, InvalidateRect, MonitorFromWindow, UpdateWindow, HBRUSH,
+    MONITORINFO, MONITOR_DEFAULTTOPRIMARY, PAINTSTRUCT,
 };
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
@@ -23,11 +23,11 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 use crate::settings::Settings;
 use crate::tray::{
-    handle_tray_command, remove_tray_icon, setup_tray_icon, show_tray_menu, TRAY_MESSAGE,
+    create_tray_icon, handle_tray_command, remove_tray_icon, show_tray_menu, WM_TRAYICON,
 };
 
 pub use renderer::NotchRenderer;
-pub use states::{NotchController, NotchState};
+pub use states::{NotchController, NotchState, OverlayKind};
 
 pub const NOTCH_WINDOW_WIDTH: i32 = 540;
 pub const NOTCH_WINDOW_HEIGHT: i32 = 220;
@@ -42,7 +42,6 @@ pub enum NotchEvent {
     UpdateMedia(crate::media::MediaInfo),
     UpdateLyrics(Vec<String>),
     UpdateTimer(crate::timers::TimerInfo),
-    UpdateWater(crate::timers::WaterInfo),
     UpdateShelf(Vec<crate::shelf::ShelfItem>),
     HotkeyVolume(u8),
     HotkeyBrightness(u8),
@@ -63,6 +62,7 @@ pub struct NotchApp {
     pub last_tick: Instant,
     pub cursor_in_pill: bool,
     pub last_cursor_logical_x: f32,
+    pub last_cursor_logical_y: f32,
 }
 
 impl NotchApp {
@@ -72,11 +72,7 @@ impl NotchApp {
         event_rx: mpsc::Receiver<NotchEvent>,
     ) -> Result<Self> {
         let dpi = unsafe { GetDpiForWindow(hwnd) };
-        let dpi_scale = if dpi == 0 {
-            1.0
-        } else {
-            (dpi as f32 / 96.0).max(1.0)
-        };
+        let dpi_scale = if dpi == 0 { 1.0 } else { dpi as f32 / 96.0 };
 
         let monitor_rect = unsafe {
             let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY);
@@ -95,34 +91,33 @@ impl NotchApp {
         let win_y = monitor_rect.top;
 
         unsafe {
-                    let _ = SetWindowPos(
-                        hwnd,
-                        HWND_TOPMOST,
-                        win_x,
-                        win_y,
-                        win_w,
-                        win_h,
-                        SWP_NOACTIVATE | SWP_NOZORDER,
-                    );
+            let _ = SetWindowPos(
+                hwnd,
+                HWND_TOPMOST,
+                win_x,
+                win_y,
+                win_w,
+                win_h,
+                SWP_NOACTIVATE,
+            );
 
-                    // Use DWM for transparency - NO WS_EX_LAYERED needed (like original Nusa)
-                    let margins = MARGINS {
-                        cxLeftWidth: -1,
-                        cxRightWidth: -1,
-                        cyTopHeight: -1,
-                        cyBottomHeight: -1,
-                    };
-                    let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
-                    DragAcceptFiles(hwnd, true);
-                }
+            // WAJIB: SetLayeredWindowAttributes dengan LWA_ALPHA (255) + DwmExtendFrameIntoClientArea
+            // agar window 100% terlihat dan mendukung klik tembus (WS_EX_TRANSPARENT) di luar pill!
+            let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA);
+
+            let margins = MARGINS {
+                cxLeftWidth: -1,
+                cxRightWidth: -1,
+                cyTopHeight: -1,
+                cyBottomHeight: -1,
+            };
+            let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
+        }
 
         let renderer = NotchRenderer::new(hwnd, win_w as u32, win_h as u32, dpi_scale)?;
         let mut controller = NotchController::new();
-
-        if let Ok(s) = settings.read() {
-            controller.mascot_enabled = s.show_mascot;
-            controller.minimal_mode = s.minimal_notch;
-        }
+        controller.mascot_enabled = true;
+        controller.minimal_mode = false;
 
         Ok(Self {
             hwnd,
@@ -138,11 +133,12 @@ impl NotchApp {
             last_tick: Instant::now(),
             cursor_in_pill: false,
             last_cursor_logical_x: 0.0,
+            last_cursor_logical_y: 0.0,
         })
     }
 
     pub fn current_pill_rect(&self) -> D2D_RECT_F {
-        let logical_win_w = NOTCH_WINDOW_WIDTH as f32;
+        let logical_win_w = self.win_w as f32 / self.dpi_scale;
         let pw = self.controller.width.value;
         let ph = self.controller.height.value;
         let left = ((logical_win_w - pw) * 0.5).max(0.0);
@@ -166,8 +162,12 @@ impl NotchApp {
         while let Ok(ev) = self.event_rx.try_recv() {
             match ev {
                 NotchEvent::SetState(s) => self.controller.transition_to(s),
-                NotchEvent::Show => unsafe { let _ = ShowWindow(self.hwnd, SW_SHOW); },
-                NotchEvent::Hide => unsafe { let _ = ShowWindow(self.hwnd, windows::Win32::UI::WindowsAndMessaging::SW_HIDE); },
+                NotchEvent::Show => unsafe {
+                    let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
+                },
+                NotchEvent::Hide => unsafe {
+                    let _ = ShowWindow(self.hwnd, SW_HIDE);
+                },
                 NotchEvent::Toggle => {
                     if self.controller.is_hovered || self.controller.state != NotchState::Pet {
                         self.controller.is_hovered = false;
@@ -180,7 +180,12 @@ impl NotchApp {
                 }
                 NotchEvent::UpdateMedia(info) => {
                     if !info.title.is_empty() {
+                        let title_changed = self.controller.media_title != info.title;
                         self.controller.media_title = info.title;
+                        if title_changed {
+                            self.controller.media_elapsed_exact = 0.0;
+                            self.controller.media_progress = 0.0;
+                        }
                     }
                     if !info.artist.is_empty() {
                         self.controller.media_artist = info.artist;
@@ -188,7 +193,7 @@ impl NotchApp {
                     self.controller.media_playing = info.playing;
                 }
                 NotchEvent::UpdateLyrics(lines) => {
-                    if !lines.is_empty() {
+                    if !lines.is_empty() && self.controller.timed_lyrics.len() <= 4 {
                         let step = (self.controller.media_total_secs.max(60.0))
                             / (lines.len().max(1) as f32);
                         self.controller.timed_lyrics = lines
@@ -202,12 +207,22 @@ impl NotchApp {
                     self.controller.pomo_remaining_secs = info.remaining_seconds;
                     self.controller.pomo_total_secs = info.total_seconds;
                     self.controller.pomo_running = info.running;
-                    self.controller.pomo_is_break = matches!(info.mode, crate::timers::PomodoroMode::ShortBreak | crate::timers::PomodoroMode::LongBreak);
+                    self.controller.pomo_is_break = matches!(
+                        info.mode,
+                        crate::timers::PomodoroMode::ShortBreak
+                            | crate::timers::PomodoroMode::LongBreak
+                    );
                 }
                 NotchEvent::UpdateShelf(items) => {
                     self.controller.shelf_files = items
                         .into_iter()
-                        .map(|item| (item.name.clone(), format!("{} · {:?}", item.size, item.item_type), item.path.to_string_lossy().to_string()))
+                        .map(|item| {
+                            (
+                                item.name.clone(),
+                                format!("{} · {:?}", item.size, item.item_type),
+                                item.path.to_string_lossy().to_string(),
+                            )
+                        })
                         .collect();
                 }
                 NotchEvent::HotkeyVolume(vol) => {
@@ -222,16 +237,9 @@ impl NotchApp {
                     self.controller
                         .trigger_overlay(crate::notch::states::OverlayKind::CapsLock(on));
                 }
-                _ => {}
             }
         }
 
-        if let Ok(s) = self.settings.read() {
-            self.controller.mascot_enabled = s.show_mascot;
-            self.controller.minimal_mode = s.minimal_notch;
-        }
-
-        let pill_rect = self.current_pill_rect();
         let mut pt = POINT::default();
         unsafe {
             let _ = GetCursorPos(&mut pt);
@@ -240,45 +248,39 @@ impl NotchApp {
         let local_logical_x = (pt.x - self.win_x) as f32 / self.dpi_scale;
         let local_logical_y = (pt.y - self.win_y) as f32 / self.dpi_scale;
         self.last_cursor_logical_x = local_logical_x;
+        self.last_cursor_logical_y = local_logical_y;
 
-        let pad = 6.0;
+        let pill_rect = self.current_pill_rect();
+        let pad = if self.controller.is_hovered { 10.0 } else { 6.0 };
         let cursor_in_pill = local_logical_x >= pill_rect.left - pad
-                    && local_logical_x <= pill_rect.right + pad
-                    && local_logical_y >= pill_rect.top - pad
-                    && local_logical_y <= pill_rect.bottom + pad;
+            && local_logical_x <= pill_rect.right + pad
+            && local_logical_y >= pill_rect.top
+            && local_logical_y <= pill_rect.bottom + pad;
+        self.cursor_in_pill = cursor_in_pill;
 
-                self.cursor_in_pill = cursor_in_pill;
-
-                // Dynamic click-through: toggle WS_EX_TRANSPARENT based on cursor position
-                // When cursor is inside pill, click works; when outside, clicks pass through to Windows desktop!
-                unsafe {
-                    let style = GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE);
-                    if cursor_in_pill {
-                        if (style & (WS_EX_TRANSPARENT.0 as isize)) != 0 {
-                            let _ = SetWindowLongPtrW(
-                                self.hwnd,
-                                GWL_EXSTYLE,
-                                style & !(WS_EX_TRANSPARENT.0 as isize),
-                            );
-                        }
-                    } else if (style & (WS_EX_TRANSPARENT.0 as isize)) == 0 {
-                        let _ = SetWindowLongPtrW(
-                            self.hwnd,
-                            GWL_EXSTYLE,
-                            style | (WS_EX_TRANSPARENT.0 as isize),
-                        );
-                    }
+        // Dynamic click-through: bekerja mulus karena window memiliki WS_EX_LAYERED!
+        unsafe {
+            let style = GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE);
+            if cursor_in_pill {
+                if (style & (WS_EX_TRANSPARENT.0 as isize)) != 0 {
+                    let _ = SetWindowLongPtrW(
+                        self.hwnd,
+                        GWL_EXSTYLE,
+                        style & !(WS_EX_TRANSPARENT.0 as isize),
+                    );
                 }
+            } else if (style & (WS_EX_TRANSPARENT.0 as isize)) == 0 {
+                let _ = SetWindowLongPtrW(
+                    self.hwnd,
+                    GWL_EXSTYLE,
+                    style | (WS_EX_TRANSPARENT.0 as isize),
+                );
+            }
+        }
 
         let pill_cx = (pill_rect.left + pill_rect.right) * 0.5;
         let pill_cy = (pill_rect.top + pill_rect.bottom) * 0.5;
-        let dx = local_logical_x - pill_cx;
-        let dy = local_logical_y - pill_cy;
-        let cursor_offset = if (dx * dx + dy * dy).sqrt() <= 360.0 {
-            Some((dx, dy))
-        } else {
-            None
-        };
+        let cursor_offset = Some((local_logical_x - pill_cx, local_logical_y - pill_cy));
 
         self.controller.update(dt, cursor_in_pill, cursor_offset);
 
@@ -317,7 +319,7 @@ impl NotchApp {
         }
 
         if self.controller.height.value > 65.0 {
-            // 1. Klik Tombol Bulat `<` (kiri) atau `>` (kanan) di tepi notch (seperti Nusa Original)
+            // 1. Klik Tombol Bulat `<` (kiri) atau `>` (kanan) di tepi notch
             if (0.0..=pill_h).contains(&ly) {
                 if (4.0..=28.0).contains(&lx) {
                     self.controller.prev_tab();
@@ -380,7 +382,6 @@ pub fn run_ui(
     settings: Arc<RwLock<Settings>>,
 ) -> Result<()> {
     let class_name = to_wide_string("NusaNotchCloneWindow\0");
-
     let app_icon = crate::icon::create_antimagic_hicon();
 
     let wc = WNDCLASSEXW {
@@ -401,10 +402,9 @@ pub fn run_ui(
     unsafe {
         RegisterClassExW(&wc);
 
-        // EXSTYLE: SAMA PERSIS DENGAN NUSA ORIGINAL (0x08200088)
-        // WS_EX_NOACTIVATE | WS_EX_ACCEPTFILES | WS_EX_TOOLWINDOW | WS_EX_TOPMOST
-        // TANPA WS_EX_LAYERED! (Layered window adalah penyebab utama notch tembus pandang / hilang)
-        let ex_style = WS_EX_TOPMOST
+        // WAJIB menyertakan WS_EX_LAYERED bersama WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_ACCEPTFILES | WS_EX_NOACTIVATE
+        let ex_style = WS_EX_LAYERED
+            | WS_EX_TOPMOST
             | WS_EX_TOOLWINDOW
             | WS_EX_ACCEPTFILES
             | WS_EX_NOACTIVATE;
@@ -424,6 +424,9 @@ pub fn run_ui(
             None,
         )?;
 
+        let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA);
+        DragAcceptFiles(hwnd, true);
+
         let app = Box::new(NotchApp::new(hwnd, settings.clone(), event_rx)?);
         let win_x = app.win_x;
         let win_y = app.win_y;
@@ -432,8 +435,6 @@ pub fn run_ui(
 
         let raw_ptr = Box::into_raw(app);
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, raw_ptr as isize);
-
-        let nid = setup_tray_icon(hwnd)?;
 
         let _ = SetWindowPos(
             hwnd,
@@ -444,11 +445,12 @@ pub fn run_ui(
             win_h,
             SWP_SHOWWINDOW | SWP_NOACTIVATE,
         );
-        let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-        let _ = SetTimer(hwnd, TIMER_ID_ANIMATION, 8, None);
 
-        let _ = InvalidateRect(hwnd, None, false);
+        let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         let _ = UpdateWindow(hwnd);
+        let nid = create_tray_icon(hwnd)?;
+        let _ = SetTimer(hwnd, TIMER_ID_ANIMATION, 8, None);
+        let _ = InvalidateRect(hwnd, None, false);
 
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, HWND::default(), 0, 0).as_bool() {
@@ -456,7 +458,6 @@ pub fn run_ui(
             DispatchMessageW(&msg);
         }
 
-        let _ = KillTimer(hwnd, TIMER_ID_ANIMATION);
         let _ = remove_tray_icon(&nid);
         let _ = Box::from_raw(raw_ptr);
     }
@@ -475,16 +476,20 @@ extern "system" fn notch_wnd_proc(
         let app = unsafe { &mut *ptr };
         match msg {
             WM_ERASEBKGND => return LRESULT(1),
-            // PENTING: Cegah Windows mengaktifkan window notch saat diklik (agar game/app tidak minimize!)
             WM_MOUSEACTIVATE => return LRESULT(MA_NOACTIVATE as isize),
             WM_TIMER => {
-                let _ = app.on_tick();
+                if wparam.0 == TIMER_ID_ANIMATION {
+                    let _ = app.on_tick();
+                }
                 return LRESULT(0);
             }
             WM_PAINT => {
                 let pill_rect = app.current_pill_rect();
                 unsafe {
+                    let mut ps = PAINTSTRUCT::default();
+                    let _ = BeginPaint(hwnd, &mut ps);
                     app.renderer.render_frame(&mut app.controller, pill_rect);
+                    let _ = EndPaint(hwnd, &ps);
                 }
                 return LRESULT(0);
             }
@@ -498,8 +503,11 @@ extern "system" fn notch_wnd_proc(
                 let delta = ((wparam.0 >> 16) & 0xFFFF) as i16;
                 let pill_rect = app.current_pill_rect();
                 let pill_w = pill_rect.right - pill_rect.left;
-                let lx = app.last_cursor_logical_x - pill_rect.left;
-                let ly = ((((lparam.0 >> 16) & 0xFFFF) as i16 - app.win_y as i16) as f32 / app.dpi_scale) - pill_rect.top;
+                let lx = (((lparam.0 & 0xFFFF) as i16 - app.win_x as i16) as f32 / app.dpi_scale)
+                    - pill_rect.left;
+                let ly = ((((lparam.0 >> 16) & 0xFFFF) as i16 - app.win_y as i16) as f32
+                    / app.dpi_scale)
+                    - pill_rect.top;
                 app.controller.on_mouse_wheel(delta, lx, ly, pill_w);
                 unsafe {
                     let _ = InvalidateRect(hwnd, None, false);
@@ -518,8 +526,8 @@ extern "system" fn notch_wnd_proc(
                             if let Some(pos) = buf.iter().position(|&c| c == 0) {
                                 buf.truncate(pos);
                             }
-                            let path = String::from_utf16_lossy(&buf);
-                            app.controller.add_dropped_file(path);
+                            let full_path = String::from_utf16_lossy(&buf);
+                            app.controller.add_dropped_file(full_path);
                         }
                     }
                     DragFinish(hdrop);
@@ -527,13 +535,12 @@ extern "system" fn notch_wnd_proc(
                 }
                 return LRESULT(0);
             }
-            TRAY_MESSAGE => {
+            WM_TRAYICON => {
                 let event = lparam.0 as u32;
                 if event == WM_RBUTTONUP {
                     if let Ok(cmd) = show_tray_menu(hwnd, &app.settings) {
                         if handle_tray_command(cmd, hwnd, &app.settings).unwrap_or(false) {
                             unsafe {
-                                let _ = KillTimer(hwnd, TIMER_ID_ANIMATION);
                                 let _ = DestroyWindow(hwnd);
                             }
                         }
