@@ -53,7 +53,7 @@ Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 [Icons]
 Name: "{group}\Nusa Notch Clone"; Filename: "{app}\nusa.exe"; WorkingDir: "{app}"; Comment: "A living notch for Windows"
 Name: "{group}\{cm:UninstallProgram,Nusa Notch Clone}"; Filename: "{uninstallexe}"; WorkingDir: "{app}"
-Name: "{commondesktop}\Nusa Notch Clone"; Filename: "{app}\nusa.exe"; WorkingDir: "{app}"; Comment: "A living notch for Windows"; Tasks: desktopicon
+Name: "{userdesktop}\Nusa Notch Clone"; Filename: "{app}\nusa.exe"; WorkingDir: "{app}"; Comment: "A living notch for Windows"; Tasks: desktopicon
 
 [Registry]
 ; Auto-start with Windows
