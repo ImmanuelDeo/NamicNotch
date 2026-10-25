@@ -35,7 +35,7 @@ pub const ID_ABOUT: u32 = 1004;
 pub const ID_EXIT: u32 = 1005;
 
 pub fn setup_tray_icon(hwnd: HWND) -> Result<NOTIFYICONDATAW> {
-    let icon = create_tray_icon()?;
+    let icon = crate::icon::create_antimagic_hicon();
     
     let mut nid = NOTIFYICONDATAW::default();
     nid.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;

@@ -13,6 +13,7 @@ mod timers;
 mod settings;
 mod mascot;
 mod utils;
+pub mod icon;
 
 use anyhow::Result;
 use single_instance::SingleInstance;

@@ -1,5 +1,5 @@
 // src/notch/mod.rs
-//! Notch window and rendering for Nusa Notch Clone (v5.0)
+//! Notch window and rendering for Nusa Notch Clone (v7.0)
 
 pub mod renderer;
 pub mod states;
@@ -293,6 +293,7 @@ impl NotchApp {
 
         let pill_rect = self.current_pill_rect();
         let pill_w = pill_rect.right - pill_rect.left;
+        let pill_h = pill_rect.bottom - pill_rect.top;
         let lx = x - pill_rect.left;
         let ly = y - pill_rect.top;
 
@@ -313,50 +314,51 @@ impl NotchApp {
             return;
         }
 
-        // Bar Navigasi Atas (`<`, 6 Tab: Hub/Music/Control/Focus/Shelf/Stages, dan `>`)
-                if self.controller.height.value > 65.0 && (0.0..=28.0).contains(&ly) {
-                    if (10.0..=36.0).contains(&lx) {
-                        self.controller.prev_tab();
-                        unsafe {
-                            let _ = InvalidateRect(self.hwnd, None, false);
-                        }
-                        return;
-                    } else if lx >= pill_w - 36.0 && lx <= pill_w - 10.0 {
-                        self.controller.next_tab();
-                        unsafe {
-                            let _ = InvalidateRect(self.hwnd, None, false);
-                        }
-                        return;
-                    } else if lx > 38.0 && lx < pill_w - 38.0 {
-                        let tabs_w = (pill_w - 76.0).max(1.0);
-                        let slot = ((lx - 38.0) / (tabs_w / 6.0)) as usize;
-                        let next = match slot {
-                            0 => NotchState::Hub,
-                            1 => NotchState::Music,
-                            2 => NotchState::Control,
-                            3 => NotchState::Pomo,
-                            4 => NotchState::Shelf,
-                            _ => NotchState::StageDock,
-                        };
-                        if next == NotchState::StageDock {
-                            self.controller.trigger_stagedock();
-                        } else {
-                            self.controller.transition_to(next);
-                        }
-                        unsafe {
-                            let _ = InvalidateRect(self.hwnd, None, false);
-                        }
-                        return;
+        if self.controller.height.value > 65.0 {
+            // 1. Klik Tombol Bulat `<` (kiri) atau `>` (kanan) di tepi notch (seperti Nusa Original)
+            if (0.0..=pill_h).contains(&ly) {
+                if (4.0..=28.0).contains(&lx) {
+                    self.controller.prev_tab();
+                    unsafe {
+                        let _ = InvalidateRect(self.hwnd, None, false);
+                    }
+                    return;
+                } else if lx >= pill_w - 28.0 && lx <= pill_w - 4.0 {
+                    self.controller.next_tab();
+                    unsafe {
+                        let _ = InvalidateRect(self.hwnd, None, false);
+                    }
+                    return;
+                }
+            }
+
+            // 2. Klik Bar Navigasi 6-Slot di Atas (Hub, Music, Control, Focus, Shelf, Stages)
+            if (0.0..=26.0).contains(&ly) && lx >= 36.0 && lx <= pill_w - 36.0 {
+                let tabs_w = (pill_w - 72.0).max(1.0);
+                let slot = (((lx - 36.0) / (tabs_w / 6.0)).floor() as usize).min(5);
+                match slot {
+                    0 => self.controller.transition_to(NotchState::Hub),
+                    1 => self.controller.transition_to(NotchState::Music),
+                    2 => self.controller.transition_to(NotchState::Control),
+                    3 => self.controller.transition_to(NotchState::Pomo),
+                    4 => self.controller.transition_to(NotchState::Shelf),
+                    _ => {
+                        self.controller.trigger_stagedock();
                     }
                 }
-
-        if self.controller.height.value > 65.0
-            && self.controller.handle_panel_click(lx, ly, pill_w)
-        {
-            unsafe {
-                let _ = InvalidateRect(self.hwnd, None, false);
+                unsafe {
+                    let _ = InvalidateRect(self.hwnd, None, false);
+                }
+                return;
             }
-            return;
+
+            // 3. Klik Konten di Dalam Section Aktif
+            if self.controller.handle_panel_click(lx, ly, pill_w) {
+                unsafe {
+                    let _ = InvalidateRect(self.hwnd, None, false);
+                }
+                return;
+            }
         }
 
         if matches!(self.controller.state, NotchState::Pet | NotchState::Idle) {
@@ -377,6 +379,8 @@ pub fn run_ui(
 ) -> Result<()> {
     let class_name = to_wide_string("NusaNotchCloneWindow\0");
 
+    let app_icon = crate::icon::create_antimagic_hicon();
+
     let wc = WNDCLASSEXW {
         cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
         style: CS_HREDRAW | CS_VREDRAW,
@@ -384,12 +388,12 @@ pub fn run_ui(
         cbClsExtra: 0,
         cbWndExtra: 0,
         hInstance: hinstance,
-        hIcon: HICON::default(),
+        hIcon: app_icon,
         hCursor: unsafe { LoadCursorW(None, IDC_ARROW).unwrap_or_default() },
         hbrBackground: HBRUSH::default(),
         lpszMenuName: PCWSTR::null(),
         lpszClassName: PCWSTR(class_name.as_ptr()),
-        hIconSm: HICON::default(),
+        hIconSm: app_icon,
     };
 
     unsafe {
@@ -475,7 +479,9 @@ extern "system" fn notch_wnd_proc(
             }
             WM_PAINT => {
                 let pill_rect = app.current_pill_rect();
-                app.renderer.render_frame(&mut app.controller, pill_rect);
+                unsafe {
+                    app.renderer.render_frame(&mut app.controller, pill_rect);
+                }
                 return LRESULT(0);
             }
             WM_LBUTTONDOWN => {
@@ -489,7 +495,8 @@ extern "system" fn notch_wnd_proc(
                 let pill_rect = app.current_pill_rect();
                 let pill_w = pill_rect.right - pill_rect.left;
                 let lx = app.last_cursor_logical_x - pill_rect.left;
-                app.controller.on_mouse_wheel(delta, lx, pill_w);
+                let ly = ((((lparam.0 >> 16) & 0xFFFF) as i16 - app.win_y as i16) as f32 / app.dpi_scale) - pill_rect.top;
+                app.controller.on_mouse_wheel(delta, lx, ly, pill_w);
                 unsafe {
                     let _ = InvalidateRect(hwnd, None, false);
                 }
