@@ -26,13 +26,14 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotchState {
-    Pet,     // Closed mascot: Asta Devil Union Crown / Cheer Mode
-    Idle,    // Closed notch: Jam Digital & Baterai iOS
-    Hub,     // Tab 0: Jam Besar, Baterai iOS & Daily Motivational Quote / Word of the Day
-    Music,   // Tab 1: Full-Height Cover + Controls + Auto-Synced LRC Lyrics
-    Control, // Tab 2: All-in-One Control (Volume, Brightness, Wi-Fi, Energy Saver)
-    Pomo,    // Tab 3: Pomodoro Focus Timer
-    Shelf,   // Tab 4: File Shelf (Drag & Drop Temporary Storage)
+    Pet,       // Closed mascot: Asta Devil Union Crown / Cheer Mode
+    Idle,      // Closed notch: Jam Digital & Baterai iOS
+    Hub,       // Tab 0: Jam Besar, Baterai iOS & Daily Motivational Quote / Word of the Day
+    Music,     // Tab 1: Full-Height Cover + Controls + Auto-Synced LRC Lyrics
+    Control,   // Tab 2: Control (Volume, Brightness)
+    Pomo,      // Tab 3: Pomodoro Focus Timer
+    Shelf,     // Tab 4: File Shelf (Drag & Drop Temporary Storage)
+    StageDock, // Tab 5: StageDock (Active Stages & Windows Switcher)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -439,16 +440,17 @@ impl NotchController {
         }
     }
 
-    /// 5 Section Presisi (Tanpa To-Do & Tanpa Water)
-    pub fn ordered_tabs() -> [NotchState; 5] {
-        [
-            NotchState::Hub,
-            NotchState::Music,
-            NotchState::Control,
-            NotchState::Pomo,
-            NotchState::Shelf,
-        ]
-    }
+    /// 5 Section Presisi (Tanpa To-Do & Tanpa Water, tambah StageDock)
+        pub fn ordered_tabs() -> [NotchState; 6] {
+            [
+                NotchState::Hub,
+                NotchState::Music,
+                NotchState::Control,
+                NotchState::Pomo,
+                NotchState::Shelf,
+                NotchState::StageDock,
+            ]
+        }
 
     pub fn next_tab(&mut self) {
         let tabs = Self::ordered_tabs();
@@ -465,20 +467,21 @@ impl NotchController {
     }
 
     pub fn target_dimensions_for(state: NotchState, minimal_mode: bool) -> (f32, f32, f32) {
-        if minimal_mode && matches!(state, NotchState::Pet | NotchState::Idle) {
-            return (130.0, 6.0, 3.0);
-        }
+            if minimal_mode && matches!(state, NotchState::Pet | NotchState::Idle) {
+                return (130.0, 6.0, 3.0);
+            }
 
-        match state {
-            NotchState::Pet => (196.0, 35.0, 15.0),
-            NotchState::Idle => (214.0, 35.0, 15.0),
-            NotchState::Hub => (468.0, 146.0, 22.0),
-            NotchState::Music => (492.0, 148.0, 22.0),
-            NotchState::Control => (456.0, 144.0, 22.0),
-            NotchState::Pomo => (436.0, 140.0, 22.0),
-            NotchState::Shelf => (460.0, 144.0, 22.0),
+            match state {
+                NotchState::Pet => (196.0, 35.0, 15.0),
+                NotchState::Idle => (214.0, 35.0, 15.0),
+                NotchState::Hub => (468.0, 146.0, 22.0),
+                NotchState::Music => (492.0, 148.0, 22.0),
+                NotchState::Control => (456.0, 144.0, 22.0),
+                NotchState::Pomo => (436.0, 140.0, 22.0),
+                NotchState::Shelf => (460.0, 144.0, 22.0),
+                NotchState::StageDock => (480.0, 150.0, 22.0),
+            }
         }
-    }
 
     pub fn transition_to(&mut self, next_state: NotchState) {
         if self.state == next_state {
@@ -879,34 +882,24 @@ impl NotchController {
                 }
             }
             NotchState::Control => {
-                let half_w = card_w * 0.5;
-                if (10.0..=64.0).contains(&cy) {
-                    if cx < half_w - 5.0 {
-                        let sl_l = 20.0;
-                        let sl_r = half_w - 15.0;
-                        let pct = (((cx - sl_l) / (sl_r - sl_l).max(1.0)).clamp(0.0, 1.0) * 100.0)
-                            .round() as u8;
-                        self.volume_level = pct;
-                        Self::apply_system_volume(pct);
-                        return true;
-                    } else {
-                        let sl_l = half_w + 15.0;
-                        let sl_r = card_w - 20.0;
-                        let pct = (((cx - sl_l) / (sl_r - sl_l).max(1.0)).clamp(0.0, 1.0) * 100.0)
-                            .round() as u8;
-                        self.brightness_level = pct;
-                        Self::apply_system_brightness(pct);
-                        return true;
-                    }
-                }
-                if (68.0..=126.0).contains(&cy) {
-                    if cx < half_w - 5.0 {
-                        self.wifi_enabled = !self.wifi_enabled;
-                        return true;
-                    } else {
-                        self.energy_saver_enabled = !self.energy_saver_enabled;
-                        return true;
-                    }
+                let card_h = self.height.value - 42.0;
+                let slider_h = (card_h - 30.0) * 0.5;
+                if (10.0..=10.0 + slider_h).contains(&cy) {
+                    let sl_l = 20.0;
+                    let sl_r = card_w - 20.0;
+                    let pct = (((cx - sl_l) / (sl_r - sl_l).max(1.0)).clamp(0.0, 1.0) * 100.0)
+                        .round() as u8;
+                    self.volume_level = pct;
+                    Self::apply_system_volume(pct);
+                    return true;
+                } else if (20.0 + slider_h..=card_h - 10.0).contains(&cy) {
+                    let sl_l = 20.0;
+                    let sl_r = card_w - 20.0;
+                    let pct = (((cx - sl_l) / (sl_r - sl_l).max(1.0)).clamp(0.0, 1.0) * 100.0)
+                        .round() as u8;
+                    self.brightness_level = pct;
+                    Self::apply_system_brightness(pct);
+                    return true;
                 }
             }
             NotchState::Pomo => {

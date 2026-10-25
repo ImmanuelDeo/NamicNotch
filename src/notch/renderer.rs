@@ -195,27 +195,29 @@ impl NotchRenderer {
 
         let h = (rect.bottom - rect.top).max(4.0);
         let r = bottom_radius.min(h * 0.5).max(2.0);
-        let ear = (r * 0.48).min(9.0);
+        // Lengkungan atas ke bezel diperlebar & dipertegas (ear_w = 20.0, ear_h = 14.0) agar menyatu sangat halus
+        let ear_w = 20.0f32;
+        let ear_h = (r * 0.85).min(14.0f32);
 
         sink.BeginFigure(
             D2D_POINT_2F {
-                x: rect.left - ear,
+                x: rect.left - ear_w,
                 y: rect.top,
             },
             D2D1_FIGURE_BEGIN_FILLED,
         );
         sink.AddBezier(&D2D1_BEZIER_SEGMENT {
             point1: D2D_POINT_2F {
-                x: rect.left - ear * 0.2,
+                x: rect.left - ear_w * 0.45,
                 y: rect.top,
             },
             point2: D2D_POINT_2F {
                 x: rect.left,
-                y: rect.top + ear * 0.2,
+                y: rect.top + ear_h * 0.35,
             },
             point3: D2D_POINT_2F {
                 x: rect.left,
-                y: rect.top + ear,
+                y: rect.top + ear_h,
             },
         });
         sink.AddLine(D2D_POINT_2F {
@@ -256,19 +258,19 @@ impl NotchRenderer {
         });
         sink.AddLine(D2D_POINT_2F {
             x: rect.right,
-            y: rect.top + ear,
+            y: rect.top + ear_h,
         });
         sink.AddBezier(&D2D1_BEZIER_SEGMENT {
             point1: D2D_POINT_2F {
                 x: rect.right,
-                y: rect.top + ear * 0.2,
+                y: rect.top + ear_h * 0.35,
             },
             point2: D2D_POINT_2F {
-                x: rect.right + ear * 0.2,
+                x: rect.right + ear_w * 0.45,
                 y: rect.top,
             },
             point3: D2D_POINT_2F {
-                x: rect.right + ear,
+                x: rect.right + ear_w,
                 y: rect.top,
             },
         });
@@ -534,13 +536,14 @@ impl NotchRenderer {
                 let card_rect = self.draw_expanded_panel_shell(controller.state, pill_rect, alpha);
 
                 match controller.state {
-                    NotchState::Hub => self.draw_hub_panel(controller, card_rect, alpha),
-                    NotchState::Music => self.draw_music_panel(controller, card_rect, alpha),
-                    NotchState::Control => self.draw_control_panel(controller, card_rect, alpha),
-                    NotchState::Pomo => self.draw_pomo_panel(controller, card_rect, alpha),
-                    NotchState::Shelf => self.draw_shelf_panel(controller, card_rect, alpha),
-                    _ => {}
-                }
+                                    NotchState::Hub => self.draw_hub_panel(controller, card_rect, alpha),
+                                    NotchState::Music => self.draw_music_panel(controller, card_rect, alpha),
+                                    NotchState::Control => self.draw_control_panel(controller, card_rect, alpha),
+                                    NotchState::Pomo => self.draw_pomo_panel(controller, card_rect, alpha),
+                                    NotchState::Shelf => self.draw_shelf_panel(controller, card_rect, alpha),
+                                    NotchState::StageDock => self.draw_stagedock_panel(controller, card_rect, alpha),
+                                    _ => {}
+                                }
 
                 if controller.mascot_enabled {
                     controller
@@ -698,20 +701,21 @@ impl NotchRenderer {
         }
     }
 
-    /// Bar Navigasi Atas dengan 5 Section (`Hub`, `Music`, `Control`, `Focus`, `Shelf`) + Panah `<` dan `>`
+    /// Bar Navigasi Atas dengan 6 Section (`Hub`, `Music`, `Control`, `Focus`, `Shelf`, `StageDock`) + Panah `<` dan `>`
     unsafe fn draw_expanded_panel_shell(
         &self,
         state: NotchState,
         pill_rect: D2D_RECT_F,
         alpha: f32,
     ) -> D2D_RECT_F {
-        let tabs = ["Hub", "Music", "Control", "Focus", "Shelf"];
+        let tabs = ["Hub", "Music", "Control", "Focus", "Shelf", "Stages"];
         let active_idx = match state {
             NotchState::Hub => 0,
             NotchState::Music => 1,
             NotchState::Control => 2,
             NotchState::Pomo => 3,
             NotchState::Shelf => 4,
+            NotchState::StageDock => 5,
             _ => 1,
         };
 
@@ -764,7 +768,7 @@ impl NotchRenderer {
 
         let tabs_left = pill_rect.left + 38.0;
         let tabs_right = pill_rect.right - 38.0;
-        let slot_w = (tabs_right - tabs_left) / 5.0;
+        let slot_w = (tabs_right - tabs_left) / 6.0;
 
         for (i, label) in tabs.iter().enumerate() {
             let sl = tabs_left + slot_w * i as f32;
@@ -775,9 +779,9 @@ impl NotchRenderer {
             if is_active {
                 self.fill_gradient_glass_card(
                     D2D_RECT_F {
-                        left: sl + 4.0,
+                        left: sl + 2.0,
                         top: pill_rect.top + 4.0,
-                        right: sr - 4.0,
+                        right: sr - 2.0,
                         bottom: pill_rect.top + 24.0,
                     },
                     7.0,
@@ -828,11 +832,11 @@ impl NotchRenderer {
                 {
                     self.rt.DrawLine(
                         D2D_POINT_2F {
-                            x: cx - 14.0,
+                            x: cx - 12.0,
                             y: pill_rect.top + 25.0,
                         },
                         D2D_POINT_2F {
-                            x: cx + 14.0,
+                            x: cx + 12.0,
                             y: pill_rect.top + 25.0,
                         },
                         &lb,
@@ -887,106 +891,107 @@ impl NotchRenderer {
     // SECTION 0: HUB (Jam Besar, Baterai iOS, & Daily Motivational Quote Card)
     // =========================================================================
     unsafe fn draw_hub_panel(&self, ctrl: &NotchController, card: D2D_RECT_F, alpha: f32) {
-        let mut p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
-        p_col.a *= alpha;
-        let mut s_col = AntiMagicNeutralPalette::TEXT_SECONDARY;
-        s_col.a *= alpha;
+            let mut p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
+            p_col.a *= alpha;
+            let mut s_col = AntiMagicNeutralPalette::TEXT_SECONDARY;
+            s_col.a *= alpha;
 
-        // Kiri: Kartu Jam Besar, Tanggal, & Ikon Baterai iOS
-        let left_card = D2D_RECT_F {
-            left: card.left + 10.0,
-            top: card.top + 10.0,
-            right: card.left + 162.0,
-            bottom: card.bottom - 10.0,
-        };
-        self.fill_gradient_glass_card(
-            left_card,
-            13.0,
-            D2D1_COLOR_F {
-                r: 0.11,
-                g: 0.15,
-                b: 0.24,
-                a: 0.92 * alpha,
-            },
-            D2D1_COLOR_F {
-                r: 0.09,
-                g: 0.12,
-                b: 0.19,
-                a: 0.92 * alpha,
-            },
-            D2D1_COLOR_F {
-                r: 0.13,
-                g: 0.17,
-                b: 0.27,
-                a: 0.92 * alpha,
-            },
-            D2D1_COLOR_F {
-                r: 0.32,
-                g: 0.44,
-                b: 0.68,
-                a: 0.50 * alpha,
-            },
-            1.1,
-        );
+            // Kiri: Kartu Jam Besar, Tanggal, & Ikon Baterai iOS
+            let left_card = D2D_RECT_F {
+                left: card.left + 10.0,
+                top: card.top + 10.0,
+                right: card.left + 162.0,
+                bottom: card.bottom - 10.0,
+            };
+            self.fill_gradient_glass_card(
+                left_card,
+                13.0,
+                D2D1_COLOR_F {
+                    r: 0.11,
+                    g: 0.15,
+                    b: 0.24,
+                    a: 0.92 * alpha,
+                },
+                D2D1_COLOR_F {
+                    r: 0.09,
+                    g: 0.12,
+                    b: 0.19,
+                    a: 0.92 * alpha,
+                },
+                D2D1_COLOR_F {
+                    r: 0.13,
+                    g: 0.17,
+                    b: 0.27,
+                    a: 0.92 * alpha,
+                },
+                D2D1_COLOR_F {
+                    r: 0.32,
+                    g: 0.44,
+                    b: 0.68,
+                    a: 0.50 * alpha,
+                },
+                1.1,
+            );
 
-        let now = Local::now();
-        let time_big = now.format("%H:%M").to_string();
-        let date_str = now.format("%a, %d %b %Y").to_string();
+            let now = Local::now();
+            let time_big = now.format("%H:%M").to_string();
+            let date_str = now.format("%a, %d %b %Y").to_string();
 
-        self.draw_text_left(
-            &time_big,
-            &self.fmt_clock_hero,
-            D2D_RECT_F {
-                left: left_card.left + 12.0,
-                top: left_card.top + 8.0,
-                right: left_card.right - 8.0,
-                bottom: left_card.top + 44.0,
-            },
-            p_col,
-        );
-        self.draw_text_left(
-            &date_str,
-            &self.fmt_caption,
-            D2D_RECT_F {
-                left: left_card.left + 12.0,
-                top: left_card.top + 44.0,
-                right: left_card.right - 8.0,
-                bottom: left_card.top + 64.0,
-            },
-            s_col,
-        );
+            self.draw_text_left(
+                &time_big,
+                &self.fmt_clock_hero,
+                D2D_RECT_F {
+                    left: left_card.left + 12.0,
+                    top: left_card.top + 6.0,
+                    right: left_card.right - 8.0,
+                    bottom: left_card.top + 40.0,
+                },
+                p_col,
+            );
+            self.draw_text_left(
+                &date_str,
+                &self.fmt_caption,
+                D2D_RECT_F {
+                    left: left_card.left + 12.0,
+                    top: left_card.top + 40.0,
+                    right: left_card.right - 8.0,
+                    bottom: left_card.top + 58.0,
+                },
+                s_col,
+            );
 
-        self.draw_ios_battery_icon(
-            left_card.left + 12.0,
-            left_card.bottom - 28.0,
-            ctrl.battery_percent,
-            ctrl.is_charging,
-            alpha,
-        );
+            // Baterai iOS lebih ke bawah agar tidak tabrakan dengan tanggal
+            self.draw_ios_battery_icon(
+                left_card.left + 12.0,
+                left_card.bottom - 32.0,
+                ctrl.battery_percent,
+                ctrl.is_charging,
+                alpha,
+            );
 
-        self.draw_text_left(
-            if ctrl.is_charging {
-                "Charging"
-            } else {
-                "Battery OK"
-            },
-            &self.fmt_caption,
-            D2D_RECT_F {
-                left: left_card.left + 56.0,
-                top: left_card.bottom - 30.0,
-                right: left_card.right - 6.0,
-                bottom: left_card.bottom - 10.0,
-            },
-            AntiMagicNeutralPalette::ACCENT_CYAN,
-        );
+            self.draw_text_left(
+                if ctrl.is_charging {
+                    "Charging"
+                } else {
+                    "Battery OK"
+                },
+                &self.fmt_caption,
+                D2D_RECT_F {
+                    left: left_card.left + 56.0,
+                    top: left_card.bottom - 34.0,
+                    right: left_card.right - 6.0,
+                    bottom: left_card.bottom - 10.0,
+                },
+                AntiMagicNeutralPalette::ACCENT_CYAN,
+            );
 
-        // Kanan: Kartu WORD & QUOTE OF THE DAY (Semi-Glass Multi-Gradient)
-        let q_card = D2D_RECT_F {
-            left: left_card.right + 10.0,
-            top: card.top + 10.0,
-            right: card.right - 10.0,
-            bottom: card.bottom - 10.0,
-        };
+            // Kanan: Kartu WORD & QUOTE OF THE DAY (Semi-Glass Multi-Gradient)
+            let q_card = D2D_RECT_F {
+                left: left_card.right + 10.0,
+                top: card.top + 10.0,
+                right: card.right - 10.0,
+                bottom: card.bottom - 10.0,
+            };
 
         self.fill_gradient_glass_card(
             q_card,
@@ -1386,223 +1391,125 @@ impl NotchRenderer {
     // SECTION 2: ALL-IN-ONE CONTROL CENTER (Click & Scroll Wheel Supported!)
     // =========================================================================
     unsafe fn draw_control_panel(&self, ctrl: &NotchController, card: D2D_RECT_F, alpha: f32) {
-        let mut p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
-        p_col.a *= alpha;
-        let mut s_col = AntiMagicNeutralPalette::TEXT_SECONDARY;
-        s_col.a *= alpha;
+            let mut p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
+            p_col.a *= alpha;
 
-        let card_w = card.right - card.left;
-        let half_w = card_w * 0.5;
-
-        let sliders = [
-            (
-                card.left + 10.0,
-                card.left + half_w - 5.0,
-                "🔊 Volume (Click/Scroll)",
-                ctrl.volume_level,
-            ),
-            (
-                card.left + half_w + 5.0,
-                card.right - 10.0,
-                "🔆 Brightness (Click/Scroll)",
-                ctrl.brightness_level,
-            ),
-        ];
-
-        for (l, r, label, val) in sliders {
-            let s_rect = D2D_RECT_F {
-                left: l,
-                top: card.top + 10.0,
-                right: r,
-                bottom: card.top + 62.0,
-            };
-            self.fill_gradient_glass_card(
-                s_rect,
-                12.0,
-                D2D1_COLOR_F {
-                    r: 0.11,
-                    g: 0.14,
-                    b: 0.22,
-                    a: 0.92 * alpha,
-                },
-                D2D1_COLOR_F {
-                    r: 0.13,
-                    g: 0.17,
-                    b: 0.26,
-                    a: 0.92 * alpha,
-                },
-                D2D1_COLOR_F {
-                    r: 0.10,
-                    g: 0.13,
-                    b: 0.20,
-                    a: 0.92 * alpha,
-                },
-                D2D1_COLOR_F {
-                    r: 0.28,
-                    g: 0.36,
-                    b: 0.54,
-                    a: 0.50 * alpha,
-                },
-                1.0,
-            );
-
-            self.draw_text_left(
-                &format!("{} · {}%", label, val),
-                &self.fmt_caption,
-                D2D_RECT_F {
-                    left: l + 10.0,
-                    top: s_rect.top + 6.0,
-                    right: r - 10.0,
-                    bottom: s_rect.top + 26.0,
-                },
-                p_col,
-            );
-
-            let tl = l + 10.0;
-            let tr = r - 10.0;
-            let ty = s_rect.top + 38.0;
-            if let Ok(tb) = self.rt.CreateSolidColorBrush(
-                &D2D1_COLOR_F {
-                    r: 0.18,
-                    g: 0.23,
-                    b: 0.34,
-                    a: 0.8 * alpha,
-                },
-                None,
-            ) {
-                self.rt.FillRoundedRectangle(
-                    &D2D1_ROUNDED_RECT {
-                        rect: D2D_RECT_F {
-                            left: tl,
-                            top: ty - 4.5,
-                            right: tr,
-                            bottom: ty + 4.5,
-                        },
-                        radiusX: 4.5,
-                        radiusY: 4.5,
-                    },
-                    &tb,
-                );
-            }
-            let fw = (tr - tl) * (val as f32 / 100.0).clamp(0.0, 1.0);
-            self.fill_gradient_glass_card(
-                D2D_RECT_F {
-                    left: tl,
-                    top: ty - 4.5,
-                    right: tl + fw.max(8.0),
-                    bottom: ty + 4.5,
-                },
-                4.5,
-                AntiMagicNeutralPalette::ACCENT_BLUE,
-                AntiMagicNeutralPalette::ACCENT_CYAN,
-                AntiMagicNeutralPalette::ACCENT_CYAN,
-                AntiMagicNeutralPalette::ACCENT_CYAN,
-                0.0,
-            );
-        }
-
-        let toggles = [
-            (
-                card.left + 10.0,
-                card.left + half_w - 5.0,
-                "📶 Wi-Fi Network",
-                if ctrl.wifi_enabled {
-                    "Connected · Active"
-                } else {
-                    "Disabled"
-                },
-                ctrl.wifi_enabled,
-            ),
-            (
-                card.left + half_w + 5.0,
-                card.right - 10.0,
-                "🍃 Energy Saver",
-                if ctrl.energy_saver_enabled {
-                    "Eco Mode · Active"
-                } else {
-                    "High Performance"
-                },
-                ctrl.energy_saver_enabled,
-            ),
-        ];
-
-        for (l, r, title, sub, active) in toggles {
-            let t_rect = D2D_RECT_F {
-                left: l,
-                top: card.top + 70.0,
-                right: r,
-                bottom: card.bottom - 10.0,
-            };
-
-            let (c0, c1, border) = if active {
+            let card_h = card.bottom - card.top;
+        
+            // 2 slider cards (Volume & Brightness) dengan tinggi penuh agar fit rapi
+            let slider_h = (card_h - 30.0) * 0.5; // 2 slider dengan gap 10px
+        
+            let sliders = [
                 (
+                    card.left + 10.0,
+                    card.right - 10.0,
+                    "🔊 Volume (Click/Scroll)",
+                    ctrl.volume_level,
+                    card.top + 10.0,
+                    card.top + 10.0 + slider_h,
+                ),
+                (
+                    card.left + 10.0,
+                    card.right - 10.0,
+                    "🔆 Brightness (Click/Scroll)",
+                    ctrl.brightness_level,
+                    card.top + 20.0 + slider_h,
+                    card.bottom - 10.0,
+                ),
+            ];
+
+            for (l, r, label, val, top, bottom) in sliders {
+                let s_rect = D2D_RECT_F {
+                    left: l,
+                    top,
+                    right: r,
+                    bottom,
+                };
+                self.fill_gradient_glass_card(
+                    s_rect,
+                    12.0,
                     D2D1_COLOR_F {
-                        r: 0.16,
-                        g: 0.28,
-                        b: 0.48,
-                        a: 0.94 * alpha,
+                        r: 0.11,
+                        g: 0.14,
+                        b: 0.22,
+                        a: 0.92 * alpha,
                     },
                     D2D1_COLOR_F {
-                        r: 0.12,
-                        g: 0.22,
-                        b: 0.38,
-                        a: 0.94 * alpha,
+                        r: 0.13,
+                        g: 0.17,
+                        b: 0.26,
+                        a: 0.92 * alpha,
                     },
-                    AntiMagicNeutralPalette::ACCENT_CYAN,
-                )
-            } else {
-                (
                     D2D1_COLOR_F {
                         r: 0.10,
                         g: 0.13,
-                        b: 0.19,
-                        a: 0.90 * alpha,
+                        b: 0.20,
+                        a: 0.92 * alpha,
                     },
                     D2D1_COLOR_F {
-                        r: 0.08,
-                        g: 0.11,
-                        b: 0.16,
-                        a: 0.90 * alpha,
+                        r: 0.28,
+                        g: 0.36,
+                        b: 0.54,
+                        a: 0.50 * alpha,
                     },
-                    D2D1_COLOR_F {
-                        r: 0.24,
-                        g: 0.30,
-                        b: 0.42,
-                        a: 0.5 * alpha,
+                    1.0,
+                );
+
+                self.draw_text_left(
+                    &format!("{} · {}%", label, val),
+                    &self.fmt_caption,
+                    D2D_RECT_F {
+                        left: l + 10.0,
+                        top: s_rect.top + 6.0,
+                        right: r - 10.0,
+                        bottom: s_rect.top + 26.0,
                     },
-                )
-            };
+                    p_col,
+                );
 
-            self.fill_gradient_glass_card(t_rect, 12.0, c0, c1, c0, border, 1.1);
-
-            self.draw_text_left(
-                title,
-                &self.fmt_title,
-                D2D_RECT_F {
-                    left: l + 12.0,
-                    top: t_rect.top + 6.0,
-                    right: r - 12.0,
-                    bottom: t_rect.top + 28.0,
-                },
-                p_col,
-            );
-            self.draw_text_left(
-                sub,
-                &self.fmt_caption,
-                D2D_RECT_F {
-                    left: l + 12.0,
-                    top: t_rect.top + 28.0,
-                    right: r - 12.0,
-                    bottom: t_rect.bottom - 6.0,
-                },
-                if active {
-                    AntiMagicNeutralPalette::ACCENT_CYAN
-                } else {
-                    s_col
-                },
-            );
+                let tl = l + 10.0;
+                let tr = r - 10.0;
+                let ty = s_rect.top + (s_rect.bottom - s_rect.top) * 0.5;
+                if let Ok(tb) = self.rt.CreateSolidColorBrush(
+                    &D2D1_COLOR_F {
+                        r: 0.18,
+                        g: 0.23,
+                        b: 0.34,
+                        a: 0.8 * alpha,
+                    },
+                    None,
+                ) {
+                    self.rt.FillRoundedRectangle(
+                        &D2D1_ROUNDED_RECT {
+                            rect: D2D_RECT_F {
+                                left: tl,
+                                top: ty - 6.0,
+                                right: tr,
+                                bottom: ty + 6.0,
+                            },
+                            radiusX: 6.0,
+                            radiusY: 6.0,
+                        },
+                        &tb,
+                    );
+                }
+                let fw = (tr - tl) * (val as f32 / 100.0).clamp(0.0, 1.0);
+                self.fill_gradient_glass_card(
+                    D2D_RECT_F {
+                        left: tl,
+                        top: ty - 6.0,
+                        right: tl + fw.max(10.0),
+                        bottom: ty + 6.0,
+                    },
+                    6.0,
+                    AntiMagicNeutralPalette::ACCENT_BLUE,
+                    AntiMagicNeutralPalette::ACCENT_CYAN,
+                    AntiMagicNeutralPalette::ACCENT_CYAN,
+                    AntiMagicNeutralPalette::ACCENT_CYAN,
+                    0.0,
+                );
+            }
         }
-    }
 
     // =========================================================================
     // SECTION 3: POMODORO FOCUS TIMER
@@ -1872,5 +1779,73 @@ impl NotchRenderer {
                 s_col,
             );
         }
+    }
+
+    // =========================================================================
+    // SECTION 5: STAGE DOCK - Active Stages & Windows Switcher
+    // =========================================================================
+    unsafe fn draw_stagedock_panel(&self, _ctrl: &NotchController, card: D2D_RECT_F, alpha: f32) {
+        let mut p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
+        p_col.a *= alpha;
+
+        self.draw_text_left(
+            "STAGE DOCK · ACTIVE STAGES & WINDOWS SWITCHER",
+            &self.fmt_caption,
+            D2D_RECT_F {
+                left: card.left + 14.0,
+                top: card.top + 8.0,
+                right: card.right - 50.0,
+                bottom: card.top + 26.0,
+            },
+            AntiMagicNeutralPalette::ACCENT_CYAN,
+        );
+
+        let inner_top = card.top + 32.0;
+        let inner_left = card.left + 14.0;
+        let inner_right = card.right - 56.0;
+        let inner_bottom = card.bottom - 12.0;
+
+        let info_rect = D2D_RECT_F {
+            left: inner_left,
+            top: inner_top,
+            right: inner_right,
+            bottom: inner_bottom,
+        };
+        self.fill_gradient_glass_card(
+            info_rect,
+            12.0,
+            D2D1_COLOR_F {
+                r: 0.12,
+                g: 0.16,
+                b: 0.25,
+                a: 0.92 * alpha,
+            },
+            D2D1_COLOR_F {
+                r: 0.15,
+                g: 0.20,
+                b: 0.31,
+                a: 0.92 * alpha,
+            },
+            D2D1_COLOR_F {
+                r: 0.10,
+                g: 0.14,
+                b: 0.22,
+                a: 0.92 * alpha,
+            },
+            D2D1_COLOR_F {
+                r: 0.35,
+                g: 0.48,
+                b: 0.75,
+                a: 0.55 * alpha,
+            },
+            1.1,
+        );
+
+        self.draw_text_centered(
+            "⚡ StageDock Integration\n\nMenampilkan Active Stages & Window Groups\nKlik untuk berpindah stage (Win+Alt+1/2/3/4)\natau luncurkan StageDock dari D:\\StageDockV2",
+            &self.fmt_body,
+            info_rect,
+            p_col,
+        );
     }
 }
