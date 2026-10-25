@@ -434,8 +434,8 @@ impl NotchController {
         self.active_overlay = Some(kind);
         self.overlay_timer = 3.2;
         if !self.is_hovered {
-            self.width.set_target(290.0);
-            self.height.set_target(46.0);
+            self.width.set_target(240.0);
+            self.height.set_target(42.0);
             self.corner_radius.set_target(18.0);
         }
     }
@@ -472,8 +472,8 @@ impl NotchController {
             }
 
             match state {
-                NotchState::Pet => (196.0, 35.0, 15.0),
-                NotchState::Idle => (214.0, 35.0, 15.0),
+                NotchState::Pet => (168.0, 34.0, 15.0),
+                NotchState::Idle => (180.0, 34.0, 15.0),
                 NotchState::Hub => (468.0, 146.0, 22.0),
                 NotchState::Music => (492.0, 148.0, 22.0),
                 NotchState::Control => (456.0, 144.0, 22.0),
@@ -805,6 +805,22 @@ impl NotchController {
         }
     }
 
+    pub fn trigger_stagedock(&mut self) {
+        // Luncurkan / aktifkan StageDock secara silent tanpa terminal
+        let exe_paths = [
+            "D:\\StageDockV2\\dist-x64\\StageDock.exe",
+            "D:\\StageDockV2\\build-x64\\Release\\StageDock.exe",
+        ];
+        for path in exe_paths {
+            if std::path::Path::new(path).exists() {
+                let _ = std::process::Command::new(path)
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .spawn();
+                break;
+            }
+        }
+    }
+
     pub fn handle_overlay_click(&mut self, lx: f32, pill_w: f32) -> bool {
         if let Some(ref mut ov) = self.active_overlay {
             let bar_l = 58.0;
@@ -883,20 +899,16 @@ impl NotchController {
             }
             NotchState::Control => {
                 let card_h = self.height.value - 42.0;
-                let slider_h = (card_h - 30.0) * 0.5;
-                if (10.0..=10.0 + slider_h).contains(&cy) {
-                    let sl_l = 20.0;
-                    let sl_r = card_w - 20.0;
-                    let pct = (((cx - sl_l) / (sl_r - sl_l).max(1.0)).clamp(0.0, 1.0) * 100.0)
-                        .round() as u8;
+                let half_h = card_h * 0.5;
+                let sl_l = 110.0;
+                let sl_r = card_w - 54.0;
+                let pct = (((cx - sl_l) / (sl_r - sl_l).max(1.0)).clamp(0.0, 1.0) * 100.0).round() as u8;
+                
+                if cy < half_h {
                     self.volume_level = pct;
                     Self::apply_system_volume(pct);
                     return true;
-                } else if (20.0 + slider_h..=card_h - 10.0).contains(&cy) {
-                    let sl_l = 20.0;
-                    let sl_r = card_w - 20.0;
-                    let pct = (((cx - sl_l) / (sl_r - sl_l).max(1.0)).clamp(0.0, 1.0) * 100.0)
-                        .round() as u8;
+                } else {
                     self.brightness_level = pct;
                     Self::apply_system_brightness(pct);
                     return true;

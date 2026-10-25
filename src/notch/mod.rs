@@ -313,37 +313,42 @@ impl NotchApp {
             return;
         }
 
-        // Bar Navigasi Atas (`<`, 5 Tab: Hub/Music/Control/Focus/Shelf, dan `>`)
-        if self.controller.height.value > 65.0 && (0.0..=28.0).contains(&ly) {
-            if (10.0..=36.0).contains(&lx) {
-                self.controller.prev_tab();
-                unsafe {
-                    let _ = InvalidateRect(self.hwnd, None, false);
+        // Bar Navigasi Atas (`<`, 6 Tab: Hub/Music/Control/Focus/Shelf/Stages, dan `>`)
+                if self.controller.height.value > 65.0 && (0.0..=28.0).contains(&ly) {
+                    if (10.0..=36.0).contains(&lx) {
+                        self.controller.prev_tab();
+                        unsafe {
+                            let _ = InvalidateRect(self.hwnd, None, false);
+                        }
+                        return;
+                    } else if lx >= pill_w - 36.0 && lx <= pill_w - 10.0 {
+                        self.controller.next_tab();
+                        unsafe {
+                            let _ = InvalidateRect(self.hwnd, None, false);
+                        }
+                        return;
+                    } else if lx > 38.0 && lx < pill_w - 38.0 {
+                        let tabs_w = (pill_w - 76.0).max(1.0);
+                        let slot = ((lx - 38.0) / (tabs_w / 6.0)) as usize;
+                        let next = match slot {
+                            0 => NotchState::Hub,
+                            1 => NotchState::Music,
+                            2 => NotchState::Control,
+                            3 => NotchState::Pomo,
+                            4 => NotchState::Shelf,
+                            _ => NotchState::StageDock,
+                        };
+                        if next == NotchState::StageDock {
+                            self.controller.trigger_stagedock();
+                        } else {
+                            self.controller.transition_to(next);
+                        }
+                        unsafe {
+                            let _ = InvalidateRect(self.hwnd, None, false);
+                        }
+                        return;
+                    }
                 }
-                return;
-            } else if lx >= pill_w - 36.0 && lx <= pill_w - 10.0 {
-                self.controller.next_tab();
-                unsafe {
-                    let _ = InvalidateRect(self.hwnd, None, false);
-                }
-                return;
-            } else if lx > 38.0 && lx < pill_w - 38.0 {
-                let tabs_w = (pill_w - 76.0).max(1.0);
-                let slot = ((lx - 38.0) / (tabs_w / 5.0)) as usize;
-                let next = match slot {
-                    0 => NotchState::Hub,
-                    1 => NotchState::Music,
-                    2 => NotchState::Control,
-                    3 => NotchState::Pomo,
-                    _ => NotchState::Shelf,
-                };
-                self.controller.transition_to(next);
-                unsafe {
-                    let _ = InvalidateRect(self.hwnd, None, false);
-                }
-                return;
-            }
-        }
 
         if self.controller.height.value > 65.0
             && self.controller.handle_panel_click(lx, ly, pill_w)

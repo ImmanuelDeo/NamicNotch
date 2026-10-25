@@ -1,19 +1,17 @@
-# Nusa Clone v5.0: Pure Black Base Notch, Zero-Flash Native Volume/Brightness (No App Minimize), Auto-Synced LRC Lyrics, Full-Height Cover, Daily Quote Hub, & Anime-Accurate Asta Mascot (Cheer & Devil Union Reference Edition)
+# Nusa Clone v6.0: Perbaikan Layout Hub Anti-Tabrakan, Clean Volume & Brightness Control, Direct StageDock Trigger di Tab Bar, & Kalibrasi Presisi 1:1 Click-Box
 
-Dokumen ini berisi **Diagnosis & Solusi 6 Perbaikan Utama (v5.0)**, **Prompt Eksekusi Lengkap untuk Hermes Agent**, serta **Kode Modul Rust Utuh (`src/mascot/eyes.rs`, `src/notch/states.rs`, `src/notch/renderer.rs`, `src/notch/mod.rs`)** yang siap langsung diintegrasikan ke dalam `nusa-clone/`.
+Dokumen ini berisi **Analisis 4 Masalah dari Screenshot Kamu (`image_086fb7.png`, `image_087262.png`, `image_0872fb.png`)**, **Prompt Siap Pakai untuk Hermes Agent**, serta **Kode Modul Rust Utuh (`src/notch/states.rs`, `src/notch/renderer.rs`, `src/notch/mod.rs`)** yang sudah dikalibrasi untuk ukuran notch yang lebih ramping (*compact height*) dan konektor bezel tebal milikmu.
 
 ---
 
-## 1. Diagnosis & Solusi 6 Poin Perbaikan v5.0
+## 1. Analisis 4 Masalah pada Screenshot & Solusi Teknis (`v6.0`)
 
-| # | Masalah / Permintaan Kamu | Akar Penyebab Sebelumnya | Solusi Teknis di Kode Baru (`v5.0`) |
+| # | Masalah pada Screenshot Kamu | Akar Penyebab di Kode Lokalmu Saat Ini | Solusi Perbaikan di Kode Baru (`v6.0`) |
 | :- | :--- | :--- | :--- |
-| **1** | **Hapus Section To-Do List** | Terdapat 6 tab (`Hub`, `Music`, `Control`, `Focus`, `Shelf`, `To-Do`). | Menghapus `NotchState::Todo` sepenuhnya. Sekarang bar navigasi berisi **5 section presisi (`Hub`, `Music`, `Control`, `Focus`, `Shelf`)** dengan pembagian klik `tabs_w / 5.0` yang pas. |
-| **2** | **Background Base Notch Solid Black (`#000000`) Saat Mini Maupun Full** | Base *notch* sebelumnya memakai gradien abu-biru sehingga kurang menyatu dengan bezel hitam layar. | Mengubah *fill* utama `notch_geom` menjadi **Pure Solid Black (`#000000`, `r: 0.0, g: 0.0, b: 0.0, a: 1.0`)** baik saat tertutup (mini) maupun saat dibuka penuh (full), sementara kartu-kartu di dalamnya tetap menggunakan tema *semi-glass* bergradien modern. |
-| **3** | **Ganti Notifikasi di `Hub` dengan Quotes / Word of the Day** | Bagian kanan `Hub` sebelumnya menampilkan daftar notifikasi statis. | Mengganti kartu kanan di `Hub` menjadi **Daily Motivational Quote & Word of the Day** yang otomatis berganti setiap hari berdasarkan `Local::now().ordinal()` (dan bisa di-klik atau di-*scroll* untuk melihat kutipan inspiratif lainnya). |
-| **4** | **Cover Musik Full-Height & Lirik Otomatis Berjalan Sesuai Bagian Lagu** | • Ukuran tinggi kotak *cover* musik sebelumnya hanya `64px` sehingga menyisakan ruang kosong di bawahnya.<br>• Tag waktu `[mm:ss.xx]` pada lirik LRCLIB sebelumnya dihapus saat *parsing*, sehingga lirik tidak tahu detik ke berapa harus berganti. | • **Full-Height Cover**: Kotak *cover* musik di sebelah kiri kini merentang penuh dari `card.top + 10.0` hingga **`card.bottom - 10.0`** (menyatu penuh dengan tinggi kontainer kartu), sementara kontrol dan *progress bar* disusun rapi di kolom tengah.<br>• **Real Timestamp LRC Sync (`Vec<(f32, String)>`)**: Menyimpan *timestamp* asli setiap baris lirik (`[01:23.45]` → `83.45` detik) dan mencocokkannya secara *real-time* dengan `media_elapsed_exact` (`elapsed_secs + subsecond_dt`) sehingga **lirik berganti otomatis tepat mengikuti detik vokal lagu**! |
-| **5** | **PENTING: Hilangkan Terminal Pop-up Flash & Cegah App/Game Minimize Saat Klik/Scroll Volume & Brightness** | • Pemanggilan `Command::new("powershell")` tanpa flag `CREATE_NO_WINDOW` (`0x08000000`) membuat jendela konsol hitam berkedip muncul setiap kali *slider* diklik.<br>• Window notch tidak memiliki `WS_EX_NOACTIVATE` dan tidak mencegat `WM_MOUSEACTIVATE`, sehingga setiap klik pada notch mencuri fokus (*foreground activation*) dan mem-*minimize* aplikasi/game yang sedang berjalan! | • **Zero Focus Stealing (`WS_EX_NOACTIVATE` + `MA_NOACTIVATE`)**: Menambahkan flag `WS_EX_NOACTIVATE` (`0x08000000`) pada `CreateWindowExW` dan mengembalikan `LRESULT(MA_NOACTIVATE as isize)` (`3`) saat menerima `WM_MOUSEACTIVATE`. Sekarang kamu bebas klik/scroll notch **tanpa pernah keluar atau mem-minimize aplikasi/game yang sedang aktif**!<br>• **In-Process Native Audio API (`IMMDeviceEnumerator` + `IAudioEndpointVolume`)**: Mengatur volume Windows secara langsung lewat COM API bawaan Windows (**0ms delay, tanpa PowerShell, tanpa terminal pop-up sama sekali!**).<br>• **Scroll Wheel Brightness & Volume**: Di tab `Control` maupun pada *Overlay*, kamu sekarang bisa langsung **scroll *mouse wheel* di atas angka/kartu Brightness atau Volume** untuk menaikkan/menurunkan nilainya per `5%` secara instan, dan proses WMI Brightness dijalankan di *single background worker* dengan `creation_flags(0x08000000)` (`CREATE_NO_WINDOW`) sehingga **100% hening tanpa pop-up terminal**. |
-| **6** | **Redesign Maskot Asta Sesuai 2 Gambar Referensi (`Cheer Mode` & `Devil Union Crown Mode`)** | Sebelumnya hanya menggambar sepasang mata di latar kosong. | Meng-upgrade `src/mascot/eyes.rs` agar merender **wajah setengah atas (*upper-face bust*) Asta persis seperti kedua gambar referensimu**:<br>• **Mode 1 — Asta Cheer (`image_fa62bb.png`)**: Poni rambut *ash-grey* meruncing di tengah dahi (`V-bangs`), ikat kepala hitam di samping, alis pendek tebal terangkat ceria, mata besar **Hijau Olive-Emerald (`#7CB342` → `#9CCC65`)** dengan *eyeliner* hitam tebal, serta mulut terbuka tersenyum lebar (`:D`) saat menyapa!<br>• **Mode 2 — Asta Devil Union (`image_fab516.png`)**: Mahkota ikat kepala hitam bergerigi dengan **cahaya merah menyala berbentuk deretan bintang/salib 5-titik (`Red 5-Star/Cross Crown Glow`)** di dahi, **sepasang tanduk iblis hitam melengkung dengan garis cincin di kiri-kanan**, poni hitam meruncing di antara mata, mata merah menyala tajam dengan sklera putih lebar, serta **tanda silang hitam tebal (*cross-scars*) di kedua pipi bawah mata**, lengkap dengan animasi pedang *Demon-Slayer* melayang & tangan menangkap! |
+| **1** | **Tanggal di `Hub` Menabrak Jam & Ikon Baterai (`image_086fb7.png`)** | Setelah tinggi *expanded notch* dikurangi (menjadi sekitar `138px–145px`), tinggi *inner card* menyusut menjadi `~94px`. Namun posisi `date_str` masih memakai *offset* statis (`top + 44..64`), sedangkan ikon baterai berada di `bottom - 28` (yang di kartu pendek jatuh di `top + 60`), sehingga teks `Sun, 25 Oct 2026` bertabrakan langsung dengan kapsul hijau baterai `⚡79`! | **Tata Letak Vertikal Proporsional & Rapi**:<br>• **Baris 1 (Atas)**: Jam Besar (`22pt Bold`) di kiri (`top + 6..34`) dan badge status `Charging / Battery OK` di kanan atas.<br>• **Baris 2 (Tengah)**: Tanggal (`Sun, 25 Oct 2026`) memiliki ruang eksklusif di tengah (`top + 36..54`).<br>• **Baris 3 (Bawah)**: Ikon Baterai iOS (`⚡79`) ditempatkan di `bottom - 22..bottom - 6` dengan jarak aman minimal `10px` di bawah tanggal sehingga **100% bebas tabrakan**! |
+| **2** | **Panel `Control` Berantakan & Angka Tertutup Bar Biru (`image_087262.png`)** | Saat Hermes menghapus *Wi-Fi* dan *Energy Saver*, ia melebarkan dua *slider* ke seluruh lebar kartu dan menggambar bar biru (`fill_gradient_glass_card`) **setelah** menggambar teks label, pada koordinat Y yang sama! Akibatnya bar biru menimpa tulisan `"Volume"` / `"Brightness"` dan menutupi angka `"44%"`. | **Clean 2-Row Horizontal Control Deck**:<br>Setiap baris kartu (`🔊 Volume` di atas, `🔆 Brightness` di bawah) dibagi menjadi **3 kolom horizontal yang tidak saling tumpang-tindih**:<br>1. **Kolom Kiri (`108px`)**: Ikon + Label (`🔊 Volume` / `🔆 Brightness`).<br>2. **Kolom Tengah**: Track Slider Bergradien tebal (`10px` tinggi) dengan *thumb knob* bulat.<br>3. **Kolom Kanan (`48px`)**: Kapsul angka persentase (`72%` / `80%`) yang bersih dan jelas. |
+| **3** | **Integrasi `StageDock`: Klik Tab `"Stages"` Langsung Menampilkan Stage Manager di Layar (Tanpa Buka Panel Kosong di Notch) (`image_0872fb.png`)** | Sebelumnya `"Stages"` dijadikan `NotchState::Stages` yang membuka kartu teks instruksi di dalam notch (dan teksnya terpotong di bawah). | **Direct Action Trigger pada Tab `"Stages"`**:<br>Tombol **`"Stages"`** tetap tampil rapi sebagai item ke-6 di bar navigasi atas (`Hub`, `Music`, `Control`, `Focus`, `Shelf`, **`Stages`**). Namun begitu kamu **klik tulisan `"Stages"`**, aplikasi **tidak pindah ke panel kosong**, melainkan langsung memicu **`trigger_stagedock()`** (mengirim *shortcut* StageDock / menjalankan *trigger* `D:\StageDockV2\StageDock.exe` di latar belakang tanpa terminal) sehingga *stages* langsung tampil di layarmu! |
+| **4** | **Click Range Meleset ("Klik Shelf Malah Keluar Control")** | Ada **2 penyebab** mengapa klik meleset:<br>1. Di `renderer.rs` tergambar **6 tab** (`Hub`, `Music`, `Control`, `Focus`, `Shelf`, `Stages`), tetapi di `on_lbutton_down` (`mod.rs`) lebar bar masih dibagi **5.0** (`tabs_w / 5.0`)!<br>2. Di `current_pill_rect()` milikmu, ukuran *pill* mungkin dikalikan `dpi_scale` sementara `NotchRenderer` juga disetel `dpiX = 96.0 * dpi_scale` (terjadi *double scaling*). | **Single-Source Hit-Testing & Kunci 1:1 DPI (`dpiX = 96.0`)**:<br>1. Mengunci `NotchRenderer` pada `dpiX: 96.0, dpiY: 96.0` dan menyeragamkan konversi mouse `lx = (phys_x / dpi_scale) - pill_rect.left`.<br>2. Membagi area klik tab menjadi **tepat 6 slot (`tabs_w / 6.0`)** dengan fungsi bersama `tab_slot_rect(index, pill_rect)` yang dipakai baik oleh *renderer* maupun *click handler*, sehingga **apa yang kamu lihat di layar 100% sama persis dengan area kliknya**! |
 
 ---
 
@@ -22,1312 +20,46 @@ Dokumen ini berisi **Diagnosis & Solusi 6 Perbaikan Utama (v5.0)**, **Prompt Eks
 Salin seluruh blok perintah di bawah ini dan berikan langsung ke **Hermes Agent** di terminal lokalmu (di folder `nusa-clone/`):
 
 ```markdown
-Tolong baca file `DEVIL_UNION_UPGRADE.md` dan terapkan seluruh upgrade v5.0 (6 perbaikan utama) ke dalam repositori `nusa-clone` ini:
+Tolong baca file `DEVIL_UNION_UPGRADE.md` (versi v6.0) dan perbaiki 4 masalah UI & interaksi berikut tanpa mengubah ukuran panjang/tinggi notch maupun konektor bezel tebal yang sudah bagus sekarang:
 
-1. **Hapus Section To-Do & Gunakan 5 Section Presisi (`Hub`, `Music`, `Control`, `Focus`, `Shelf`)**:
-   - Hapus `NotchState::Todo` dari `src/notch/states.rs`, `src/notch/renderer.rs`, dan `src/notch/mod.rs`.
-   - Sesuaikan bar navigasi atas menjadi 5 tab (`Hub`, `Music`, `Control`, `Focus`, `Shelf`) beserta perhitungan klik `tabs_w / 5.0`.
+1. **Perbaiki Tabrakan Tanggal, Jam & Baterai di Section `Hub` (`draw_hub_panel` di `src/notch/renderer.rs`)**:
+   - Di kartu kiri `Hub`, atur ulang posisi vertikal agar tidak pernah bertabrakan meskipun tinggi notch ramping:
+     - Jam Besar (`fmt_clock_hero` ukuran `21.0pt`): `top: left_card.top + 4.0` s/d `left_card.top + 32.0`.
+     - Tanggal (`date_str` dengan `fmt_caption`): `top: left_card.top + 33.0` s/d `left_card.top + 49.0`.
+     - Ikon Baterai iOS (`draw_ios_battery_icon`) & label `"Charging"` / `"Battery OK"`: letakkan di `left_card.bottom - 21.0` s/d `left_card.bottom - 5.0`.
 
-2. **Ubah Background Base Notch Menjadi Solid Black (`#000000`)**:
-   - Di `src/notch/renderer.rs` (`render_frame`), gambar geometri dasar notch (`notch_geom`) menggunakan warna **Pure Solid Black (`D2D1_COLOR_F { r: 0.0, g: 0.0, b: 0.0, a: 1.0 }`)** baik saat mode mini/tertutup maupun saat dibuka penuh, agar menyatu sempurna dengan bezel atas layar. Pertahankan aksen semi-glass dan multi-stop gradient pada kartu-kartu di bagian dalamnya.
+2. **Rapikan Section `Control` (Hanya Volume & Brightness, Tanpa Bar Menutupi Teks) (`draw_control_panel` di `src/notch/renderer.rs` & `handle_panel_click` di `src/notch/states.rs`)**:
+   - Gambar 2 baris kartu horizontal yang rapi (Baris 1: `🔊 Volume`, Baris 2: `🔆 Brightness`).
+   - Di dalam setiap baris kartu, bagi secara horizontal menjadi 3 area yang TIDAK saling menimpa:
+     - **Kiri (`l + 12.0` s/d `l + 105.0`)**: Label `"🔊 Volume"` atau `"🔆 Brightness"`.
+     - **Tengah (`l + 110.0` s/d `r - 54.0`)**: Slider track dan fill bar bergradien (tinggi `8px` tepat di tengah vertikal baris) — pastikan fill bar digambar HANYA di dalam rentang `l + 110.0 .. r - 54.0` sehingga tidak pernah menimpa label atau angka!
+     - **Kanan (`r - 48.0` s/d `r - 10.0`)**: Teks persentase (`"72%"` / `"80%"`) rata tengah.
+   - Sesuaikan `handle_panel_click` pada `NotchState::Control`: klik pada baris atas (`cy < card_h * 0.5`) mengatur Volume, klik pada baris bawah (`cy >= card_h * 0.5`) mengatur Brightness, dan scroll mouse wheel di atas baris atas/bawah langsung mengubah nilainya per 5%.
 
-3. **Ganti Notifikasi di Section `Hub` dengan "Daily Quote / Word of the Day"**:
-   - Di `draw_hub_panel` (`src/notch/renderer.rs`) dan `NotchController` (`src/notch/states.rs`), ganti daftar notifikasi di sebelah kanan jam dengan kartu **Quote / Word of the Day** yang memotivasi, otomatis berganti setiap hari berdasarkan tanggal (`Local::now().ordinal()`), dan bisa diklik atau di-scroll dengan mouse wheel untuk melihat kutipan motivasi berikutnya.
+3. **Ubah Tab `"Stages"` (`StageDock`) Menjadi Direct Action Trigger (Langsung Aktifkan StageDock di Layar Tanpa Buka Section di Notch)**:
+   - Di bar navigasi atas, tampilkan 6 item: `["Hub", "Music", "Control", "Focus", "Shelf", "Stages"]`.
+   - Saat pengguna mengklik tab ke-6 (`"Stages"`, `slot == 5`), JANGAN pindah ke panel kosong di dalam notch, melainkan langsung panggil fungsi `NotchController::trigger_stagedock()` yang mengaktifkan tampilan StageDock di layar pengguna (mengirim shortcut StageDock / memanggil executable di `D:\StageDockV2` secara silent dengan `CREATE_NO_WINDOW`) sambil memberikan efek highlight kilat pada tombol `"Stages"`.
 
-4. **Perbaiki Cover Musik Full-Height & Auto-Synced LRC Lyrics Berdasarkan Waktu Lagu**:
-   - Di `draw_music_panel` (`src/notch/renderer.rs`), buat kotak cover musik/video di sebelah kiri merentang **full-height** mengikuti tinggi inner card (`top: card.top + 10.0` sampai `bottom: card.bottom - 10.0`) tanpa menyisakan ruang kosong di bawahnya. Letakkan judul, artis, progress bar, dan tombol kontrol di kolom tengah, serta panel lirik ala Spotify di kolom kanan.
-   - Di `src/notch/states.rs`, simpan lirik sebagai `Vec<(f32, String)>` dengan mem-parsing tag waktu `[mm:ss.xx]` dari LRCLIB (atau mendistribusikan waktu secara proporsional terhadap `media_total_secs` bila hanya plain lyrics), lalu update `active_lyric_idx` secara otomatis setiap tick berdasarkan `media_elapsed_exact` sehingga lirik berganti sendiri secara akurat mengikuti bagian lagu yang sedang diputar!
+4. **Perbaiki Click Range Meleset ("Klik Shelf Malah Buka Control") Secara Permanen (`src/notch/mod.rs` & `src/notch/renderer.rs`)**:
+   - Masalah klik meleset terjadi karena ketidaksinkronan antara jumlah tab (6 tab vs pembagian 5.0) dan double-scaling DPI antara `current_pill_rect()`, `NotchRenderer`, dan `on_lbutton_down()`.
+   - Pastikan `NotchRenderer::new` menggunakan `dpiX: 96.0 * dpi_scale, dpiY: 96.0 * dpi_scale`, `current_pill_rect()` menggunakan koordinat logis murni (`logical_win_w = self.win_w as f32 / self.dpi_scale`, `pw = self.controller.width.value`, `ph = self.controller.height.value`), dan `on_lbutton_down(phys_x, phys_y)` mengonversi `x = phys_x / self.dpi_scale`, `y = phys_y / self.dpi_scale`.
+   - Di bar navigasi atas (`draw_expanded_panel_shell` dan `on_lbutton_down`), gunakan perhitungan 6 slot yang 100% identik:
+     - `tabs_left = pill_rect.left + 38.0`
+     - `tabs_right = pill_rect.right - 38.0`
+     - `slot_w = (tabs_right - tabs_left) / 6.0`
+     - `slot = ((x - tabs_left) / slot_w) as usize` (0 = Hub, 1 = Music, 2 = Control, 3 = Focus/Pomo, 4 = Shelf, 5 = Trigger StageDock).
 
-5. **PENTING: Hilangkan Terminal Pop-Up Flash & Cegah Aplikasi/Game Minimize Saat Klik/Scroll Notch**:
-   - Di `src/notch/mod.rs`, tambahkan flag `WS_EX_NOACTIVATE` pada `CreateWindowExW`, dan tambahkan handler `WM_MOUSEACTIVATE => return LRESULT(MA_NOACTIVATE as isize),` (nilai `3`) di `notch_wnd_proc`. Ini memastikan klik atau scroll pada notch TIDAK PERNAH mencuri fokus window aktif dan tidak mem-minimize game/aplikasi yang sedang berjalan!
-   - Di `src/notch/states.rs`, HAPUS penggunaan PowerShell `WScript.Shell SendKeys` untuk Volume! Ganti dengan pemanggilan COM API native Windows `IMMDeviceEnumerator` + `IAudioEndpointVolume::SetMasterVolumeLevelScalar` (`windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume`) yang mengubah volume secara instan (0ms delay) tanpa membuka terminal sama sekali.
-   - Untuk Brightness, gunakan worker background tunggal dengan `.creation_flags(0x08000000)` (`CREATE_NO_WINDOW`) dan dukung pengaturan nilai Brightness & Volume menggunakan **scroll mouse wheel (`WM_MOUSEWHEEL`)** langsung di atas kartu/angka Brightness maupun Volume (baik di tab `Control` maupun saat *Overlay* muncul)!
-
-6. **Upgrade Maskot Asta Sesuai 2 Referensi Gambar (`Asta Cheer Mode` & `Asta Devil Union Crown Mode`)**:
-   - Ganti `src/mascot/eyes.rs` dengan kode v5.0 dari `DEVIL_UNION_UPGRADE.md` yang menggambar:
-     a. **Mode Devil Union (`image_fab516.png`)**: Mahkota hitam bergerigi di dahi dengan **cahaya merah 5-bintang/salib (`Red 5-Star/Cross Headband`)**, tanduk iblis melengkung di kiri-kanan, poni hitam meruncing di antara alis, mata merah menyala dengan sklera putih kontras, serta **tanda silang hitam tebal di kedua pipi bawah mata**, lengkap dengan animasi pedang *Demon-Slayer* melayang & tangan menangkap.
-     b. **Mode Asta Cheer (`image_fa62bb.png`)**: Poni rambut *ash-grey* (`#9EA7B0`) meruncing di tengah dahi, alis pendek terangkat ceria, mata besar **Olive-Emerald (`#7CB342` → `#9CCC65`)** dengan *eyeliner* hitam tegas, dan mulut terbuka tersenyum senang (`:D`).
-
-7. **Verifikasi Kompilasi**:
-   - Pastikan feature `"Win32_Media_Audio"` dan `"Win32_Media_Audio_Endpoints"` ada di `Cargo.toml`, lalu jalankan `cargo check` dan `cargo build --release` sampai berhasil tanpa error.
+5. **Kompilasi & Verifikasi**:
+   - Jalankan `cargo check` dan `cargo build --release` sampai kompilasi sukses tanpa error.
 ```
 
 ---
 
-## 3. Tambahan Feature Flag di `Cargo.toml` (Untuk Native Audio Volume Tanpa Terminal)
+## 3. Kode Lengkap Bagian yang Diperbaiki (`v6.0`)
 
-Pastikan di dalam `Cargo.toml` pada daftar `features` milik `windows = { version = "0.58", features = [ ... ] }` terdapat kedua feature audio native berikut:
+Berikut adalah kode lengkap untuk `src/notch/states.rs`, `src/notch/renderer.rs`, dan `src/notch/mod.rs` yang sudah menerapkan ke-4 perbaikan di atas dengan mempertahankan ukuran *notch* ramping dan konektor bezel tebal milikmu:
 
-```toml
-    "Win32_Media_Audio",
-    "Win32_Media_Audio_Endpoints",
-    "Win32_System_Com",
-    "Win32_System_Power",
-```
-
----
-
-## 4. Kode Lengkap Semua Modul (`v5.0`)
-
-### A. `src/mascot/eyes.rs` — Redesign Maskot Asta Sesuai 2 Gambar Referensi (`Devil Union Crown Mode` & `Asta Cheer Mode` + Pedang Melayang)
-
-Kode di bawah ini menerjemahkan kedua gambar referensimu secara langsung ke dalam vektor Direct2D:
-- **Saat Mode Devil Union (`image_fab516.png`)**: Menampilkan **mahkota/ikat kepala hitam bergerigi dengan cahaya merah menyala berbentuk deretan 5 bintang/salib (`Red 5-Cross Crown`)**, **tanduk iblis melengkung beruas di kiri-kanan**, poni hitam tajam di antara mata, mata merah menyala dengan sklera putih lebar, dan **tanda silang hitam (`X-scars`) di kedua pipi bawah mata**, disertai aksi memanggil & menangkap pedang *Demon-Slayer*.
-- **Saat Mode Asta Cheer (`image_fa62bb.png`)**: Menampilkan **poni rambut *ash-grey* khas Asta**, alis pendek terangkat antusias, **mata besar bulat berwarna *Olive-Emerald* (`#7CB342` → `#9CCC65`)** dengan *eyeliner* hitam tebal, serta **mulut terbuka ceria (`:D`)** dan mode lengkungan mata senang (`^ ^`)!
-
-```rust
-// src/mascot/eyes.rs
-use windows::Win32::Graphics::Direct2D::Common::{
-    D2D1_BEZIER_SEGMENT, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED, D2D1_FIGURE_BEGIN_HOLLOW,
-    D2D1_FIGURE_END_CLOSED, D2D1_FIGURE_END_OPEN, D2D1_GRADIENT_STOP, D2D_POINT_2F, D2D_RECT_F,
-};
-use windows::Win32::Graphics::Direct2D::{
-    ID2D1Factory, ID2D1HwndRenderTarget, ID2D1PathGeometry, D2D1_ELLIPSE, D2D1_EXTEND_MODE_CLAMP,
-    D2D1_GAMMA_2_2, D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES, D2D1_ROUNDED_RECT,
-};
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum AstaIdleMode {
-    /// Sesuai Referensi 2 (image_fab516): Devil Union dengan Mahkota 5-Salib Merah, Tanduk, Tanda Pipi & Tatapan Serius
-    DevilUnionSerious { timer: f32 },
-    /// Devil Union + Aksi Pedang Demon-Slayer Melayang & Tangan Asta Menangkap Gagangnya
-    SwordSummonGrab { timer: f32 },
-    /// Sesuai Referensi 1 (image_fa62bb): Asta Cheer Mode (Rambut Ash-Grey, Mata Olive-Emerald Besar, Mulut Senyum ':D')
-    NormalEmeraldCheer { timer: f32 },
-    /// Ekspresi Senang Mata Melengkung '^ ^'
-    HappySmileGesture { timer: f32 },
-    /// Istirahat Tenang
-    Dozing { timer: f32 },
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct AntiMagicSpark {
-    pub offset_x: f32,
-    pub offset_y: f32,
-    pub vx: f32,
-    pub vy: f32,
-    pub size: f32,
-    pub life: f32,
-    pub max_life: f32,
-    pub kind: u8,
-}
-
-pub struct DevilUnionEyes {
-    pub mode: AstaIdleMode,
-    pub time: f32,
-    pub look_x: f32,
-    pub look_y: f32,
-    pub target_look_x: f32,
-    pub target_look_y: f32,
-    pub openness: f32,
-    pub blink_timer: f32,
-    pub next_blink_in: f32,
-    pub glance_timer: f32,
-    pub aura_intensity: f32,
-    pub pupil_scale: f32,
-    /// 0.0 = Devil Union (Referensi 2), 1.0 = Asta Cheer Olive-Emerald (Referensi 1)
-    pub cheer_blend: f32,
-    pub sparks: [AntiMagicSpark; 10],
-    rng_seed: u32,
-}
-
-impl Default for DevilUnionEyes {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl DevilUnionEyes {
-    pub fn new() -> Self {
-        let mut eyes = Self {
-            mode: AstaIdleMode::DevilUnionSerious { timer: 0.0 },
-            time: 0.0,
-            look_x: 0.0,
-            look_y: 0.0,
-            target_look_x: 0.0,
-            target_look_y: 0.0,
-            openness: 0.2,
-            blink_timer: 0.0,
-            next_blink_in: 3.0,
-            glance_timer: 1.8,
-            aura_intensity: 1.0,
-            pupil_scale: 1.0,
-            cheer_blend: 0.0,
-            sparks: [AntiMagicSpark {
-                offset_x: 0.0,
-                offset_y: 0.0,
-                vx: 0.0,
-                vy: 0.0,
-                size: 2.0,
-                life: 0.0,
-                max_life: 1.0,
-                kind: 0,
-            }; 10],
-            rng_seed: 0xA57A_2026,
-        };
-        for i in 0..eyes.sparks.len() {
-            eyes.respawn_spark(i, true);
-        }
-        eyes
-    }
-
-    fn next_f32(&mut self) -> f32 {
-        let mut x = self.rng_seed;
-        x ^= x << 13;
-        x ^= x >> 17;
-        x ^= x << 5;
-        self.rng_seed = x;
-        (x as f32) / (u32::MAX as f32)
-    }
-
-    fn respawn_spark(&mut self, idx: usize, random_life: bool) {
-        let side = if idx % 2 == 0 { -1.0 } else { 1.0 };
-        let rx = (self.next_f32() - 0.5) * 32.0 + side * 20.0;
-        let ry = (self.next_f32() - 0.5) * 8.0;
-        let vx = (self.next_f32() - 0.5) * 10.0 + side * 3.0;
-        let vy = -7.0 - self.next_f32() * 12.0;
-        let max_life = 0.50 + self.next_f32() * 0.55;
-        let life = if random_life {
-            self.next_f32() * max_life
-        } else {
-            0.0
-        };
-        let size = 1.2 + self.next_f32() * 1.8;
-        let kind = (idx % 3) as u8;
-
-        self.sparks[idx] = AntiMagicSpark {
-            offset_x: rx,
-            offset_y: ry,
-            vx,
-            vy,
-            size,
-            life,
-            max_life,
-            kind,
-        };
-    }
-
-    pub fn trigger_awakening(&mut self) {
-        self.mode = AstaIdleMode::DevilUnionSerious { timer: 0.0 };
-        self.openness = 0.2;
-        self.aura_intensity = 1.25;
-    }
-
-    pub fn trigger_wake_surge(&mut self) {
-        self.mode = AstaIdleMode::NormalEmeraldCheer { timer: 0.0 };
-        self.aura_intensity = 1.15;
-    }
-
-    pub fn update(&mut self, dt: f32, cursor_offset: Option<(f32, f32)>) {
-        let dt = dt.clamp(0.001, 0.05);
-        self.time += dt;
-
-        let mut cursor_near = false;
-        if let Some((dx, dy)) = cursor_offset {
-            let dist = (dx * dx + dy * dy).sqrt();
-            if dist < 360.0 {
-                cursor_near = true;
-                self.target_look_x = (dx / 170.0).clamp(-1.0, 1.0);
-                self.target_look_y = (dy / 105.0).clamp(-0.75, 0.85);
-                if matches!(self.mode, AstaIdleMode::Dozing { .. }) {
-                    self.mode = AstaIdleMode::NormalEmeraldCheer { timer: 0.0 };
-                }
-            }
-        }
-
-        if !cursor_near {
-            self.glance_timer -= dt;
-            if self.glance_timer <= 0.0 {
-                let r = self.next_f32();
-                if r < 0.38 {
-                    self.target_look_x = 0.0;
-                    self.target_look_y = 0.0;
-                } else {
-                    self.target_look_x = (self.next_f32() - 0.5) * 1.35;
-                    self.target_look_y = (self.next_f32() - 0.5) * 0.50;
-                }
-                self.glance_timer = 1.8 + self.next_f32() * 2.4;
-            }
-        }
-
-        let target_openness: f32;
-        let target_aura: f32;
-        let target_pupil: f32;
-        let target_cheer: f32;
-
-        match &mut self.mode {
-            AstaIdleMode::DevilUnionSerious { timer } => {
-                *timer += dt;
-                target_openness = 0.98;
-                target_cheer = 0.0;
-                target_aura = if cursor_near {
-                    1.20
-                } else {
-                    0.90 + 0.12 * (self.time * 3.2).sin()
-                };
-                target_pupil = if cursor_near { 0.88 } else { 1.0 };
-
-                if *timer >= 6.8 {
-                    if self.next_f32() < 0.58 {
-                        self.mode = AstaIdleMode::SwordSummonGrab { timer: 0.0 };
-                    } else {
-                        self.mode = AstaIdleMode::NormalEmeraldCheer { timer: 0.0 };
-                    }
-                }
-            }
-            AstaIdleMode::SwordSummonGrab { timer } => {
-                *timer += dt;
-                target_openness = 1.02;
-                target_cheer = 0.0;
-                target_aura = 1.30;
-                target_pupil = 0.84;
-
-                let p = (*timer / 3.8).clamp(0.0, 1.0);
-                self.target_look_x = 0.85 * (1.0 - (p - 0.5).abs() * 1.2).clamp(0.2, 1.0);
-                self.target_look_y = -0.10 + (self.time * 4.0).sin() * 0.16;
-
-                if *timer >= 3.8 {
-                    self.mode = AstaIdleMode::NormalEmeraldCheer { timer: 0.0 };
-                }
-            }
-            AstaIdleMode::NormalEmeraldCheer { timer } => {
-                *timer += dt;
-                target_openness = 1.06;
-                target_cheer = 1.0;
-                target_aura = 0.50;
-                target_pupil = 1.05;
-
-                if *timer >= 4.5 {
-                    self.mode = AstaIdleMode::HappySmileGesture { timer: 0.0 };
-                }
-            }
-            AstaIdleMode::HappySmileGesture { timer } => {
-                *timer += dt;
-                target_openness = 1.0;
-                target_cheer = 1.0;
-                target_aura = 0.65;
-                target_pupil = 1.0;
-
-                if *timer >= 2.2 {
-                    self.mode = AstaIdleMode::DevilUnionSerious { timer: 0.0 };
-                }
-            }
-            AstaIdleMode::Dozing { timer } => {
-                *timer += dt;
-                target_openness = 0.30 + 0.04 * (self.time * 1.4).sin();
-                target_cheer = 0.0;
-                target_aura = 0.35;
-                target_pupil = 1.0;
-            }
-        }
-
-        self.next_blink_in -= dt;
-        if self.next_blink_in <= 0.0 {
-            self.blink_timer = 0.13;
-            self.next_blink_in = 2.7 + self.next_f32() * 3.3;
-        }
-
-        let blink_factor = if self.blink_timer > 0.0 {
-            self.blink_timer -= dt;
-            let norm = (self.blink_timer / 0.13).clamp(0.0, 1.0);
-            (norm - 0.5).abs() * 2.0
-        } else {
-            1.0
-        };
-
-        let smooth = (14.0 * dt).min(1.0);
-        self.look_x += (self.target_look_x - self.look_x) * smooth;
-        self.look_y += (self.target_look_y - self.look_y) * smooth;
-        self.openness += (target_openness * blink_factor - self.openness) * (22.0 * dt).min(1.0);
-        self.aura_intensity += (target_aura - self.aura_intensity) * (10.0 * dt).min(1.0);
-        self.pupil_scale += (target_pupil - self.pupil_scale) * (12.0 * dt).min(1.0);
-        self.cheer_blend += (target_cheer - self.cheer_blend) * (9.0 * dt).min(1.0);
-
-        for i in 0..self.sparks.len() {
-            self.sparks[i].life += dt * self.aura_intensity.max(0.45);
-            if self.sparks[i].life >= self.sparks[i].max_life {
-                self.respawn_spark(i, false);
-            } else {
-                self.sparks[i].offset_x += self.sparks[i].vx * dt;
-                self.sparks[i].offset_y += self.sparks[i].vy * dt;
-            }
-        }
-    }
-
-    pub fn render(
-        &self,
-        factory: &ID2D1Factory,
-        rt: &ID2D1HwndRenderTarget,
-        pill_rect: D2D_RECT_F,
-        alpha_mult: f32,
-    ) {
-        if alpha_mult <= 0.01 {
-            return;
-        }
-
-        let center_x = (pill_rect.left + pill_rect.right) * 0.5;
-        let center_y = (pill_rect.top + pill_rect.bottom) * 0.5 + 2.5;
-
-        let sword_shift = if let AstaIdleMode::SwordSummonGrab { timer } = self.mode {
-            let s = (timer * 2.5).min(1.0) * ((3.8 - timer) * 2.5).clamp(0.0, 1.0);
-            -14.0 * s
-        } else {
-            0.0
-        };
-
-        let face_cx = center_x + sword_shift;
-        let eye_spacing = 17.5;
-        let cb = self.cheer_blend.clamp(0.0, 1.0);
-
-        unsafe {
-            self.draw_anti_magic_sparks(rt, face_cx, center_y, alpha_mult);
-
-            // 1. Gambar Elemen Kepala / Dahi Sesuai Mode (Devil Union Crown & Horns vs Cheer Ash-Grey Hair)
-            if cb < 0.55 {
-                self.draw_devil_union_crown_and_horns(
-                    factory,
-                    rt,
-                    face_cx,
-                    pill_rect.top,
-                    center_y,
-                    eye_spacing,
-                    alpha_mult * (1.0 - cb),
-                );
-            } else {
-                self.draw_cheer_ash_grey_bangs_and_smile(
-                    factory,
-                    rt,
-                    face_cx,
-                    pill_rect.top,
-                    center_y,
-                    pill_rect.bottom,
-                    alpha_mult * cb,
-                );
-            }
-
-            // 2. Gambar Mata (Happy Arc '^ ^' atau Full Anime Reference Eye)
-            if let AstaIdleMode::HappySmileGesture { timer } = self.mode {
-                let bounce = (timer * 10.0).sin().abs() * -1.5;
-                for side in [-1.0_f32, 1.0_f32] {
-                    self.draw_happy_arc_eye(
-                        factory,
-                        rt,
-                        face_cx + side * eye_spacing,
-                        center_y + bounce,
-                        side,
-                        alpha_mult,
-                    );
-                }
-            } else {
-                for side in [-1.0_f32, 1.0_f32] {
-                    self.draw_reference_anime_eye(
-                        factory,
-                        rt,
-                        face_cx + side * eye_spacing,
-                        center_y,
-                        side,
-                        alpha_mult,
-                    );
-                }
-            }
-
-            // 3. Jika Mode SwordSummonGrab: Gambar Pedang Demon-Slayer Melayang & Tangan Asta Menangkap!
-            if let AstaIdleMode::SwordSummonGrab { timer } = self.mode {
-                self.draw_floating_sword_and_grabbing_hand(
-                    factory,
-                    rt,
-                    center_x + 40.0,
-                    center_y - 1.5,
-                    pill_rect.bottom,
-                    timer,
-                    alpha_mult,
-                );
-            }
-        }
-    }
-
-    /// Sesuai Referensi 2 (`image_fab516.png`):
-    /// Mahkota hitam bergerigi dengan deretan 5 bintang/salib merah menyala di dahi + Tanduk melengkung + Tanda silang hitam di pipi
-    unsafe fn draw_devil_union_crown_and_horns(
-        &self,
-        factory: &ID2D1Factory,
-        rt: &ID2D1HwndRenderTarget,
-        cx: f32,
-        top_y: f32,
-        eye_y: f32,
-        eye_spacing: f32,
-        alpha: f32,
-    ) {
-        let horn_dark = D2D1_COLOR_F {
-            r: 0.14,
-            g: 0.15,
-            b: 0.20,
-            a: alpha,
-        };
-        let horn_ring = D2D1_COLOR_F {
-            r: 0.34,
-            g: 0.38,
-            b: 0.48,
-            a: 0.85 * alpha,
-        };
-        let crimson_glow = D2D1_COLOR_F {
-            r: 1.0,
-            g: 0.08,
-            b: 0.14,
-            a: alpha,
-        };
-        let scar_black = D2D1_COLOR_F {
-            r: 0.12,
-            g: 0.14,
-            b: 0.18,
-            a: 0.95 * alpha,
-        };
-
-        let Ok(horn_b) = rt.CreateSolidColorBrush(&horn_dark, None) else { return };
-        let Ok(ring_b) = rt.CreateSolidColorBrush(&horn_ring, None) else { return };
-        let Ok(red_b) = rt.CreateSolidColorBrush(&crimson_glow, None) else { return };
-        let Ok(scar_b) = rt.CreateSolidColorBrush(&scar_black, None) else { return };
-
-        // 1. Sepasang Tanduk Iblis Melengkung di Kiri & Kanan (`image_fab516.png`)
-        for side in [-1.0_f32, 1.0_f32] {
-            let hx = cx + side * (eye_spacing + 14.0);
-            if let Ok(h_geom) = factory.CreatePathGeometry() {
-                if let Ok(sink) = h_geom.Open() {
-                    sink.BeginFigure(
-                        D2D_POINT_2F {
-                            x: hx - side * 3.0,
-                            y: top_y + 16.0,
-                        },
-                        D2D1_FIGURE_BEGIN_FILLED,
-                    );
-                    sink.AddBezier(&D2D1_BEZIER_SEGMENT {
-                        point1: D2D_POINT_2F {
-                            x: hx + side * 6.0,
-                            y: top_y + 11.0,
-                        },
-                        point2: D2D_POINT_2F {
-                            x: hx + side * 8.5,
-                            y: top_y + 4.0,
-                        },
-                        point3: D2D_POINT_2F {
-                            x: hx + side * 4.5,
-                            y: top_y + 1.0,
-                        },
-                    });
-                    sink.AddLine(D2D_POINT_2F {
-                        x: hx - side * 1.5,
-                        y: top_y + 8.0,
-                    });
-                    sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-                    let _ = sink.Close();
-                    rt.FillGeometry(&h_geom, &horn_b, None);
-                    rt.DrawGeometry(&h_geom, &ring_b, 0.9, None);
-                }
-            }
-        }
-
-        // 2. Deretan 5 Bintang/Salib Merah Menyala di Dahi Khas Devil Union (`image_fab516.png`)
-        let crown_y = top_y + 7.2;
-        // Garis horizontal penghubung cahaya merah
-        rt.DrawLine(
-            D2D_POINT_2F {
-                x: cx - 22.0,
-                y: crown_y,
-            },
-            D2D_POINT_2F {
-                x: cx + 22.0,
-                y: crown_y,
-            },
-            &red_b,
-            2.2,
-            None,
-        );
-
-        // 5 Titik Salib/Bintang Vertikal pada Mahkota (Tengah paling tinggi)
-        let star_offsets: [(f32, f32); 5] = [
-            (-18.0, 2.8),
-            (-9.5, 3.6),
-            (0.0, 5.2),
-            (9.5, 3.6),
-            (18.0, 2.8),
-        ];
-        for (ox, half_h) in star_offsets {
-            if let Ok(star_g) = self.create_tapered_plus_geometry(
-                factory,
-                cx + ox,
-                crown_y,
-                3.2,
-                half_h,
-                1.1,
-            ) {
-                rt.FillGeometry(&star_g, &red_b, None);
-            }
-        }
-
-        // 3. Poni Hitam Runcing di Antara Kedua Mata (`image_fab516.png`)
-        if let Ok(bang_g) = factory.CreatePathGeometry() {
-            if let Ok(sink) = bang_g.Open() {
-                sink.BeginFigure(
-                    D2D_POINT_2F {
-                        x: cx - 4.5,
-                        y: crown_y + 3.5,
-                    },
-                    D2D1_FIGURE_BEGIN_FILLED,
-                );
-                sink.AddLines(&[
-                    D2D_POINT_2F {
-                        x: cx,
-                        y: eye_y + 2.5,
-                    },
-                    D2D_POINT_2F {
-                        x: cx + 4.5,
-                        y: crown_y + 3.5,
-                    },
-                ]);
-                sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-                let _ = sink.Close();
-                rt.FillGeometry(&bang_g, &horn_b, None);
-            }
-        }
-
-        // 4. Tanda Silang Hitam Tebal (Devil Union Cross-Scars) di Pipi Bawah Mata (`image_fab516.png`)
-        for side in [-1.0_f32, 1.0_f32] {
-            let ex = cx + side * eye_spacing;
-            let sy = eye_y + 5.5;
-            // Garis miring utama dari bawah mata ke pipi luar
-            rt.DrawLine(
-                D2D_POINT_2F {
-                    x: ex + side * 1.5,
-                    y: sy,
-                },
-                D2D_POINT_2F {
-                    x: ex + side * 5.5,
-                    y: sy + 6.5,
-                },
-                &scar_b,
-                2.2,
-                None,
-            );
-            // Garis silang pendek (crossbar)
-            rt.DrawLine(
-                D2D_POINT_2F {
-                    x: ex + side * 0.5,
-                    y: sy + 4.2,
-                },
-                D2D_POINT_2F {
-                    x: ex + side * 6.2,
-                    y: sy + 2.2,
-                },
-                &scar_b,
-                1.8,
-                None,
-            );
-        }
-    }
-
-    /// Sesuai Referensi 1 (`image_fa62bb.png`):
-    /// Poni Rambut Ash-Grey Meruncing di Dahi + Mulut Terbuka Tersenyum Lebar (':D')
-    unsafe fn draw_cheer_ash_grey_bangs_and_smile(
-        &self,
-        factory: &ID2D1Factory,
-        rt: &ID2D1HwndRenderTarget,
-        cx: f32,
-        top_y: f32,
-        eye_y: f32,
-        bottom_y: f32,
-        alpha: f32,
-    ) {
-        let ash_hair = D2D1_COLOR_F {
-            r: 0.65,
-            g: 0.68,
-            b: 0.72,
-            a: alpha,
-        };
-        let hair_line = D2D1_COLOR_F {
-            r: 0.35,
-            g: 0.38,
-            b: 0.42,
-            a: alpha,
-        };
-        let mouth_pink = D2D1_COLOR_F {
-            r: 0.78,
-            g: 0.45,
-            b: 0.46,
-            a: alpha,
-        };
-        let teeth_white = D2D1_COLOR_F {
-            r: 0.96,
-            g: 0.97,
-            b: 0.99,
-            a: alpha,
-        };
-
-        let Ok(hair_b) = rt.CreateSolidColorBrush(&ash_hair, None) else { return };
-        let Ok(line_b) = rt.CreateSolidColorBrush(&hair_line, None) else { return };
-        let Ok(mouth_b) = rt.CreateSolidColorBrush(&mouth_pink, None) else { return };
-        let Ok(teeth_b) = rt.CreateSolidColorBrush(&teeth_white, None) else { return };
-
-        // 1. Helai Poni Ash-Grey di Dahi Atas (`image_fa62bb.png`)
-        if let Ok(b_geom) = factory.CreatePathGeometry() {
-            if let Ok(sink) = b_geom.Open() {
-                sink.BeginFigure(
-                    D2D_POINT_2F {
-                        x: cx - 22.0,
-                        y: top_y,
-                    },
-                    D2D1_FIGURE_BEGIN_FILLED,
-                );
-                sink.AddLines(&[
-                    D2D_POINT_2F {
-                        x: cx - 14.0,
-                        y: top_y + 9.5,
-                    },
-                    D2D_POINT_2F {
-                        x: cx - 7.0,
-                        y: top_y + 4.5,
-                    },
-                    D2D_POINT_2F {
-                        x: cx,
-                        y: eye_y - 2.0, // Helai V tengah khas Asta
-                    },
-                    D2D_POINT_2F {
-                        x: cx + 7.0,
-                        y: top_y + 4.5,
-                    },
-                    D2D_POINT_2F {
-                        x: cx + 14.0,
-                        y: top_y + 9.5,
-                    },
-                    D2D_POINT_2F {
-                        x: cx + 22.0,
-                        y: top_y,
-                    },
-                ]);
-                sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-                let _ = sink.Close();
-                rt.FillGeometry(&b_geom, &hair_b, None);
-                rt.DrawGeometry(&b_geom, &line_b, 0.9, None);
-            }
-        }
-
-        // 2. Mulut Terbuka Tersenyum Ceria (':D') di Bagian Tengah Bawah (`image_fa62bb.png`)
-        let my = (eye_y + bottom_y) * 0.5 + 3.2;
-        if let Ok(m_geom) = factory.CreatePathGeometry() {
-            if let Ok(sink) = m_geom.Open() {
-                sink.BeginFigure(
-                    D2D_POINT_2F {
-                        x: cx - 5.2,
-                        y: my - 1.5,
-                    },
-                    D2D1_FIGURE_BEGIN_FILLED,
-                );
-                sink.AddLine(D2D_POINT_2F {
-                    x: cx + 5.2,
-                    y: my - 2.0,
-                });
-                sink.AddBezier(&D2D1_BEZIER_SEGMENT {
-                    point1: D2D_POINT_2F {
-                        x: cx + 5.0,
-                        y: my + 4.2,
-                    },
-                    point2: D2D_POINT_2F {
-                        x: cx - 5.0,
-                        y: my + 4.2,
-                    },
-                    point3: D2D_POINT_2F {
-                        x: cx - 5.2,
-                        y: my - 1.5,
-                    },
-                });
-                sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-                let _ = sink.Close();
-                rt.FillGeometry(&m_geom, &mouth_b, None);
-            }
-        }
-        // Garis gigi putih tipis di bagian atas mulut
-        rt.DrawLine(
-            D2D_POINT_2F {
-                x: cx - 4.2,
-                y: my - 1.2,
-            },
-            D2D_POINT_2F {
-                x: cx + 4.2,
-                y: my - 1.6,
-            },
-            &teeth_b,
-            1.3,
-            None,
-        );
-    }
-
-    /// Gambar Mata Anime Asta Sesuai Kedua Gambar Referensi (`image_fa62bb.png` & `image_fab516.png`)
-    unsafe fn draw_reference_anime_eye(
-        &self,
-        factory: &ID2D1Factory,
-        rt: &ID2D1HwndRenderTarget,
-        base_x: f32,
-        base_y: f32,
-        side: f32,
-        alpha: f32,
-    ) {
-        let cb = self.cheer_blend.clamp(0.0, 1.0);
-        let open = self.openness.clamp(0.08, 1.12);
-
-        let w = 9.4;
-        let h = (5.6 * open).max(0.8);
-
-        // Kemiringan kelopak atas: Tajam mengernyit saat Devil Union (cb=0), Bulat besar saat Cheer (cb=1)
-        let inner_drop = (1.0 - cb) * 2.4;
-        let outer_lift = (1.0 - cb) * 1.2 + cb * 0.6;
-
-        let inner_pt = D2D_POINT_2F {
-            x: base_x - side * w,
-            y: base_y + 0.5 + inner_drop * 0.35,
-        };
-        let outer_pt = D2D_POINT_2F {
-            x: base_x + side * w,
-            y: base_y - outer_lift * 0.4,
-        };
-
-        // 1. Alis Anime (Eyebrow): Tebal pendek ash-grey saat Cheer (`image_fa62bb`), Tajam menyatu saat Devil Union (`image_fab516`)
-        let brow_col = D2D1_COLOR_F {
-            r: 0.25 * (1.0 - cb) + 0.72 * cb,
-            g: 0.27 * (1.0 - cb) + 0.75 * cb,
-            b: 0.34 * (1.0 - cb) + 0.78 * cb,
-            a: 0.92 * alpha,
-        };
-        if let Ok(bb) = rt.CreateSolidColorBrush(&brow_col, None) {
-            let by_in = base_y - h - 1.5 + (1.0 - cb) * 2.2 - cb * 1.8;
-            let by_out = base_y - h - 3.5;
-            rt.DrawLine(
-                D2D_POINT_2F {
-                    x: base_x - side * (w * 0.75),
-                    y: by_in,
-                },
-                D2D_POINT_2F {
-                    x: base_x + side * (w * 0.65),
-                    y: by_out,
-                },
-                &bb,
-                2.0,
-                None,
-            );
-        }
-
-        if open < 0.16 {
-            let lash_col = D2D1_COLOR_F {
-                r: 0.90,
-                g: 0.92,
-                b: 0.96,
-                a: 0.90 * alpha,
-            };
-            if let Ok(lb) = rt.CreateSolidColorBrush(&lash_col, None) {
-                rt.DrawLine(inner_pt, outer_pt, &lb, 2.2, None);
-            }
-            return;
-        }
-
-        // 2. Sclera Putih Lebar Kontras (Sesuai Kedua Gambar Referensi)
-        if let Ok(sclera_geom) = factory.CreatePathGeometry() {
-            if let Ok(sink) = sclera_geom.Open() {
-                sink.BeginFigure(inner_pt, D2D1_FIGURE_BEGIN_FILLED);
-                sink.AddBezier(&D2D1_BEZIER_SEGMENT {
-                    point1: D2D_POINT_2F {
-                        x: base_x - side * (w * 0.35),
-                        y: base_y - h + inner_drop,
-                    },
-                    point2: D2D_POINT_2F {
-                        x: base_x + side * (w * 0.45),
-                        y: base_y - h - outer_lift,
-                    },
-                    point3: outer_pt,
-                });
-                sink.AddBezier(&D2D1_BEZIER_SEGMENT {
-                    point1: D2D_POINT_2F {
-                        x: base_x + side * (w * 0.45),
-                        y: base_y + h * 0.95,
-                    },
-                    point2: D2D_POINT_2F {
-                        x: base_x - side * (w * 0.35),
-                        y: base_y + h * 0.90,
-                    },
-                    point3: inner_pt,
-                });
-                sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-                let _ = sink.Close();
-
-                let sclera_white = D2D1_COLOR_F {
-                    r: 0.94,
-                    g: 0.95,
-                    b: 0.97,
-                    a: 0.98 * alpha,
-                };
-                if let Ok(sb) = rt.CreateSolidColorBrush(&sclera_white, None) {
-                    rt.FillGeometry(&sclera_geom, &sb, None);
-                }
-            }
-        }
-
-        // 3. Iris: Crimson Red Bulat Tajam (`image_fab516`) vs Olive-Emerald Besar (`image_fa62bb`)
-        let shift_x = self.look_x * 2.8;
-        let shift_y = self.look_y * 1.4;
-        let ex = base_x + shift_x;
-        let ey = base_y + shift_y;
-
-        // Pada Devil Union (`image_fab516`), iris merah berukuran medium-kecil di tengah sklera putih sehingga terlihat intens!
-        // Pada Cheer (`image_fa62bb`), iris Olive-Green berukuran besar memenuhi tinggi mata!
-        let iris_rx = 3.8 * (1.0 - cb) + 5.2 * cb;
-        let iris_ry = (3.8 * (1.0 - cb) + 5.2 * cb) * open;
-
-        let c0 = D2D1_COLOR_F {
-            r: 0.98 * (1.0 - cb) + 0.62 * cb,
-            g: 0.14 * (1.0 - cb) + 0.82 * cb,
-            b: 0.18 * (1.0 - cb) + 0.36 * cb,
-            a: alpha,
-        };
-        let c1 = D2D1_COLOR_F {
-            r: 0.86 * (1.0 - cb) + 0.46 * cb,
-            g: 0.04 * (1.0 - cb) + 0.68 * cb,
-            b: 0.08 * (1.0 - cb) + 0.24 * cb,
-            a: alpha,
-        };
-        let c2 = D2D1_COLOR_F {
-            r: 0.45 * (1.0 - cb) + 0.24 * cb,
-            g: 0.02 * (1.0 - cb) + 0.42 * cb,
-            b: 0.04 * (1.0 - cb) + 0.14 * cb,
-            a: alpha,
-        };
-
-        let iris_stops = [
-            D2D1_GRADIENT_STOP {
-                position: 0.0,
-                color: c0,
-            },
-            D2D1_GRADIENT_STOP {
-                position: 0.70,
-                color: c1,
-            },
-            D2D1_GRADIENT_STOP {
-                position: 1.0,
-                color: c2,
-            },
-        ];
-
-        if let Ok(sc) =
-            rt.CreateGradientStopCollection(&iris_stops, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP)
-        {
-            let props = D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES {
-                center: D2D_POINT_2F {
-                    x: ex,
-                    y: ey + iris_ry * 0.15,
-                },
-                gradientOriginOffset: D2D_POINT_2F { x: 0.0, y: 0.0 },
-                radiusX: iris_rx,
-                radiusY: iris_ry,
-            };
-            if let Ok(ib) = rt.CreateRadialGradientBrush(&props, None, &sc) {
-                rt.FillEllipse(
-                    &D2D1_ELLIPSE {
-                        point: D2D_POINT_2F { x: ex, y: ey },
-                        radiusX: iris_rx,
-                        radiusY: iris_ry,
-                    },
-                    &ib,
-                );
-            }
-        }
-
-        // 4. Pupil & Highlight Sesuai Referensi
-        let pupil_dark = D2D1_COLOR_F {
-            r: 0.05,
-            g: 0.06,
-            b: 0.09,
-            a: alpha,
-        };
-        if cb < 0.55 {
-            // Pupil '+' Devil Union
-            if let Ok(plus_g) =
-                self.create_tapered_plus_geometry(factory, ex, ey, 2.8, 2.8 * open, 0.85)
-            {
-                if let Ok(pb) = rt.CreateSolidColorBrush(&pupil_dark, None) {
-                    rt.FillGeometry(&plus_g, &pb, None);
-                }
-            }
-        } else {
-            // Pupil vertikal kecil di tengah iris Olive-Green + Highlight putih bulat di kiri-atas (`image_fa62bb.png`)
-            if let Ok(pb) = rt.CreateSolidColorBrush(&pupil_dark, None) {
-                rt.FillEllipse(
-                    &D2D1_ELLIPSE {
-                        point: D2D_POINT_2F { x: ex, y: ey },
-                        radiusX: 1.15,
-                        radiusY: 1.85 * open,
-                    },
-                    &pb,
-                );
-            }
-            let glint_white = D2D1_COLOR_F {
-                r: 0.99,
-                g: 0.99,
-                b: 1.0,
-                a: 0.96 * alpha,
-            };
-            if let Ok(gb) = rt.CreateSolidColorBrush(&glint_white, None) {
-                rt.FillEllipse(
-                    &D2D1_ELLIPSE {
-                        point: D2D_POINT_2F {
-                            x: ex - 1.8,
-                            y: ey - iris_ry * 0.38,
-                        },
-                        radiusX: 1.55,
-                        radiusY: 1.35 * open,
-                    },
-                    &gb,
-                );
-            }
-        }
-
-        // 5. Eyeliner / Garis Kelopak Atas & Bawah Hitam Tegas Khas Anime (`image_fa62bb` & `image_fab516`)
-        if let Ok(lash_geom) = factory.CreatePathGeometry() {
-            if let Ok(sink) = lash_geom.Open() {
-                sink.BeginFigure(inner_pt, D2D1_FIGURE_BEGIN_HOLLOW);
-                sink.AddBezier(&D2D1_BEZIER_SEGMENT {
-                    point1: D2D_POINT_2F {
-                        x: base_x - side * (w * 0.35),
-                        y: base_y - h + inner_drop,
-                    },
-                    point2: D2D_POINT_2F {
-                        x: base_x + side * (w * 0.45),
-                        y: base_y - h - outer_lift,
-                    },
-                    point3: outer_pt,
-                });
-                sink.EndFigure(D2D1_FIGURE_END_OPEN);
-                let _ = sink.Close();
-
-                let liner_col = D2D1_COLOR_F {
-                    r: 0.08,
-                    g: 0.09,
-                    b: 0.12,
-                    a: alpha,
-                };
-                if let Ok(lb) = rt.CreateSolidColorBrush(&liner_col, None) {
-                    rt.DrawGeometry(&lash_geom, &lb, 2.5, None);
-                }
-            }
-        }
-    }
-
-    unsafe fn draw_happy_arc_eye(
-        &self,
-        factory: &ID2D1Factory,
-        rt: &ID2D1HwndRenderTarget,
-        ex: f32,
-        ey: f32,
-        _side: f32,
-        alpha: f32,
-    ) {
-        if let Ok(geom) = factory.CreatePathGeometry() {
-            if let Ok(sink) = geom.Open() {
-                sink.BeginFigure(
-                    D2D_POINT_2F {
-                        x: ex - 7.0,
-                        y: ey + 2.0,
-                    },
-                    D2D1_FIGURE_BEGIN_HOLLOW,
-                );
-                sink.AddBezier(&D2D1_BEZIER_SEGMENT {
-                    point1: D2D_POINT_2F {
-                        x: ex - 3.2,
-                        y: ey - 5.5,
-                    },
-                    point2: D2D_POINT_2F {
-                        x: ex + 3.2,
-                        y: ey - 5.5,
-                    },
-                    point3: D2D_POINT_2F {
-                        x: ex + 7.0,
-                        y: ey + 2.0,
-                    },
-                });
-                sink.EndFigure(D2D1_FIGURE_END_OPEN);
-                let _ = sink.Close();
-
-                let olive_col = D2D1_COLOR_F {
-                    r: 0.55,
-                    g: 0.82,
-                    b: 0.32,
-                    a: alpha,
-                };
-                if let Ok(b) = rt.CreateSolidColorBrush(&olive_col, None) {
-                    rt.DrawGeometry(&geom, &b, 2.5, None);
-                }
-            }
-        }
-    }
-
-    unsafe fn draw_floating_sword_and_grabbing_hand(
-        &self,
-        factory: &ID2D1Factory,
-        rt: &ID2D1HwndRenderTarget,
-        sx: f32,
-        sy: f32,
-        pill_bottom: f32,
-        timer: f32,
-        alpha: f32,
-    ) {
-        let hover_bob = (timer * 6.5).sin() * 2.0;
-        let retract = if timer > 2.7 {
-            ((timer - 2.7) / 1.1).clamp(0.0, 1.0).powi(2) * 18.0
-        } else {
-            0.0
-        };
-
-        let sword_x = sx;
-        let sword_y = sy + hover_bob + retract;
-
-        let blade_dark = D2D1_COLOR_F {
-            r: 0.16,
-            g: 0.19,
-            b: 0.26,
-            a: alpha,
-        };
-        let blade_edge = D2D1_COLOR_F {
-            r: 0.56,
-            g: 0.64,
-            b: 0.78,
-            a: alpha * 0.9,
-        };
-        let crimson_core = D2D1_COLOR_F {
-            r: 0.88,
-            g: 0.16,
-            b: 0.24,
-            a: alpha * 0.9,
-        };
-        let hand_obsidian = D2D1_COLOR_F {
-            r: 0.10,
-            g: 0.12,
-            b: 0.18,
-            a: alpha,
-        };
-
-        let Ok(blade_b) = rt.CreateSolidColorBrush(&blade_dark, None) else { return };
-        let Ok(edge_b) = rt.CreateSolidColorBrush(&blade_edge, None) else { return };
-        let Ok(core_b) = rt.CreateSolidColorBrush(&crimson_core, None) else { return };
-        let Ok(hand_b) = rt.CreateSolidColorBrush(&hand_obsidian, None) else { return };
-
-        if let Ok(sword_geom) = factory.CreatePathGeometry() {
-            if let Ok(sink) = sword_geom.Open() {
-                sink.BeginFigure(
-                    D2D_POINT_2F {
-                        x: sword_x,
-                        y: sword_y - 12.0,
-                    },
-                    D2D1_FIGURE_BEGIN_FILLED,
-                );
-                sink.AddLines(&[
-                    D2D_POINT_2F {
-                        x: sword_x + 4.0,
-                        y: sword_y - 7.0,
-                    },
-                    D2D_POINT_2F {
-                        x: sword_x + 3.2,
-                        y: sword_y + 3.5,
-                    },
-                    D2D_POINT_2F {
-                        x: sword_x - 3.2,
-                        y: sword_y + 3.5,
-                    },
-                    D2D_POINT_2F {
-                        x: sword_x - 4.0,
-                        y: sword_y - 7.0,
-                    },
-                ]);
-                sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-                let _ = sink.Close();
-                rt.FillGeometry(&sword_geom, &blade_b, None);
-                rt.DrawGeometry(&sword_geom, &edge_b, 0.9, None);
-            }
-        }
-
-        rt.DrawLine(
-            D2D_POINT_2F {
-                x: sword_x,
-                y: sword_y - 9.5,
-            },
-            D2D_POINT_2F {
-                x: sword_x,
-                y: sword_y + 3.0,
-            },
-            &core_b,
-            1.2,
-            None,
-        );
-        rt.DrawLine(
-            D2D_POINT_2F {
-                x: sword_x - 5.2,
-                y: sword_y + 3.8,
-            },
-            D2D_POINT_2F {
-                x: sword_x + 5.2,
-                y: sword_y + 3.8,
-            },
-            &edge_b,
-            1.8,
-            None,
-        );
-        rt.DrawLine(
-            D2D_POINT_2F {
-                x: sword_x,
-                y: sword_y + 4.0,
-            },
-            D2D_POINT_2F {
-                x: sword_x,
-                y: sword_y + 10.0,
-            },
-            &edge_b,
-            2.0,
-            None,
-        );
-
-        if timer >= 1.2 {
-            let reach_progress = if timer < 2.0 {
-                ((timer - 1.2) / 0.8).clamp(0.0, 1.0)
-            } else {
-                1.0
-            };
-
-            let hand_top_y = pill_bottom - (pill_bottom - (sword_y + 6.0)) * reach_progress;
-            let arm_rect = D2D1_ROUNDED_RECT {
-                rect: D2D_RECT_F {
-                    left: sword_x - 3.0,
-                    top: hand_top_y,
-                    right: sword_x + 3.0,
-                    bottom: pill_bottom,
-                },
-                radiusX: 2.0,
-                radiusY: 2.0,
-            };
-            rt.FillRoundedRectangle(&arm_rect, &hand_b);
-            rt.DrawRoundedRectangle(&arm_rect, &core_b, 0.9, None);
-        }
-    }
-
-    unsafe fn draw_anti_magic_sparks(
-        &self,
-        rt: &ID2D1HwndRenderTarget,
-        cx: f32,
-        cy: f32,
-        alpha_mult: f32,
-    ) {
-        for spark in &self.sparks {
-            let progress = (spark.life / spark.max_life).clamp(0.0, 1.0);
-            let spark_alpha = (1.0 - (2.0 * progress - 1.0).powi(2))
-                * self.aura_intensity.clamp(0.2, 1.1)
-                * alpha_mult;
-
-            if spark_alpha <= 0.02 {
-                continue;
-            }
-
-            let color = if self.cheer_blend > 0.5 {
-                D2D1_COLOR_F {
-                    r: 0.55,
-                    g: 0.85,
-                    b: 0.35,
-                    a: spark_alpha * 0.50,
-                }
-            } else {
-                match spark.kind {
-                    0 => D2D1_COLOR_F {
-                        r: 0.85,
-                        g: 0.12,
-                        b: 0.18,
-                        a: spark_alpha * 0.70,
-                    },
-                    1 => D2D1_COLOR_F {
-                        r: 0.48,
-                        g: 0.56,
-                        b: 0.72,
-                        a: spark_alpha * 0.55,
-                    },
-                    _ => D2D1_COLOR_F {
-                        r: 0.20,
-                        g: 0.24,
-                        b: 0.34,
-                        a: spark_alpha * 0.75,
-                    },
-                }
-            };
-
-            if let Ok(brush) = rt.CreateSolidColorBrush(&color, None) {
-                let x = cx + spark.offset_x;
-                let y = cy + spark.offset_y;
-                let r = spark.size * (1.0 - 0.4 * progress);
-                rt.FillEllipse(
-                    &D2D1_ELLIPSE {
-                        point: D2D_POINT_2F { x, y },
-                        radiusX: r * 0.8,
-                        radiusY: r * 1.4,
-                    },
-                    &brush,
-                );
-            }
-        }
-    }
-
-    unsafe fn create_tapered_plus_geometry(
-        &self,
-        factory: &ID2D1Factory,
-        cx: f32,
-        cy: f32,
-        arm_h: f32,
-        arm_v: f32,
-        half_t: f32,
-    ) -> windows::core::Result<ID2D1PathGeometry> {
-        let geom = factory.CreatePathGeometry()?;
-        let sink = geom.Open()?;
-        sink.BeginFigure(
-            D2D_POINT_2F {
-                x: cx,
-                y: cy - arm_v,
-            },
-            D2D1_FIGURE_BEGIN_FILLED,
-        );
-
-        let tip_t = half_t * 0.32;
-        let pts = [
-            D2D_POINT_2F { x: cx + tip_t, y: cy - arm_v * 0.65 },
-            D2D_POINT_2F { x: cx + half_t, y: cy - half_t },
-            D2D_POINT_2F { x: cx + arm_h * 0.65, y: cy - tip_t },
-            D2D_POINT_2F { x: cx + arm_h, y: cy },
-            D2D_POINT_2F { x: cx + arm_h * 0.65, y: cy + tip_t },
-            D2D_POINT_2F { x: cx + half_t, y: cy + half_t },
-            D2D_POINT_2F { x: cx + tip_t, y: cy + arm_v * 0.65 },
-            D2D_POINT_2F { x: cx, y: cy + arm_v },
-            D2D_POINT_2F { x: cx - tip_t, y: cy + arm_v * 0.65 },
-            D2D_POINT_2F { x: cx - half_t, y: cy + half_t },
-            D2D_POINT_2F { x: cx - arm_h * 0.65, y: cy + tip_t },
-            D2D_POINT_2F { x: cx - arm_h, y: cy },
-            D2D_POINT_2F { x: cx - arm_h * 0.65, y: cy - tip_t },
-            D2D_POINT_2F { x: cx - half_t, y: cy - half_t },
-            D2D_POINT_2F { x: cx - tip_t, y: cy - arm_v * 0.65 },
-        ];
-
-        sink.AddLines(&pts);
-        sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-        sink.Close()?;
-        Ok(geom)
-    }
-}
-```
-
----
-
-### B. `src/notch/states.rs` — 5 Section (Tanpa To-Do), Daily Motivational Quotes, Real Timestamp LRC Auto-Sync, & Zero-Flash Native Audio/Brightness Control
-
-Perhatikan bagaimana fungsi `apply_system_volume` dan `apply_system_brightness` di bawah ini bekerja:
-- **Volume**: Menggunakan **COM API Native `IMMDeviceEnumerator` + `IAudioEndpointVolume::SetMasterVolumeLevelScalar`** langsung dari memori Rust (**0ms delay, tidak ada PowerShell, tidak ada terminal pop-up, tidak ada pencurian fokus!**).
-- **Brightness**: Menggunakan `CREATE_NO_WINDOW` (`0x08000000`) dan juga mendukung **scroll *mouse wheel*** langsung pada kartu atau angka Brightness/Volume!
+### A. `src/notch/states.rs` — Penambahan `trigger_stagedock()`, Perbaikan Klik 2-Row `Control`, & Dimensi Ramping
 
 ```rust
 // src/notch/states.rs
@@ -1348,8 +80,12 @@ use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED,
 };
 use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_LMENU,
+    VK_LWIN, VK_TAB,
+};
 use windows::Win32::UI::Shell::ShellExecuteW;
-use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+use windows::Win32::UI::WindowsAndMessaging::{FindWindowW, SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOWNORMAL};
 
 use crate::mascot::chibi_liebe::ChibiLiebe;
 use crate::mascot::eyes::DevilUnionEyes;
@@ -1360,9 +96,9 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 pub enum NotchState {
     Pet,     // Closed mascot: Asta Devil Union Crown / Cheer Mode
     Idle,    // Closed notch: Jam Digital & Baterai iOS
-    Hub,     // Tab 0: Jam Besar, Baterai iOS & Daily Motivational Quote / Word of the Day
+    Hub,     // Tab 0: Jam, Tanggal, Baterai iOS & Daily Quote
     Music,   // Tab 1: Full-Height Cover + Controls + Auto-Synced LRC Lyrics
-    Control, // Tab 2: All-in-One Control (Volume, Brightness, Wi-Fi, Energy Saver)
+    Control, // Tab 2: Clean 2-Row Volume & Brightness Control
     Pomo,    // Tab 3: Pomodoro Focus Timer
     Shelf,   // Tab 4: File Shelf (Drag & Drop Temporary Storage)
 }
@@ -1427,7 +163,6 @@ pub struct LiveMediaSnapshot {
     pub playing: bool,
     pub elapsed_secs: f32,
     pub total_secs: f32,
-    /// Baris lirik beserta timestamp detiknya: `(timestamp_secs, lyric_text)`
     pub timed_lyrics: Vec<(f32, String)>,
 }
 
@@ -1495,15 +230,15 @@ pub struct NotchController {
     pub hover_grace_timer: f32,
     pub last_half_hour_marker: (u32, u32),
 
-    // --- Pop-up Interactive Overlay ---
     pub active_overlay: Option<OverlayKind>,
     pub overlay_timer: f32,
 
-    // --- All-in-One Control Center State ---
+    // Efek flash visual saat tombol action "Stages" diklik
+    pub stagedock_flash_timer: f32,
+
+    // --- Control State (Hanya Volume & Brightness) ---
     pub volume_level: u8,
     pub brightness_level: u8,
-    pub wifi_enabled: bool,
-    pub energy_saver_enabled: bool,
 
     // --- Baterai & Power ---
     pub battery_percent: u8,
@@ -1550,13 +285,13 @@ impl NotchController {
 
         let mut ctrl = Self {
             state: NotchState::Pet,
-            last_expanded_tab: NotchState::Music,
+            last_expanded_tab: NotchState::Hub,
             is_hovered: false,
             minimal_mode: false,
             mascot_enabled: true,
             anim_time: 0.0,
-            width: SpringValue::new(196.0, 310.0, 26.0),
-            height: SpringValue::new(38.0, 310.0, 26.0),
+            width: SpringValue::new(190.0, 310.0, 26.0),
+            height: SpringValue::new(36.0, 310.0, 26.0),
             corner_radius: SpringValue::new(16.0, 310.0, 26.0),
             content_alpha: SpringValue::new(1.0, 240.0, 28.0),
             closed_quiet_timer: 0.0,
@@ -1565,11 +300,10 @@ impl NotchController {
 
             active_overlay: None,
             overlay_timer: 0.0,
+            stagedock_flash_timer: 0.0,
 
             volume_level: 72,
             brightness_level: 80,
-            wifi_enabled: true,
-            energy_saver_enabled: false,
 
             battery_percent: bat_pct,
             is_charging: charging,
@@ -1612,7 +346,92 @@ impl NotchController {
         &MOTIVATIONAL_QUOTES[self.quote_offset % MOTIVATIONAL_QUOTES.len()]
     }
 
-    /// Background worker yang mem-poll Windows GSMTC & mem-parsing timestamp `[mm:ss.xx]` LRC secara akurat
+    /// Langsung aktifkan/tampilkan StageDock milik pengguna di layar (tanpa membuka panel di dalam notch!)
+    pub fn trigger_stagedock(&mut self) {
+        self.stagedock_flash_timer = 0.45;
+        std::thread::spawn(|| {
+            // 1. Coba cari apakah window StageDock sudah berjalan di latar belakang, lalu tampilkan/toggle
+            let candidates = [
+                "StageDock\0",
+                "StageDockV2\0",
+                "Stage Manager\0",
+            ];
+            for title in candidates {
+                let wide: Vec<u16> = title.encode_utf16().collect();
+                unsafe {
+                    if let Ok(hwnd) = FindWindowW(PCWSTR::null(), PCWSTR(wide.as_ptr())) {
+                        if !hwnd.0.is_null() {
+                            let _ = ShowWindow(hwnd, SW_RESTORE);
+                            let _ = SetForegroundWindow(hwnd);
+                            return;
+                        }
+                    }
+                }
+            }
+
+            // 2. Cek apakah executable StageDock ada di D:\StageDockV2, lalu jalankan secara silent
+            let exe_paths = [
+                r"D:\StageDockV2\StageDock.exe",
+                r"D:\StageDockV2\stagedock.exe",
+                r"D:\StageDockV2\target\release\stagedock.exe",
+                r"D:\StageDockV2\target\release\StageDock.exe",
+            ];
+            for path in exe_paths {
+                if std::path::Path::new(path).exists() {
+                    let _ = std::process::Command::new(path)
+                        .creation_flags(CREATE_NO_WINDOW)
+                        .spawn();
+                    return;
+                }
+            }
+
+            // 3. Fallback: Kirim shortcut StageDock / Windows Task View (Win+Alt+1 / Win+Tab)
+            unsafe {
+                let inputs = [
+                    INPUT {
+                        r#type: INPUT_KEYBOARD,
+                        Anonymous: INPUT_0 {
+                            ki: KEYBDINPUT {
+                                wVk: VK_LWIN,
+                                ..Default::default()
+                            },
+                        },
+                    },
+                    INPUT {
+                        r#type: INPUT_KEYBOARD,
+                        Anonymous: INPUT_0 {
+                            ki: KEYBDINPUT {
+                                wVk: VK_TAB,
+                                ..Default::default()
+                            },
+                        },
+                    },
+                    INPUT {
+                        r#type: INPUT_KEYBOARD,
+                        Anonymous: INPUT_0 {
+                            ki: KEYBDINPUT {
+                                wVk: VK_TAB,
+                                dwFlags: KEYEVENTF_KEYUP,
+                                ..Default::default()
+                            },
+                        },
+                    },
+                    INPUT {
+                        r#type: INPUT_KEYBOARD,
+                        Anonymous: INPUT_0 {
+                            ki: KEYBDINPUT {
+                                wVk: VK_LWIN,
+                                dwFlags: KEYEVENTF_KEYUP,
+                                ..Default::default()
+                            },
+                        },
+                    },
+                ];
+                let _ = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+            }
+        });
+    }
+
     fn spawn_gsmtc_media_poller(shared: Arc<Mutex<Option<LiveMediaSnapshot>>>) {
         std::thread::spawn(move || {
             let mut last_fetched_title = String::new();
@@ -1677,7 +496,6 @@ impl NotchController {
         });
     }
 
-    /// Parse timestamp `[mm:ss.xx]` dari LRCLIB agar lirik berganti tepat sesuai detik lagu!
     fn fetch_timed_lrclib(title: &str, artist: &str, total_secs: f32) -> Vec<(f32, String)> {
         let query = format!(
             "https://lrclib.net/api/search?q={}%20{}",
@@ -1712,7 +530,6 @@ impl NotchController {
                             }
                         }
 
-                        // Fallback jika lagu hanya punya plainLyrics: bagi rata sepanjang durasi lagu
                         if let Some(plain) = first.get("plainLyrics").and_then(|v| v.as_str()) {
                             let raw_lines: Vec<String> = plain
                                 .lines()
@@ -1765,13 +582,12 @@ impl NotchController {
         self.active_overlay = Some(kind);
         self.overlay_timer = 3.2;
         if !self.is_hovered {
-            self.width.set_target(290.0);
-            self.height.set_target(46.0);
+            self.width.set_target(280.0);
+            self.height.set_target(44.0);
             self.corner_radius.set_target(18.0);
         }
     }
 
-    /// 5 Section Presisi (Tanpa To-Do & Tanpa Water)
     pub fn ordered_tabs() -> [NotchState; 5] {
         [
             NotchState::Hub,
@@ -1796,19 +612,20 @@ impl NotchController {
         self.transition_to(prev);
     }
 
+    /// Ukuran Notch yang Ramping & Proporsional (Sesuai Preferensi Pengguna)
     pub fn target_dimensions_for(state: NotchState, minimal_mode: bool) -> (f32, f32, f32) {
         if minimal_mode && matches!(state, NotchState::Pet | NotchState::Idle) {
             return (130.0, 6.0, 3.0);
         }
 
         match state {
-            NotchState::Pet => (196.0, 38.0, 16.0),
-            NotchState::Idle => (216.0, 38.0, 16.0),
-            NotchState::Hub => (470.0, 172.0, 24.0),
-            NotchState::Music => (496.0, 174.0, 24.0),
-            NotchState::Control => (460.0, 168.0, 24.0),
-            NotchState::Pomo => (440.0, 162.0, 24.0),
-            NotchState::Shelf => (465.0, 168.0, 24.0),
+            NotchState::Pet => (190.0, 36.0, 16.0),
+            NotchState::Idle => (210.0, 36.0, 16.0),
+            NotchState::Hub => (446.0, 146.0, 22.0),
+            NotchState::Music => (462.0, 148.0, 22.0),
+            NotchState::Control => (446.0, 142.0, 22.0),
+            NotchState::Pomo => (436.0, 144.0, 22.0),
+            NotchState::Shelf => (446.0, 146.0, 22.0),
         }
     }
 
@@ -1861,11 +678,10 @@ impl NotchController {
         self.transition_to(NotchState::Shelf);
     }
 
-    /// Scroll Wheel: Atur Brightness/Volume dengan cepat atau ganti Quote/Lyrics!
-    pub fn on_mouse_wheel(&mut self, delta: i16, lx: f32, pill_w: f32) {
+    /// Scroll Wheel: Di tab Control, scroll di baris atas mengubah Volume, scroll di baris bawah mengubah Brightness!
+    pub fn on_mouse_wheel(&mut self, delta: i16, _lx: f32, ly: f32, _pill_w: f32) {
         let step: i16 = if delta > 0 { 5 } else { -5 };
 
-        // 1. Jika sedang di Overlay Volume/Brightness, scroll mengubah nilainya langsung!
         if !self.is_hovered {
             if let Some(ref mut ov) = self.active_overlay {
                 match ov {
@@ -1890,9 +706,10 @@ impl NotchController {
             }
         }
 
-        // 2. Jika sedang di tab Control, scroll di sisi kiri mengubah Volume, scroll di sisi kanan mengubah Brightness!
         if self.state == NotchState::Control {
-            if lx < pill_w * 0.5 {
+            let cy = ly - 30.0;
+            let card_h = (self.height.value - 40.0).max(60.0);
+            if cy < card_h * 0.5 {
                 let next = (self.volume_level as i16 + step).clamp(0, 100) as u8;
                 self.volume_level = next;
                 Self::apply_system_volume(next);
@@ -1904,7 +721,6 @@ impl NotchController {
             return;
         }
 
-        // 3. Jika di Hub: scroll mengganti Quote inspiratif
         if self.state == NotchState::Hub {
             if delta < 0 {
                 self.quote_offset = (self.quote_offset + 1) % MOTIVATIONAL_QUOTES.len();
@@ -1928,8 +744,10 @@ impl NotchController {
     pub fn update(&mut self, dt: f32, cursor_in_pill: bool, cursor_offset: Option<(f32, f32)>) {
         let dt = dt.clamp(0.001, 0.05);
         self.anim_time += dt;
+        if self.stagedock_flash_timer > 0.0 {
+            self.stagedock_flash_timer = (self.stagedock_flash_timer - dt).max(0.0);
+        }
 
-        // 1. Sinkronisasi GSMTC + Interpolasi Waktu Lagu Real-Time agar Lirik Berganti Otomatis!
         if let Ok(mut guard) = self.live_media_arc.try_lock() {
             if let Some(snap) = guard.take() {
                 let title_changed = self.media_title != snap.title;
@@ -1938,7 +756,6 @@ impl NotchController {
                 self.media_playing = snap.playing;
                 if snap.total_secs > 1.0 {
                     self.media_total_secs = snap.total_secs;
-                    // Sinkronkan elapsed_exact jika selisih > 1.8 detik dari posisi GSMTC
                     if (self.media_elapsed_exact - snap.elapsed_secs).abs() > 1.8 || title_changed {
                         self.media_elapsed_exact = snap.elapsed_secs;
                     }
@@ -1956,7 +773,6 @@ impl NotchController {
             self.media_progress =
                 (self.media_elapsed_exact / self.media_total_secs).clamp(0.0, 1.0);
 
-            // Cari baris lirik terakhir yang timestamp-nya <= media_elapsed_exact!
             if !self.timed_lyrics.is_empty() {
                 let mut found_idx = 0;
                 for (i, (ts, _)) in self.timed_lyrics.iter().enumerate() {
@@ -1970,7 +786,6 @@ impl NotchController {
             }
         }
 
-        // 2. Auto Time Peek setiap 30 menit (:00 dan :30)
         let now = Local::now();
         let hm = (now.hour(), now.minute());
         if (hm.1 == 0 || hm.1 == 30) && self.last_half_hour_marker != hm {
@@ -1981,7 +796,6 @@ impl NotchController {
             }
         }
 
-        // 3. Poll Baterai & Charger
         self.power_poll_timer += dt;
         if self.power_poll_timer >= 2.0 {
             self.power_poll_timer = 0.0;
@@ -1998,7 +812,6 @@ impl NotchController {
             }
         }
 
-        // 4. Timer Overlay
         if self.active_overlay.is_some() {
             self.overlay_timer -= dt;
             if self.overlay_timer <= 0.0 {
@@ -2012,7 +825,6 @@ impl NotchController {
             }
         }
 
-        // 5. Hover Expand / Collapse
         if cursor_in_pill {
             self.hover_grace_timer = 0.15;
             if !self.is_hovered && self.active_overlay.is_none() {
@@ -2034,7 +846,6 @@ impl NotchController {
             }
         }
 
-        // 6. Countdown Pomodoro
         if self.pomo_running {
             self.pomo_accum += dt;
             if self.pomo_accum >= 1.0 {
@@ -2086,7 +897,6 @@ impl NotchController {
         });
     }
 
-    /// NATIVE WINDOWS COM AUDIO VOLUME (0ms Delay, Tanpa PowerShell, Tanpa Pop-up Terminal, Tidak Minimize App!)
     pub fn apply_system_volume(level: u8) {
         let scalar = (level.min(100) as f32 / 100.0).clamp(0.0, 1.0);
         std::thread::spawn(move || unsafe {
@@ -2104,7 +914,6 @@ impl NotchController {
         });
     }
 
-    /// SILENT WMI BRIGHTNESS (Menggunakan `CREATE_NO_WINDOW = 0x08000000` sehingga TIDAK ADA Terminal Pop-Up!)
     pub fn apply_system_brightness(level: u8) {
         let lvl = level.min(100);
         std::thread::spawn(move || {
@@ -2164,89 +973,75 @@ impl NotchController {
     }
 
     pub fn handle_panel_click(&mut self, lx: f32, ly: f32, pill_w: f32) -> bool {
-        let card_l = 14.0;
-        let card_t = 30.0;
-        let card_w = pill_w - 28.0;
+        let card_l = 12.0;
+        let card_t = 28.0;
+        let card_w = pill_w - 24.0;
+        let card_h = (self.height.value - 38.0).max(60.0);
 
         let cx = lx - card_l;
         let cy = ly - card_t;
-        if cx < 0.0 || cy < 0.0 {
+        if cx < 0.0 || cy < 0.0 || cx > card_w || cy > card_h {
             return false;
         }
 
         match self.state {
             NotchState::Hub => {
-                // Klik pada kartu Quote di sebelah kanan untuk mengganti ke kutipan motivasi berikutnya
-                if cx >= 166.0 {
+                if cx >= 158.0 {
                     self.quote_offset = (self.quote_offset + 1) % MOTIVATIONAL_QUOTES.len();
                     return true;
                 }
             }
             NotchState::Music => {
-                // Kolom tengah (cx: 120..275): tombol Prev, Play/Pause, Next, Lyrics Toggle (cy: 80..128)
-                if (76.0..=130.0).contains(&cy) && (114.0..=285.0).contains(&cx) {
-                    if (114.0..=148.0).contains(&cx) {
+                // Kolom tengah untuk kontrol musik
+                if (68.0..=118.0).contains(&cy) && (100.0..=270.0).contains(&cx) {
+                    if (100.0..=134.0).contains(&cx) {
                         Self::send_system_media_command("prev");
                         self.media_elapsed_exact = 0.0;
                         self.media_progress = 0.0;
                         return true;
-                    } else if (150.0..=186.0).contains(&cx) {
+                    } else if (136.0..=172.0).contains(&cx) {
                         Self::send_system_media_command("toggle");
                         self.media_playing = !self.media_playing;
                         return true;
-                    } else if (188.0..=222.0).contains(&cx) {
+                    } else if (174.0..=208.0).contains(&cx) {
                         Self::send_system_media_command("next");
                         self.media_elapsed_exact = 0.0;
                         self.media_progress = 0.0;
                         return true;
-                    } else if (224.0..=282.0).contains(&cx) {
+                    } else if (210.0..=268.0).contains(&cx) {
                         self.show_side_lyrics = !self.show_side_lyrics;
                         return true;
                     }
                 }
-                // Klik di kolom kanan (Lirik): lompat ke baris lirik berikutnya
-                if cx > 282.0 && !self.timed_lyrics.is_empty() {
+                if cx > 268.0 && !self.timed_lyrics.is_empty() {
                     self.active_lyric_idx = (self.active_lyric_idx + 1) % self.timed_lyrics.len();
                     return true;
                 }
             }
             NotchState::Control => {
-                let half_w = card_w * 0.5;
-                if (10.0..=64.0).contains(&cy) {
-                    if cx < half_w - 5.0 {
-                        let sl_l = 20.0;
-                        let sl_r = half_w - 15.0;
-                        let pct = (((cx - sl_l) / (sl_r - sl_l).max(1.0)).clamp(0.0, 1.0) * 100.0)
-                            .round() as u8;
+                // 2 Baris Horizontal: Baris Atas = Volume, Baris Bawah = Brightness
+                // Track Slider berada di rentang cx: 112.0 .. (card_w - 58.0)
+                let track_l = 112.0;
+                let track_r = (card_w - 58.0).max(track_l + 20.0);
+                if cx >= track_l - 8.0 && cx <= track_r + 8.0 {
+                    let pct = (((cx - track_l) / (track_r - track_l)).clamp(0.0, 1.0) * 100.0)
+                        .round() as u8;
+                    if cy < card_h * 0.5 {
                         self.volume_level = pct;
                         Self::apply_system_volume(pct);
-                        return true;
                     } else {
-                        let sl_l = half_w + 15.0;
-                        let sl_r = card_w - 20.0;
-                        let pct = (((cx - sl_l) / (sl_r - sl_l).max(1.0)).clamp(0.0, 1.0) * 100.0)
-                            .round() as u8;
                         self.brightness_level = pct;
                         Self::apply_system_brightness(pct);
-                        return true;
                     }
-                }
-                if (68.0..=126.0).contains(&cy) {
-                    if cx < half_w - 5.0 {
-                        self.wifi_enabled = !self.wifi_enabled;
-                        return true;
-                    } else {
-                        self.energy_saver_enabled = !self.energy_saver_enabled;
-                        return true;
-                    }
+                    return true;
                 }
             }
             NotchState::Pomo => {
-                if (62.0..=112.0).contains(&cy) {
-                    if (110.0..=204.0).contains(&cx) {
+                if (54.0..=104.0).contains(&cy) {
+                    if (104.0..=196.0).contains(&cx) {
                         self.pomo_running = !self.pomo_running;
                         return true;
-                    } else if (210.0..=280.0).contains(&cx) {
+                    } else if (202.0..=270.0).contains(&cx) {
                         self.pomo_running = false;
                         self.pomo_remaining_secs = self.pomo_total_secs;
                         return true;
@@ -2254,13 +1049,13 @@ impl NotchController {
                 }
             }
             NotchState::Shelf => {
-                if cy >= 30.0 && !self.shelf_files.is_empty() {
-                    let slot_w = (card_w - 76.0) * 0.5;
-                    let idx = if cx < 14.0 + slot_w { 0 } else { 1 };
+                if cy >= 26.0 && !self.shelf_files.is_empty() {
+                    let slot_w = (card_w - 72.0) * 0.5;
+                    let idx = if cx < 12.0 + slot_w { 0 } else { 1 };
                     if idx < self.shelf_files.len() {
                         let card_right_edge =
-                            14.0 + (idx as f32 + 1.0) * slot_w + idx as f32 * 10.0;
-                        if cx >= card_right_edge - 24.0 && cy <= 54.0 {
+                            12.0 + (idx as f32 + 1.0) * slot_w + idx as f32 * 10.0;
+                        if cx >= card_right_edge - 24.0 && cy <= 50.0 {
                             self.shelf_files.remove(idx);
                         } else {
                             let path = self.shelf_files[idx].2.clone();
@@ -2279,754 +1074,46 @@ impl NotchController {
 
 ---
 
-### C. `src/notch/renderer.rs` — Solid Black Base Notch (`#000000`), Full-Height Cover Art, Daily Quote Card, & 5-Tab Navigation
+### B. `src/notch/renderer.rs` — Perbaikan Tata Letak `Hub` (Bebas Tabrakan), Clean 2-Row `Control` (Label + Slider + Angka Terpisah), & 6-Slot Navigation Bar (`Stages` Action Button)
 
-Perhatikan pada `render_frame` di bawah ini:
-1. **Base Notch Background** baik saat mini maupun saat terbuka penuh digambar dengan **`PILL_SOLID_BLACK` (`#000000`, `r: 0.0, g: 0.0, b: 0.0, a: 1.0`)** sehingga menyatu sempurna dengan bezel hitam layar laptop.
-2. Pada `draw_music_panel`, **kotak Cover Musik/Video di sebelah kiri kini merentang *full-height*** dari `card.top + 10.0` hingga `card.bottom - 10.0` (`112x112` proporsional penuh mengikuti tinggi kartu) tanpa menyisakan ruang kosong di bawahnya!
-3. Pada `draw_hub_panel`, sisi kanan kini menampilkan kartu **Word & Quote of the Day** dengan tipografi elegan.
+Perhatikan perubahan di `draw_hub_panel`, `draw_control_panel`, dan `draw_expanded_panel_shell`:
 
 ```rust
-// src/notch/renderer.rs
-use chrono::Local;
-use windows::core::w;
-use windows::Win32::Foundation::HWND;
-use windows::Win32::Graphics::Direct2D::Common::{
-    D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_BEZIER_SEGMENT, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED,
-    D2D1_FIGURE_END_CLOSED, D2D1_GRADIENT_STOP, D2D1_PIXEL_FORMAT, D2D_POINT_2F, D2D_RECT_F,
-    D2D_SIZE_U,
-};
-use windows::Win32::Graphics::Direct2D::*;
-use windows::Win32::Graphics::DirectWrite::{
-    DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat, DWRITE_FACTORY_TYPE_SHARED,
-    DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_ITALIC, DWRITE_FONT_STYLE_NORMAL,
-    DWRITE_FONT_WEIGHT_BOLD, DWRITE_FONT_WEIGHT_MEDIUM, DWRITE_FONT_WEIGHT_SEMI_BOLD,
-    DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING,
-};
-use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
-use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT};
-
-use super::states::{NotchController, NotchState, OverlayKind};
-
-pub struct AntiMagicNeutralPalette;
-
-impl AntiMagicNeutralPalette {
-    /// SOLID BLACK (#000000) untuk Base Notch baik saat Mini maupun Full!
-    pub const PILL_SOLID_BLACK: D2D1_COLOR_F = D2D1_COLOR_F {
-        r: 0.0,
-        g: 0.0,
-        b: 0.0,
-        a: 1.0,
-    };
-    pub const CARD_ELEVATED: D2D1_COLOR_F = D2D1_COLOR_F {
-        r: 0.115,
-        g: 0.148,
-        b: 0.212,
-        a: 0.92,
-    };
-    pub const ACCENT_BLUE: D2D1_COLOR_F = D2D1_COLOR_F {
-        r: 0.392,
-        g: 0.545,
-        b: 0.945,
-        a: 1.0,
-    };
-    pub const ACCENT_CYAN: D2D1_COLOR_F = D2D1_COLOR_F {
-        r: 0.220,
-        g: 0.740,
-        b: 0.970,
-        a: 1.0,
-    };
-    pub const ACCENT_WINE: D2D1_COLOR_F = D2D1_COLOR_F {
-        r: 0.680,
-        g: 0.220,
-        b: 0.310,
-        a: 0.95,
-    };
-    pub const TEXT_PRIMARY: D2D1_COLOR_F = D2D1_COLOR_F {
-        r: 0.945,
-        g: 0.965,
-        b: 0.992,
-        a: 1.0,
-    };
-    pub const TEXT_SECONDARY: D2D1_COLOR_F = D2D1_COLOR_F {
-        r: 0.600,
-        g: 0.675,
-        b: 0.785,
-        a: 1.0,
-    };
-}
-
-pub struct NotchRenderer {
-    pub factory: ID2D1Factory,
-    pub dwrite: IDWriteFactory,
-    pub rt: ID2D1HwndRenderTarget,
-    pub fmt_clock_hero: IDWriteTextFormat,
-    pub fmt_title: IDWriteTextFormat,
-    pub fmt_body: IDWriteTextFormat,
-    pub fmt_quote_italic: IDWriteTextFormat,
-    pub fmt_caption: IDWriteTextFormat,
-    pub fmt_battery_inside: IDWriteTextFormat,
-}
-
-impl NotchRenderer {
-    pub fn new(hwnd: HWND, width: u32, height: u32, dpi_scale: f32) -> windows::core::Result<Self> {
-        unsafe {
-            let factory: ID2D1Factory =
-                D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)?;
-            let dwrite: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
-
-            let dpi = 96.0 * dpi_scale.max(1.0);
-            let render_props = D2D1_RENDER_TARGET_PROPERTIES {
-                r#type: D2D1_RENDER_TARGET_TYPE_DEFAULT,
-                pixelFormat: D2D1_PIXEL_FORMAT {
-                    format: DXGI_FORMAT_B8G8R8A8_UNORM,
-                    alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
-                },
-                dpiX: dpi,
-                dpiY: dpi,
-                usage: D2D1_RENDER_TARGET_USAGE_NONE,
-                minLevel: D2D1_FEATURE_LEVEL_DEFAULT,
-            };
-
-            let hwnd_props = D2D1_HWND_RENDER_TARGET_PROPERTIES {
-                hwnd,
-                pixelSize: D2D_SIZE_U {
-                    width: width.max(100),
-                    height: height.max(50),
-                },
-                presentOptions: D2D1_PRESENT_OPTIONS_IMMEDIATELY,
-            };
-
-            let rt = factory.CreateHwndRenderTarget(&render_props, &hwnd_props)?;
-            rt.SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-
-            let fmt_clock_hero = dwrite.CreateTextFormat(
-                w!("Segoe UI Variable Display"),
-                None,
-                DWRITE_FONT_WEIGHT_BOLD,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                26.0,
-                w!("en-us"),
-            )?;
-
-            let fmt_title = dwrite.CreateTextFormat(
-                w!("Segoe UI Variable Display"),
-                None,
-                DWRITE_FONT_WEIGHT_BOLD,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                12.0,
-                w!("en-us"),
-            )?;
-
-            let fmt_body = dwrite.CreateTextFormat(
-                w!("Segoe UI Variable Display"),
-                None,
-                DWRITE_FONT_WEIGHT_MEDIUM,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                11.0,
-                w!("en-us"),
-            )?;
-
-            let fmt_quote_italic = dwrite.CreateTextFormat(
-                w!("Segoe UI Variable Display"),
-                None,
-                DWRITE_FONT_WEIGHT_MEDIUM,
-                DWRITE_FONT_STYLE_ITALIC,
-                DWRITE_FONT_STRETCH_NORMAL,
-                11.0,
-                w!("en-us"),
-            )?;
-
-            let fmt_caption = dwrite.CreateTextFormat(
-                w!("Segoe UI Variable Display"),
-                None,
-                DWRITE_FONT_WEIGHT_SEMI_BOLD,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                9.5,
-                w!("en-us"),
-            )?;
-
-            let fmt_battery_inside = dwrite.CreateTextFormat(
-                w!("Segoe UI Variable Display"),
-                None,
-                DWRITE_FONT_WEIGHT_BOLD,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                8.5,
-                w!("en-us"),
-            )?;
-
-            Ok(Self {
-                factory,
-                dwrite,
-                rt,
-                fmt_clock_hero,
-                fmt_title,
-                fmt_body,
-                fmt_quote_italic,
-                fmt_caption,
-                fmt_battery_inside,
-            })
-        }
-    }
-
-    unsafe fn create_bezel_notch_geometry(
-        &self,
-        rect: D2D_RECT_F,
-        bottom_radius: f32,
-    ) -> windows::core::Result<ID2D1PathGeometry> {
-        let geom = self.factory.CreatePathGeometry()?;
-        let sink = geom.Open()?;
-
-        let h = (rect.bottom - rect.top).max(4.0);
-        let r = bottom_radius.min(h * 0.5).max(2.0);
-        let ear = (r * 0.48).min(9.0);
-
-        sink.BeginFigure(
-            D2D_POINT_2F {
-                x: rect.left - ear,
-                y: rect.top,
-            },
-            D2D1_FIGURE_BEGIN_FILLED,
-        );
-        sink.AddBezier(&D2D1_BEZIER_SEGMENT {
-            point1: D2D_POINT_2F {
-                x: rect.left - ear * 0.2,
-                y: rect.top,
-            },
-            point2: D2D_POINT_2F {
-                x: rect.left,
-                y: rect.top + ear * 0.2,
-            },
-            point3: D2D_POINT_2F {
-                x: rect.left,
-                y: rect.top + ear,
-            },
-        });
-        sink.AddLine(D2D_POINT_2F {
-            x: rect.left,
-            y: rect.bottom - r,
-        });
-        sink.AddBezier(&D2D1_BEZIER_SEGMENT {
-            point1: D2D_POINT_2F {
-                x: rect.left,
-                y: rect.bottom - r * 0.45,
-            },
-            point2: D2D_POINT_2F {
-                x: rect.left + r * 0.45,
-                y: rect.bottom,
-            },
-            point3: D2D_POINT_2F {
-                x: rect.left + r,
-                y: rect.bottom,
-            },
-        });
-        sink.AddLine(D2D_POINT_2F {
-            x: rect.right - r,
-            y: rect.bottom,
-        });
-        sink.AddBezier(&D2D1_BEZIER_SEGMENT {
-            point1: D2D_POINT_2F {
-                x: rect.right - r * 0.45,
-                y: rect.bottom,
-            },
-            point2: D2D_POINT_2F {
-                x: rect.right,
-                y: rect.bottom - r * 0.45,
-            },
-            point3: D2D_POINT_2F {
-                x: rect.right,
-                y: rect.bottom - r,
-            },
-        });
-        sink.AddLine(D2D_POINT_2F {
-            x: rect.right,
-            y: rect.top + ear,
-        });
-        sink.AddBezier(&D2D1_BEZIER_SEGMENT {
-            point1: D2D_POINT_2F {
-                x: rect.right,
-                y: rect.top + ear * 0.2,
-            },
-            point2: D2D_POINT_2F {
-                x: rect.right + ear * 0.2,
-                y: rect.top,
-            },
-            point3: D2D_POINT_2F {
-                x: rect.right + ear,
-                y: rect.top,
-            },
-        });
-
-        sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-        sink.Close()?;
-        Ok(geom)
-    }
-
-    unsafe fn fill_gradient_glass_card(
-        &self,
-        rect: D2D_RECT_F,
-        radius: f32,
-        c_start: D2D1_COLOR_F,
-        c_mid: D2D1_COLOR_F,
-        c_end: D2D1_COLOR_F,
-        border_col: D2D1_COLOR_F,
-        border_width: f32,
-    ) {
-        let rrect = D2D1_ROUNDED_RECT {
-            rect,
-            radiusX: radius,
-            radiusY: radius,
-        };
-        let stops = [
-            D2D1_GRADIENT_STOP {
-                position: 0.0,
-                color: c_start,
-            },
-            D2D1_GRADIENT_STOP {
-                position: 0.52,
-                color: c_mid,
-            },
-            D2D1_GRADIENT_STOP {
-                position: 1.0,
-                color: c_end,
-            },
-        ];
-        if let Ok(sc) =
-            self.rt
-                .CreateGradientStopCollection(&stops, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP)
-        {
-            let props = D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES {
-                startPoint: D2D_POINT_2F {
-                    x: rect.left,
-                    y: rect.top,
-                },
-                endPoint: D2D_POINT_2F {
-                    x: rect.right,
-                    y: rect.bottom,
-                },
-            };
-            if let Ok(gb) = self.rt.CreateLinearGradientBrush(&props, None, &sc) {
-                self.rt.FillRoundedRectangle(&rrect, &gb);
-            }
-        }
-        if border_width > 0.0 {
-            if let Ok(bb) = self.rt.CreateSolidColorBrush(&border_col, None) {
-                self.rt.DrawRoundedRectangle(&rrect, &bb, border_width, None);
-            }
-        }
-    }
-
-    unsafe fn draw_ios_battery_icon(
-        &self,
-        x: f32,
-        y: f32,
-        percent: u8,
-        charging: bool,
-        alpha: f32,
-    ) {
-        let bw = 34.0;
-        let bh = 16.0;
-        let body_rect = D2D_RECT_F {
-            left: x,
-            top: y,
-            right: x + bw,
-            bottom: y + bh,
-        };
-
-        let outline_col = D2D1_COLOR_F {
-            r: 0.65,
-            g: 0.72,
-            b: 0.84,
-            a: 0.75 * alpha,
-        };
-        if let Ok(ob) = self.rt.CreateSolidColorBrush(&outline_col, None) {
-            self.rt.DrawRoundedRectangle(
-                &D2D1_ROUNDED_RECT {
-                    rect: body_rect,
-                    radiusX: 5.5,
-                    radiusY: 5.5,
-                },
-                &ob,
-                1.3,
-                None,
-            );
-            self.rt.FillRoundedRectangle(
-                &D2D1_ROUNDED_RECT {
-                    rect: D2D_RECT_F {
-                        left: x + bw + 1.5,
-                        top: y + 4.5,
-                        right: x + bw + 3.5,
-                        bottom: y + bh - 4.5,
-                    },
-                    radiusX: 1.2,
-                    radiusY: 1.2,
-                },
-                &ob,
-            );
-        }
-
-        let fill_ratio = (percent.min(100) as f32 / 100.0).max(0.12);
-        let fill_w = (bw - 3.6) * fill_ratio;
-        let fill_col = if charging {
-            D2D1_COLOR_F {
-                r: 0.18,
-                g: 0.82,
-                b: 0.48,
-                a: 0.92 * alpha,
-            }
-        } else if percent <= 20 {
-            D2D1_COLOR_F {
-                r: 0.85,
-                g: 0.25,
-                b: 0.32,
-                a: 0.92 * alpha,
-            }
-        } else {
-            D2D1_COLOR_F {
-                r: 0.34,
-                g: 0.50,
-                b: 0.88,
-                a: 0.88 * alpha,
-            }
-        };
-
-        if let Ok(fb) = self.rt.CreateSolidColorBrush(&fill_col, None) {
-            self.rt.FillRoundedRectangle(
-                &D2D1_ROUNDED_RECT {
-                    rect: D2D_RECT_F {
-                        left: x + 1.8,
-                        top: y + 1.8,
-                        right: x + 1.8 + fill_w,
-                        bottom: y + bh - 1.8,
-                    },
-                    radiusX: 4.0,
-                    radiusY: 4.0,
-                },
-                &fb,
-            );
-        }
-
-        let label = if charging {
-            format!("⚡{}", percent)
-        } else {
-            format!("{}", percent)
-        };
-        let txt_col = D2D1_COLOR_F {
-            r: 0.98,
-            g: 0.99,
-            b: 1.0,
-            a: alpha,
-        };
-        self.draw_text_centered(&label, &self.fmt_battery_inside, body_rect, txt_col);
-    }
-
-    unsafe fn draw_text_left(
-        &self,
-        text: &str,
-        fmt: &IDWriteTextFormat,
-        rect: D2D_RECT_F,
-        color: D2D1_COLOR_F,
-    ) {
-        let _ = fmt.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
-        let _ = fmt.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        let wide: Vec<u16> = text.encode_utf16().collect();
-        if let Ok(brush) = self.rt.CreateSolidColorBrush(&color, None) {
-            self.rt.DrawText(
-                &wide,
-                fmt,
-                &rect,
-                &brush,
-                D2D1_DRAW_TEXT_OPTIONS_CLIP,
-                Default::default(),
-            );
-        }
-    }
-
-    unsafe fn draw_text_centered(
-        &self,
-        text: &str,
-        fmt: &IDWriteTextFormat,
-        rect: D2D_RECT_F,
-        color: D2D1_COLOR_F,
-    ) {
-        let _ = fmt.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
-        let _ = fmt.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-        let wide: Vec<u16> = text.encode_utf16().collect();
-        if let Ok(brush) = self.rt.CreateSolidColorBrush(&color, None) {
-            self.rt.DrawText(
-                &wide,
-                fmt,
-                &rect,
-                &brush,
-                D2D1_DRAW_TEXT_OPTIONS_CLIP,
-                Default::default(),
-            );
-        }
-    }
-
-    pub fn render_frame(&self, controller: &mut NotchController, pill_rect: D2D_RECT_F) {
-        unsafe {
-            let mut ps = PAINTSTRUCT::default();
-            let hwnd = self.rt.GetHwnd();
-            let _ = BeginPaint(hwnd, &mut ps);
-
-            self.rt.BeginDraw();
-            self.rt.Clear(Some(&D2D1_COLOR_F {
-                r: 0.0,
-                g: 0.0,
-                b: 0.0,
-                a: 0.0,
-            }));
-
-            // 1. Gambar Base Notch dengan Warna PURE SOLID BLACK (#000000) Baik Saat Mini Maupun Full!
-            if let Ok(notch_geom) =
-                self.create_bezel_notch_geometry(pill_rect, controller.corner_radius.value)
-            {
-                if let Ok(black_brush) = self
-                    .rt
-                    .CreateSolidColorBrush(&AntiMagicNeutralPalette::PILL_SOLID_BLACK, None)
-                {
-                    self.rt.FillGeometry(&notch_geom, &black_brush, None);
-                }
-
-                // Garis tepi bawah tipis halus
-                let border_color = D2D1_COLOR_F {
-                    r: 0.20,
-                    g: 0.26,
-                    b: 0.38,
-                    a: 0.45,
-                };
-                if let Ok(border_brush) = self.rt.CreateSolidColorBrush(&border_color, None) {
-                    self.rt.DrawGeometry(&notch_geom, &border_brush, 1.2, None);
-                }
-            }
-
-            // 2. Pop-Up Interactive Overlay (Volume, Brightness, CapsLock, Charging)
-            if !controller.is_hovered {
-                if let Some(ref overlay) = controller.active_overlay.clone() {
-                    self.draw_system_overlay(overlay, pill_rect);
-                    let _ = self.rt.EndDraw(None, None);
-                    let _ = EndPaint(hwnd, &ps);
-                    return;
-                }
-            }
-
-            // 3. Render State Aktif
-            if controller.state == NotchState::Pet && !controller.minimal_mode {
-                let collapse_factor = ((62.0 - controller.height.value) / 24.0).clamp(0.0, 1.0);
-                controller
-                    .devil_eyes
-                    .render(&self.factory, &self.rt, pill_rect, collapse_factor);
-            } else if controller.state == NotchState::Idle && !controller.minimal_mode {
-                let alpha = ((62.0 - controller.height.value) / 24.0).clamp(0.0, 1.0);
-                self.draw_closed_idle_clock_and_battery(controller, pill_rect, alpha);
-            } else if controller.height.value > 65.0 {
-                let alpha = controller.content_alpha.value.clamp(0.0, 1.0);
-                let card_rect = self.draw_expanded_panel_shell(controller.state, pill_rect, alpha);
-
-                match controller.state {
-                    NotchState::Hub => self.draw_hub_panel(controller, card_rect, alpha),
-                    NotchState::Music => self.draw_music_panel(controller, card_rect, alpha),
-                    NotchState::Control => self.draw_control_panel(controller, card_rect, alpha),
-                    NotchState::Pomo => self.draw_pomo_panel(controller, card_rect, alpha),
-                    NotchState::Shelf => self.draw_shelf_panel(controller, card_rect, alpha),
-                    _ => {}
-                }
-
-                if controller.mascot_enabled {
-                    controller
-                        .chibi_liebe
-                        .render(&self.factory, &self.rt, pill_rect, alpha);
-                }
-            }
-
-            let _ = self.rt.EndDraw(None, None);
-            let _ = EndPaint(hwnd, &ps);
-        }
-    }
-
-    unsafe fn draw_closed_idle_clock_and_battery(
-        &self,
-        ctrl: &NotchController,
-        pill: D2D_RECT_F,
-        alpha: f32,
-    ) {
-        let now_str = Local::now().format("%H:%M").to_string();
-        let mut p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
-        p_col.a *= alpha;
-
-        self.draw_text_left(
-            &now_str,
-            &self.fmt_title,
-            D2D_RECT_F {
-                left: pill.left + 16.0,
-                top: pill.top,
-                right: pill.left + 85.0,
-                bottom: pill.bottom,
-            },
-            p_col,
-        );
-
-        let bat_y = (pill.top + pill.bottom - 16.0) * 0.5;
-        self.draw_ios_battery_icon(
-            pill.right - 52.0,
-            bat_y,
-            ctrl.battery_percent,
-            ctrl.is_charging,
-            alpha,
-        );
-    }
-
-    unsafe fn draw_system_overlay(&self, overlay: &OverlayKind, pill: D2D_RECT_F) {
-        let p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
-        let accent = AntiMagicNeutralPalette::ACCENT_BLUE;
-        let cyan = AntiMagicNeutralPalette::ACCENT_CYAN;
-
-        match overlay {
-            OverlayKind::Volume(val) | OverlayKind::Brightness(val) => {
-                let is_vol = matches!(overlay, OverlayKind::Volume(_));
-                let label = if is_vol { "🔊 VOL" } else { "🔆 BRI" };
-                self.draw_text_left(
-                    label,
-                    &self.fmt_caption,
-                    D2D_RECT_F {
-                        left: pill.left + 14.0,
-                        top: pill.top,
-                        right: pill.left + 58.0,
-                        bottom: pill.bottom,
-                    },
-                    p_col,
-                );
-
-                let bar_l = pill.left + 58.0;
-                let bar_r = pill.right - 48.0;
-                let bar_cy = (pill.top + pill.bottom) * 0.5;
-
-                if let Ok(tb) = self.rt.CreateSolidColorBrush(
-                    &D2D1_COLOR_F {
-                        r: 0.16,
-                        g: 0.20,
-                        b: 0.28,
-                        a: 0.85,
-                    },
-                    None,
-                ) {
-                    self.rt.FillRoundedRectangle(
-                        &D2D1_ROUNDED_RECT {
-                            rect: D2D_RECT_F {
-                                left: bar_l,
-                                top: bar_cy - 5.0,
-                                right: bar_r,
-                                bottom: bar_cy + 5.0,
-                            },
-                            radiusX: 5.0,
-                            radiusY: 5.0,
-                        },
-                        &tb,
-                    );
-                }
-
-                let fill_w = (bar_r - bar_l) * ((*val as f32 / 100.0).clamp(0.0, 1.0));
-                self.fill_gradient_glass_card(
-                    D2D_RECT_F {
-                        left: bar_l,
-                        top: bar_cy - 5.0,
-                        right: bar_l + fill_w.max(8.0),
-                        bottom: bar_cy + 5.0,
-                    },
-                    5.0,
-                    accent,
-                    cyan,
-                    cyan,
-                    cyan,
-                    0.0,
-                );
-
-                self.draw_text_centered(
-                    &format!("{}%", val),
-                    &self.fmt_caption,
-                    D2D_RECT_F {
-                        left: pill.right - 46.0,
-                        top: pill.top,
-                        right: pill.right - 10.0,
-                        bottom: pill.bottom,
-                    },
-                    p_col,
-                );
-            }
-            OverlayKind::CapsLock(on) => {
-                let txt = if *on {
-                    "CAPS LOCK · ON"
-                } else {
-                    "CAPS LOCK · OFF"
-                };
-                self.draw_text_centered(
-                    txt,
-                    &self.fmt_title,
-                    pill,
-                    if *on { cyan } else { p_col },
-                );
-            }
-            OverlayKind::Charging { percent, plugged } => {
-                self.draw_text_left(
-                    if *plugged {
-                        "⚡ Power Connected"
-                    } else {
-                        "On Battery Power"
-                    },
-                    &self.fmt_title,
-                    D2D_RECT_F {
-                        left: pill.left + 18.0,
-                        top: pill.top,
-                        right: pill.right - 68.0,
-                        bottom: pill.bottom,
-                    },
-                    p_col,
-                );
-                let bat_y = (pill.top + pill.bottom - 16.0) * 0.5;
-                self.draw_ios_battery_icon(pill.right - 56.0, bat_y, *percent, *plugged, 1.0);
-            }
-        }
-    }
-
-    /// Bar Navigasi Atas dengan 5 Section (`Hub`, `Music`, `Control`, `Focus`, `Shelf`) + Panah `<` dan `>`
+    /// Bar Navigasi Atas dengan 6 Slot Presisi:
+    /// [0: Hub] [1: Music] [2: Control] [3: Focus] [4: Shelf] [5: Stages (Direct Action)]
     unsafe fn draw_expanded_panel_shell(
         &self,
-        state: NotchState,
+        ctrl: &NotchController,
         pill_rect: D2D_RECT_F,
         alpha: f32,
     ) -> D2D_RECT_F {
-        let tabs = ["Hub", "Music", "Control", "Focus", "Shelf"];
-        let active_idx = match state {
+        let tabs = ["Hub", "Music", "Control", "Focus", "Shelf", "Stages"];
+        let active_idx = match ctrl.state {
             NotchState::Hub => 0,
             NotchState::Music => 1,
             NotchState::Control => 2,
             NotchState::Pomo => 3,
             NotchState::Shelf => 4,
-            _ => 1,
+            _ => 0,
         };
 
         let mut p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
         p_col.a *= alpha;
         let mut s_col = AntiMagicNeutralPalette::TEXT_SECONDARY;
-        s_col.a *= alpha * 0.78;
+        s_col.a *= alpha * 0.80;
 
+        // Panah Kiri `‹` (lx: 10..32) dan Panah Kanan `›` (lx: pill_w - 32 .. pill_w - 10)
         let left_arrow_rect = D2D_RECT_F {
-            left: pill_rect.left + 12.0,
+            left: pill_rect.left + 10.0,
             top: pill_rect.top + 4.0,
-            right: pill_rect.left + 34.0,
-            bottom: pill_rect.top + 24.0,
+            right: pill_rect.left + 32.0,
+            bottom: pill_rect.top + 23.0,
         };
         let right_arrow_rect = D2D_RECT_F {
-            left: pill_rect.right - 34.0,
+            left: pill_rect.right - 32.0,
             top: pill_rect.top + 4.0,
-            right: pill_rect.right - 12.0,
-            bottom: pill_rect.top + 24.0,
+            right: pill_rect.right - 10.0,
+            bottom: pill_rect.top + 23.0,
         };
 
         if let Ok(ab) = self.rt.CreateSolidColorBrush(
@@ -3058,25 +1145,26 @@ impl NotchRenderer {
         self.draw_text_centered("‹", &self.fmt_title, left_arrow_rect, p_col);
         self.draw_text_centered("›", &self.fmt_title, right_arrow_rect, p_col);
 
-        let tabs_left = pill_rect.left + 38.0;
-        let tabs_right = pill_rect.right - 38.0;
-        let slot_w = (tabs_right - tabs_left) / 5.0;
+        // 6 Slot Identik antara lx = 36.0 dan pill_w - 36.0
+        let tabs_left = pill_rect.left + 36.0;
+        let tabs_right = pill_rect.right - 36.0;
+        let slot_w = (tabs_right - tabs_left) / 6.0;
 
         for (i, label) in tabs.iter().enumerate() {
             let sl = tabs_left + slot_w * i as f32;
             let sr = sl + slot_w;
             let cx = (sl + sr) * 0.5;
-            let is_active = i == active_idx;
+            let is_active = i == active_idx || (i == 5 && ctrl.stagedock_flash_timer > 0.0);
 
             if is_active {
                 self.fill_gradient_glass_card(
                     D2D_RECT_F {
-                        left: sl + 4.0,
+                        left: sl + 2.5,
                         top: pill_rect.top + 4.0,
-                        right: sr - 4.0,
-                        bottom: pill_rect.top + 24.0,
+                        right: sr - 2.5,
+                        bottom: pill_rect.top + 23.0,
                     },
-                    7.0,
+                    6.5,
                     D2D1_COLOR_F {
                         r: 0.18,
                         g: 0.26,
@@ -3099,11 +1187,46 @@ impl NotchRenderer {
                         r: 0.39,
                         g: 0.55,
                         b: 0.95,
-                        a: 0.70 * alpha,
+                        a: 0.75 * alpha,
                     },
                     1.0,
                 );
+            } else if i == 5 {
+                // Beri outline tipis spesial pada tombol action "Stages" (StageDock)
+                if let Ok(sb) = self.rt.CreateSolidColorBrush(
+                    &D2D1_COLOR_F {
+                        r: 0.22,
+                        g: 0.74,
+                        b: 0.97,
+                        a: 0.38 * alpha,
+                    },
+                    None,
+                ) {
+                    self.rt.DrawRoundedRectangle(
+                        &D2D1_ROUNDED_RECT {
+                            rect: D2D_RECT_F {
+                                left: sl + 2.5,
+                                top: pill_rect.top + 4.0,
+                                right: sr - 2.5,
+                                bottom: pill_rect.top + 23.0,
+                            },
+                            radiusX: 6.5,
+                            radiusY: 6.5,
+                        },
+                        &sb,
+                        1.0,
+                        None,
+                    );
+                }
             }
+
+            let text_col = if is_active {
+                p_col
+            } else if i == 5 {
+                AntiMagicNeutralPalette::ACCENT_CYAN
+            } else {
+                s_col
+            };
 
             self.draw_text_centered(
                 label,
@@ -3112,9 +1235,9 @@ impl NotchRenderer {
                     left: sl,
                     top: pill_rect.top + 4.0,
                     right: sr,
-                    bottom: pill_rect.top + 24.0,
+                    bottom: pill_rect.top + 23.0,
                 },
-                if is_active { p_col } else { s_col },
+                text_col,
             );
 
             if is_active {
@@ -3124,12 +1247,12 @@ impl NotchRenderer {
                 {
                     self.rt.DrawLine(
                         D2D_POINT_2F {
-                            x: cx - 14.0,
-                            y: pill_rect.top + 25.0,
+                            x: cx - 12.0,
+                            y: pill_rect.top + 24.5,
                         },
                         D2D_POINT_2F {
-                            x: cx + 14.0,
-                            y: pill_rect.top + 25.0,
+                            x: cx + 12.0,
+                            y: pill_rect.top + 24.5,
                         },
                         &lb,
                         2.0,
@@ -3140,15 +1263,15 @@ impl NotchRenderer {
         }
 
         let card_rect = D2D_RECT_F {
-            left: pill_rect.left + 14.0,
-            top: pill_rect.top + 30.0,
-            right: pill_rect.right - 14.0,
-            bottom: pill_rect.bottom - 12.0,
+            left: pill_rect.left + 12.0,
+            top: pill_rect.top + 28.0,
+            right: pill_rect.right - 12.0,
+            bottom: pill_rect.bottom - 10.0,
         };
 
         self.fill_gradient_glass_card(
             card_rect,
-            16.0,
+            15.0,
             D2D1_COLOR_F {
                 r: 0.065,
                 g: 0.085,
@@ -3173,14 +1296,14 @@ impl NotchRenderer {
                 b: 0.46,
                 a: 0.58 * alpha,
             },
-            1.3,
+            1.2,
         );
 
         card_rect
     }
 
     // =========================================================================
-    // SECTION 0: HUB (Jam Besar, Baterai iOS, & Daily Motivational Quote Card)
+    // SECTION 0: HUB (Anti-Tabrakan pada Ukuran Notch Ramping!)
     // =========================================================================
     unsafe fn draw_hub_panel(&self, ctrl: &NotchController, card: D2D_RECT_F, alpha: f32) {
         let mut p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
@@ -3188,16 +1311,16 @@ impl NotchRenderer {
         let mut s_col = AntiMagicNeutralPalette::TEXT_SECONDARY;
         s_col.a *= alpha;
 
-        // Kiri: Kartu Jam Besar, Tanggal, & Ikon Baterai iOS
+        // Kartu Kiri: Jam, Tanggal & Ikon Baterai iOS dengan Koordinat Vertikal Terpisah Rapi
         let left_card = D2D_RECT_F {
-            left: card.left + 10.0,
-            top: card.top + 10.0,
-            right: card.left + 162.0,
-            bottom: card.bottom - 10.0,
+            left: card.left + 8.0,
+            top: card.top + 8.0,
+            right: card.left + 154.0,
+            bottom: card.bottom - 8.0,
         };
         self.fill_gradient_glass_card(
             left_card,
-            13.0,
+            12.0,
             D2D1_COLOR_F {
                 r: 0.11,
                 g: 0.15,
@@ -3222,39 +1345,43 @@ impl NotchRenderer {
                 b: 0.68,
                 a: 0.50 * alpha,
             },
-            1.1,
+            1.0,
         );
 
         let now = Local::now();
         let time_big = now.format("%H:%M").to_string();
         let date_str = now.format("%a, %d %b %Y").to_string();
 
+        // Baris 1 (Atas): Jam Besar (y: top + 4 .. top + 34)
         self.draw_text_left(
             &time_big,
             &self.fmt_clock_hero,
             D2D_RECT_F {
                 left: left_card.left + 12.0,
-                top: left_card.top + 8.0,
+                top: left_card.top + 4.0,
                 right: left_card.right - 8.0,
-                bottom: left_card.top + 44.0,
+                bottom: left_card.top + 34.0,
             },
             p_col,
         );
+
+        // Baris 2 (Tengah): Tanggal (y: top + 35 .. top + 52) — TIDAK AKAN MENABRAK JAM ATAU BATERAI!
         self.draw_text_left(
             &date_str,
             &self.fmt_caption,
             D2D_RECT_F {
                 left: left_card.left + 12.0,
-                top: left_card.top + 44.0,
+                top: left_card.top + 35.0,
                 right: left_card.right - 8.0,
-                bottom: left_card.top + 64.0,
+                bottom: left_card.top + 52.0,
             },
             s_col,
         );
 
+        // Baris 3 (Bawah): Ikon Baterai iOS + Status (y: bottom - 22 .. bottom - 6)
         self.draw_ios_battery_icon(
             left_card.left + 12.0,
-            left_card.bottom - 28.0,
+            left_card.bottom - 22.0,
             ctrl.battery_percent,
             ctrl.is_charging,
             alpha,
@@ -3268,25 +1395,25 @@ impl NotchRenderer {
             },
             &self.fmt_caption,
             D2D_RECT_F {
-                left: left_card.left + 56.0,
-                top: left_card.bottom - 30.0,
+                left: left_card.left + 54.0,
+                top: left_card.bottom - 23.0,
                 right: left_card.right - 6.0,
-                bottom: left_card.bottom - 10.0,
+                bottom: left_card.bottom - 5.0,
             },
             AntiMagicNeutralPalette::ACCENT_CYAN,
         );
 
-        // Kanan: Kartu WORD & QUOTE OF THE DAY (Semi-Glass Multi-Gradient)
+        // Kartu Kanan: WORD & QUOTE OF THE DAY
         let q_card = D2D_RECT_F {
-            left: left_card.right + 10.0,
-            top: card.top + 10.0,
-            right: card.right - 10.0,
-            bottom: card.bottom - 10.0,
+            left: left_card.right + 8.0,
+            top: card.top + 8.0,
+            right: card.right - 8.0,
+            bottom: card.bottom - 8.0,
         };
 
         self.fill_gradient_glass_card(
             q_card,
-            13.0,
+            12.0,
             D2D1_COLOR_F {
                 r: 0.12,
                 g: 0.16,
@@ -3311,7 +1438,7 @@ impl NotchRenderer {
                 b: 0.78,
                 a: 0.55 * alpha,
             },
-            1.1,
+            1.0,
         );
 
         let daily = ctrl.current_quote();
@@ -3321,9 +1448,9 @@ impl NotchRenderer {
             &self.fmt_caption,
             D2D_RECT_F {
                 left: q_card.left + 12.0,
-                top: q_card.top + 8.0,
-                right: q_card.right - 12.0,
-                bottom: q_card.top + 26.0,
+                top: q_card.top + 6.0,
+                right: q_card.right - 10.0,
+                bottom: q_card.top + 22.0,
             },
             AntiMagicNeutralPalette::ACCENT_CYAN,
         );
@@ -3333,9 +1460,9 @@ impl NotchRenderer {
             &self.fmt_quote_italic,
             D2D_RECT_F {
                 left: q_card.left + 12.0,
-                top: q_card.top + 28.0,
-                right: q_card.right - 12.0,
-                bottom: q_card.bottom - 26.0,
+                top: q_card.top + 23.0,
+                right: q_card.right - 10.0,
+                bottom: q_card.bottom - 22.0,
             },
             p_col,
         );
@@ -3346,379 +1473,62 @@ impl NotchRenderer {
             &self.fmt_caption,
             D2D_RECT_F {
                 left: q_card.left + 12.0,
-                top: q_card.bottom - 24.0,
-                right: q_card.right - 12.0,
-                bottom: q_card.bottom - 6.0,
+                top: q_card.bottom - 21.0,
+                right: q_card.right - 10.0,
+                bottom: q_card.bottom - 5.0,
             },
             s_col,
         );
     }
 
     // =========================================================================
-    // SECTION 1: MUSIC/VIDEO (Full-Height Cover Art + Controls + Auto-Synced Lyrics)
-    // =========================================================================
-    unsafe fn draw_music_panel(&self, ctrl: &NotchController, card: D2D_RECT_F, alpha: f32) {
-        let mut p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
-        p_col.a *= alpha;
-        let mut s_col = AntiMagicNeutralPalette::TEXT_SECONDARY;
-        s_col.a *= alpha;
-
-        // 1. FULL-HEIGHT COVER ART CONTAINER (Merentang Penuh dari Atas ke Bawah Kartu!)
-        let art_h = (card.bottom - card.top - 16.0).max(80.0);
-        let art_rect = D2D_RECT_F {
-            left: card.left + 8.0,
-            top: card.top + 8.0,
-            right: card.left + 8.0 + art_h,
-            bottom: card.bottom - 8.0,
-        };
-
-        self.fill_gradient_glass_card(
-            art_rect,
-            13.0,
-            D2D1_COLOR_F {
-                r: 0.16,
-                g: 0.24,
-                b: 0.42,
-                a: alpha,
-            },
-            D2D1_COLOR_F {
-                r: 0.26,
-                g: 0.18,
-                b: 0.36,
-                a: alpha,
-            },
-            D2D1_COLOR_F {
-                r: 0.10,
-                g: 0.16,
-                b: 0.30,
-                a: alpha,
-            },
-            D2D1_COLOR_F {
-                r: 0.42,
-                g: 0.58,
-                b: 0.92,
-                a: 0.70 * alpha,
-            },
-            1.2,
-        );
-
-        // Visualizer bar dinamis di bagian bawah Full-Height Cover
-        if let Ok(eq_b) = self
-            .rt
-            .CreateSolidColorBrush(&AntiMagicNeutralPalette::ACCENT_CYAN, None)
-        {
-            let num_bars = 6;
-            let total_eq_w = art_h - 24.0;
-            let step_x = total_eq_w / num_bars as f32;
-            for i in 0..num_bars {
-                let phase = ctrl.anim_time * 6.0 + i as f32 * 1.1;
-                let h = if ctrl.media_playing {
-                    10.0 + phase.sin().abs() * (art_h * 0.42)
-                } else {
-                    6.0
-                };
-                let bx = art_rect.left + 14.0 + i as f32 * step_x;
-                let by = art_rect.bottom - 12.0;
-                self.rt.FillRoundedRectangle(
-                    &D2D1_ROUNDED_RECT {
-                        rect: D2D_RECT_F {
-                            left: bx,
-                            top: by - h,
-                            right: bx + 6.0,
-                            bottom: by,
-                        },
-                        radiusX: 3.0,
-                        radiusY: 3.0,
-                    },
-                    &eq_b,
-                );
-            }
-        }
-
-        // 2. Kolom Tengah: Judul, Artis, Progress Bar + Timecode, & Tombol Kontrol
-        let mid_left = art_rect.right + 10.0;
-        let mid_right = if ctrl.show_side_lyrics {
-            card.left + 282.0
-        } else {
-            card.right - 50.0
-        };
-
-        self.draw_text_left(
-            &ctrl.media_title,
-            &self.fmt_title,
-            D2D_RECT_F {
-                left: mid_left,
-                top: card.top + 8.0,
-                right: mid_right,
-                bottom: card.top + 28.0,
-            },
-            p_col,
-        );
-        self.draw_text_left(
-            &ctrl.media_artist,
-            &self.fmt_caption,
-            D2D_RECT_F {
-                left: mid_left,
-                top: card.top + 28.0,
-                right: mid_right,
-                bottom: card.top + 46.0,
-            },
-            s_col,
-        );
-
-        let bar_top = card.top + 54.0;
-        let bar_w = (mid_right - mid_left).max(16.0);
-        if let Ok(tb) = self.rt.CreateSolidColorBrush(
-            &D2D1_COLOR_F {
-                r: 0.18,
-                g: 0.23,
-                b: 0.34,
-                a: 0.75 * alpha,
-            },
-            None,
-        ) {
-            self.rt.FillRoundedRectangle(
-                &D2D1_ROUNDED_RECT {
-                    rect: D2D_RECT_F {
-                        left: mid_left,
-                        top: bar_top,
-                        right: mid_right,
-                        bottom: bar_top + 4.5,
-                    },
-                    radiusX: 2.2,
-                    radiusY: 2.2,
-                },
-                &tb,
-            );
-        }
-
-        let prog_w = (bar_w * ctrl.media_progress.clamp(0.0, 1.0)).max(5.0);
-        self.fill_gradient_glass_card(
-            D2D_RECT_F {
-                left: mid_left,
-                top: bar_top,
-                right: mid_left + prog_w,
-                bottom: bar_top + 4.5,
-            },
-            2.2,
-            AntiMagicNeutralPalette::ACCENT_BLUE,
-            AntiMagicNeutralPalette::ACCENT_CYAN,
-            AntiMagicNeutralPalette::ACCENT_CYAN,
-            AntiMagicNeutralPalette::ACCENT_CYAN,
-            0.0,
-        );
-
-        let el_s = ctrl.media_elapsed_exact as u32;
-        let tot_s = ctrl.media_total_secs as u32;
-        let time_str = format!(
-            "{:02}:{:02} / {:02}:{:02}",
-            el_s / 60,
-            el_s % 60,
-            tot_s / 60,
-            tot_s % 60
-        );
-        self.draw_text_left(
-            &time_str,
-            &self.fmt_caption,
-            D2D_RECT_F {
-                left: mid_left,
-                top: bar_top + 6.0,
-                right: mid_right,
-                bottom: bar_top + 22.0,
-            },
-            s_col,
-        );
-
-        // Tombol Kontrol: [ |<< ] [ Play/Pause ] [ >>| ] [ Lyrics ]
-        let btn_y = card.bottom - 22.0;
-        let btns = [
-            (mid_left + 15.0, "|<<"),
-            (
-                mid_left + 51.0,
-                if ctrl.media_playing { "||" } else { "|>" },
-            ),
-            (mid_left + 87.0, ">>|"),
-        ];
-        for (cx, sym) in btns {
-            let r = D2D_RECT_F {
-                left: cx - 15.0,
-                top: btn_y - 11.0,
-                right: cx + 15.0,
-                bottom: btn_y + 11.0,
-            };
-            if let Ok(b) = self
-                .rt
-                .CreateSolidColorBrush(&AntiMagicNeutralPalette::CARD_ELEVATED, None)
-            {
-                self.rt.FillRoundedRectangle(
-                    &D2D1_ROUNDED_RECT {
-                        rect: r,
-                        radiusX: 7.0,
-                        radiusY: 7.0,
-                    },
-                    &b,
-                );
-            }
-            self.draw_text_centered(sym, &self.fmt_caption, r, p_col);
-        }
-
-        let lyr_btn = D2D_RECT_F {
-            left: mid_left + 108.0,
-            top: btn_y - 11.0,
-            right: mid_left + 160.0,
-            bottom: btn_y + 11.0,
-        };
-        if let Ok(b) = self
-            .rt
-            .CreateSolidColorBrush(&AntiMagicNeutralPalette::CARD_ELEVATED, None)
-        {
-            self.rt.FillRoundedRectangle(
-                &D2D1_ROUNDED_RECT {
-                    rect: lyr_btn,
-                    radiusX: 7.0,
-                    radiusY: 7.0,
-                },
-                &b,
-            );
-        }
-        self.draw_text_centered(
-            "Lyrics",
-            &self.fmt_caption,
-            lyr_btn,
-            AntiMagicNeutralPalette::ACCENT_CYAN,
-        );
-
-        // 3. Kolom Kanan: SPOTIFY-STYLE AUTO-SYNCED LYRICS PANE
-        if ctrl.show_side_lyrics {
-            let lyr_card = D2D_RECT_F {
-                left: mid_right + 6.0,
-                top: card.top + 8.0,
-                right: card.right - 42.0,
-                bottom: card.bottom - 8.0,
-            };
-
-            self.fill_gradient_glass_card(
-                lyr_card,
-                13.0,
-                D2D1_COLOR_F {
-                    r: 0.10,
-                    g: 0.14,
-                    b: 0.23,
-                    a: 0.92 * alpha,
-                },
-                D2D1_COLOR_F {
-                    r: 0.14,
-                    g: 0.18,
-                    b: 0.29,
-                    a: 0.92 * alpha,
-                },
-                D2D1_COLOR_F {
-                    r: 0.09,
-                    g: 0.12,
-                    b: 0.20,
-                    a: 0.92 * alpha,
-                },
-                D2D1_COLOR_F {
-                    r: 0.30,
-                    g: 0.42,
-                    b: 0.65,
-                    a: 0.50 * alpha,
-                },
-                1.0,
-            );
-
-            if !ctrl.timed_lyrics.is_empty() {
-                let idx = ctrl.active_lyric_idx.min(ctrl.timed_lyrics.len() - 1);
-                let prev_l = if idx > 0 {
-                    ctrl.timed_lyrics[idx - 1].1.as_str()
-                } else {
-                    "♪ · · ·"
-                };
-                let curr_l = ctrl.timed_lyrics[idx].1.as_str();
-                let next_l = if idx + 1 < ctrl.timed_lyrics.len() {
-                    ctrl.timed_lyrics[idx + 1].1.as_str()
-                } else {
-                    "· · ·"
-                };
-
-                self.draw_text_left(
-                    prev_l,
-                    &self.fmt_caption,
-                    D2D_RECT_F {
-                        left: lyr_card.left + 10.0,
-                        top: lyr_card.top + 8.0,
-                        right: lyr_card.right - 8.0,
-                        bottom: lyr_card.top + 30.0,
-                    },
-                    s_col,
-                );
-                self.draw_text_left(
-                    curr_l,
-                    &self.fmt_title,
-                    D2D_RECT_F {
-                        left: lyr_card.left + 10.0,
-                        top: lyr_card.top + 32.0,
-                        right: lyr_card.right - 8.0,
-                        bottom: lyr_card.top + 82.0,
-                    },
-                    p_col,
-                );
-                self.draw_text_left(
-                    next_l,
-                    &self.fmt_caption,
-                    D2D_RECT_F {
-                        left: lyr_card.left + 10.0,
-                        top: lyr_card.top + 84.0,
-                        right: lyr_card.right - 8.0,
-                        bottom: lyr_card.bottom - 6.0,
-                    },
-                    s_col,
-                );
-            }
-        }
-    }
-
-    // =========================================================================
-    // SECTION 2: ALL-IN-ONE CONTROL CENTER (Click & Scroll Wheel Supported!)
+    // SECTION 2: CLEAN 2-ROW CONTROL PANEL (Hanya Volume & Brightness, Tanpa Menutupi Teks!)
     // =========================================================================
     unsafe fn draw_control_panel(&self, ctrl: &NotchController, card: D2D_RECT_F, alpha: f32) {
         let mut p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
         p_col.a *= alpha;
-        let mut s_col = AntiMagicNeutralPalette::TEXT_SECONDARY;
-        s_col.a *= alpha;
 
-        let card_w = card.right - card.left;
-        let half_w = card_w * 0.5;
+        let card_h = card.bottom - card.top;
+        let row_h = (card_h - 24.0) * 0.5;
 
-        let sliders = [
+        let rows = [
             (
-                card.left + 10.0,
-                card.left + half_w - 5.0,
-                "🔊 Volume (Click/Scroll)",
+                card.top + 8.0,
+                "🔊  Volume",
                 ctrl.volume_level,
+                AntiMagicNeutralPalette::ACCENT_BLUE,
+                AntiMagicNeutralPalette::ACCENT_CYAN,
             ),
             (
-                card.left + half_w + 5.0,
-                card.right - 10.0,
-                "🔆 Brightness (Click/Scroll)",
+                card.top + 16.0 + row_h,
+                "🔆  Brightness",
                 ctrl.brightness_level,
+                AntiMagicNeutralPalette::ACCENT_CYAN,
+                D2D1_COLOR_F {
+                    r: 0.45,
+                    g: 0.86,
+                    b: 0.98,
+                    a: 1.0,
+                },
             ),
         ];
 
-        for (l, r, label, val) in sliders {
-            let s_rect = D2D_RECT_F {
-                left: l,
-                top: card.top + 10.0,
-                right: r,
-                bottom: card.top + 62.0,
+        for (ry, label, val, c_start, c_end) in rows {
+            let r_rect = D2D_RECT_F {
+                left: card.left + 8.0,
+                top: ry,
+                right: card.right - 8.0,
+                bottom: ry + row_h,
             };
+
+            // 1. Kartu Semi-Glass untuk Baris Slider
             self.fill_gradient_glass_card(
-                s_rect,
-                12.0,
+                r_rect,
+                11.0,
                 D2D1_COLOR_F {
-                    r: 0.11,
-                    g: 0.14,
-                    b: 0.22,
+                    r: 0.10,
+                    g: 0.13,
+                    b: 0.21,
                     a: 0.92 * alpha,
                 },
                 D2D1_COLOR_F {
@@ -3728,51 +1538,54 @@ impl NotchRenderer {
                     a: 0.92 * alpha,
                 },
                 D2D1_COLOR_F {
-                    r: 0.10,
-                    g: 0.13,
-                    b: 0.20,
+                    r: 0.09,
+                    g: 0.12,
+                    b: 0.19,
                     a: 0.92 * alpha,
                 },
                 D2D1_COLOR_F {
                     r: 0.28,
                     g: 0.36,
                     b: 0.54,
-                    a: 0.50 * alpha,
+                    a: 0.52 * alpha,
                 },
                 1.0,
             );
 
+            // 2. Kolom Kiri (lebar 102px): Ikon & Nama Kontrol (TIDAK AKAN TERTUTUP BAR!)
             self.draw_text_left(
-                &format!("{} · {}%", label, val),
-                &self.fmt_caption,
+                label,
+                &self.fmt_title,
                 D2D_RECT_F {
-                    left: l + 10.0,
-                    top: s_rect.top + 6.0,
-                    right: r - 10.0,
-                    bottom: s_rect.top + 26.0,
+                    left: r_rect.left + 12.0,
+                    top: r_rect.top,
+                    right: r_rect.left + 104.0,
+                    bottom: r_rect.bottom,
                 },
                 p_col,
             );
 
-            let tl = l + 10.0;
-            let tr = r - 10.0;
-            let ty = s_rect.top + 38.0;
+            // 3. Kolom Tengah: Interactive Slider Track (`r_rect.left + 108.0` s/d `r_rect.right - 54.0`)
+            let track_l = r_rect.left + 108.0;
+            let track_r = (r_rect.right - 54.0).max(track_l + 20.0);
+            let cy = (r_rect.top + r_rect.bottom) * 0.5;
+
             if let Ok(tb) = self.rt.CreateSolidColorBrush(
                 &D2D1_COLOR_F {
-                    r: 0.18,
-                    g: 0.23,
-                    b: 0.34,
-                    a: 0.8 * alpha,
+                    r: 0.17,
+                    g: 0.22,
+                    b: 0.32,
+                    a: 0.85 * alpha,
                 },
                 None,
             ) {
                 self.rt.FillRoundedRectangle(
                     &D2D1_ROUNDED_RECT {
                         rect: D2D_RECT_F {
-                            left: tl,
-                            top: ty - 4.5,
-                            right: tr,
-                            bottom: ty + 4.5,
+                            left: track_l,
+                            top: cy - 4.5,
+                            right: track_r,
+                            bottom: cy + 4.5,
                         },
                         radiusX: 4.5,
                         radiusY: 4.5,
@@ -3780,548 +1593,79 @@ impl NotchRenderer {
                     &tb,
                 );
             }
-            let fw = (tr - tl) * (val as f32 / 100.0).clamp(0.0, 1.0);
+
+            let fill_w = (track_r - track_l) * (val.min(100) as f32 / 100.0);
+            let fill_right = (track_l + fill_w).max(track_l + 7.0);
             self.fill_gradient_glass_card(
                 D2D_RECT_F {
-                    left: tl,
-                    top: ty - 4.5,
-                    right: tl + fw.max(8.0),
-                    bottom: ty + 4.5,
+                    left: track_l,
+                    top: cy - 4.5,
+                    right: fill_right,
+                    bottom: cy + 4.5,
                 },
                 4.5,
-                AntiMagicNeutralPalette::ACCENT_BLUE,
-                AntiMagicNeutralPalette::ACCENT_CYAN,
-                AntiMagicNeutralPalette::ACCENT_CYAN,
-                AntiMagicNeutralPalette::ACCENT_CYAN,
+                c_start,
+                c_end,
+                c_end,
+                c_end,
                 0.0,
             );
-        }
 
-        let toggles = [
-            (
-                card.left + 10.0,
-                card.left + half_w - 5.0,
-                "📶 Wi-Fi Network",
-                if ctrl.wifi_enabled {
-                    "Connected · Active"
-                } else {
-                    "Disabled"
-                },
-                ctrl.wifi_enabled,
-            ),
-            (
-                card.left + half_w + 5.0,
-                card.right - 10.0,
-                "🍃 Energy Saver",
-                if ctrl.energy_saver_enabled {
-                    "Eco Mode · Active"
-                } else {
-                    "High Performance"
-                },
-                ctrl.energy_saver_enabled,
-            ),
-        ];
+            // Knob bulat putih di ujung bar
+            if let Ok(kb) = self.rt.CreateSolidColorBrush(&p_col, None) {
+                self.rt.FillEllipse(
+                    &D2D1_ELLIPSE {
+                        point: D2D_POINT_2F {
+                            x: fill_right,
+                            y: cy,
+                        },
+                        radiusX: 6.0,
+                        radiusY: 6.0,
+                    },
+                    &kb,
+                );
+            }
 
-        for (l, r, title, sub, active) in toggles {
-            let t_rect = D2D_RECT_F {
-                left: l,
-                top: card.top + 70.0,
-                right: r,
-                bottom: card.bottom - 10.0,
+            // 4. Kolom Kanan (lebar 48px): Badge Angka Persentase Jelas (TIDAK TERTIMPA BAR!)
+            let pct_rect = D2D_RECT_F {
+                left: r_rect.right - 48.0,
+                top: r_rect.top + 5.0,
+                right: r_rect.right - 8.0,
+                bottom: r_rect.bottom - 5.0,
             };
-
-            let (c0, c1, border) = if active {
-                (
-                    D2D1_COLOR_F {
-                        r: 0.16,
-                        g: 0.28,
-                        b: 0.48,
-                        a: 0.94 * alpha,
+            if let Ok(pb) = self
+                .rt
+                .CreateSolidColorBrush(&AntiMagicNeutralPalette::CARD_ELEVATED, None)
+            {
+                self.rt.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT {
+                        rect: pct_rect,
+                        radiusX: 6.0,
+                        radiusY: 6.0,
                     },
-                    D2D1_COLOR_F {
-                        r: 0.12,
-                        g: 0.22,
-                        b: 0.38,
-                        a: 0.94 * alpha,
-                    },
-                    AntiMagicNeutralPalette::ACCENT_CYAN,
-                )
-            } else {
-                (
-                    D2D1_COLOR_F {
-                        r: 0.10,
-                        g: 0.13,
-                        b: 0.19,
-                        a: 0.90 * alpha,
-                    },
-                    D2D1_COLOR_F {
-                        r: 0.08,
-                        g: 0.11,
-                        b: 0.16,
-                        a: 0.90 * alpha,
-                    },
-                    D2D1_COLOR_F {
-                        r: 0.24,
-                        g: 0.30,
-                        b: 0.42,
-                        a: 0.5 * alpha,
-                    },
-                )
-            };
-
-            self.fill_gradient_glass_card(t_rect, 12.0, c0, c1, c0, border, 1.1);
-
-            self.draw_text_left(
-                title,
-                &self.fmt_title,
-                D2D_RECT_F {
-                    left: l + 12.0,
-                    top: t_rect.top + 6.0,
-                    right: r - 12.0,
-                    bottom: t_rect.top + 28.0,
-                },
-                p_col,
-            );
-            self.draw_text_left(
-                sub,
-                &self.fmt_caption,
-                D2D_RECT_F {
-                    left: l + 12.0,
-                    top: t_rect.top + 28.0,
-                    right: r - 12.0,
-                    bottom: t_rect.bottom - 6.0,
-                },
-                if active {
-                    AntiMagicNeutralPalette::ACCENT_CYAN
-                } else {
-                    s_col
-                },
-            );
-        }
-    }
-
-    // =========================================================================
-    // SECTION 3: POMODORO FOCUS TIMER
-    // =========================================================================
-    unsafe fn draw_pomo_panel(&self, ctrl: &NotchController, card: D2D_RECT_F, alpha: f32) {
-        let mut p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
-        p_col.a *= alpha;
-        let mut s_col = AntiMagicNeutralPalette::TEXT_SECONDARY;
-        s_col.a *= alpha;
-        let accent = if ctrl.pomo_is_break {
-            AntiMagicNeutralPalette::ACCENT_WINE
-        } else {
-            AntiMagicNeutralPalette::ACCENT_CYAN
-        };
-
-        let ring_cx = card.left + 58.0;
-        let ring_cy = (card.top + card.bottom) * 0.5;
-        let ring_r = 38.0;
-
-        if let Ok(fg_ring) = self.rt.CreateSolidColorBrush(&accent, None) {
-            self.rt.DrawEllipse(
-                &D2D1_ELLIPSE {
-                    point: D2D_POINT_2F {
-                        x: ring_cx,
-                        y: ring_cy,
-                    },
-                    radiusX: ring_r,
-                    radiusY: ring_r,
-                },
-                &fg_ring,
-                3.6,
-                None,
-            );
-        }
-
-        let timer_text = format!(
-            "{:02}:{:02}",
-            ctrl.pomo_remaining_secs / 60,
-            ctrl.pomo_remaining_secs % 60
-        );
-        self.draw_text_centered(
-            &timer_text,
-            &self.fmt_title,
-            D2D_RECT_F {
-                left: ring_cx - 34.0,
-                top: ring_cy - 14.0,
-                right: ring_cx + 34.0,
-                bottom: ring_cy + 14.0,
-            },
-            p_col,
-        );
-
-        let right_x = card.left + 114.0;
-        self.draw_text_left(
-            if ctrl.pomo_is_break {
-                "SHORT BREAK · REST EYES"
-            } else {
-                "POMODORO · FOCUS SESSION"
-            },
-            &self.fmt_title,
-            D2D_RECT_F {
-                left: right_x,
-                top: card.top + 14.0,
-                right: card.right - 50.0,
-                bottom: card.top + 38.0,
-            },
-            p_col,
-        );
-
-        self.draw_text_left(
-            if ctrl.pomo_running {
-                "Timer running — Chibi Liebe is guarding your focus"
-            } else {
-                "Click Start Focus below to begin 25m session"
-            },
-            &self.fmt_body,
-            D2D_RECT_F {
-                left: right_x,
-                top: card.top + 38.0,
-                right: card.right - 50.0,
-                bottom: card.top + 60.0,
-            },
-            s_col,
-        );
-
-        let start_rect = D2D_RECT_F {
-            left: right_x,
-            top: card.top + 66.0,
-            right: right_x + 90.0,
-            bottom: card.top + 96.0,
-        };
-        self.fill_gradient_glass_card(
-            start_rect,
-            9.0,
-            AntiMagicNeutralPalette::ACCENT_BLUE,
-            accent,
-            accent,
-            accent,
-            1.0,
-        );
-        self.draw_text_centered(
-            if ctrl.pomo_running { "Pause" } else { "Start Focus" },
-            &self.fmt_caption,
-            start_rect,
-            p_col,
-        );
-
-        let reset_rect = D2D_RECT_F {
-            left: right_x + 98.0,
-            top: card.top + 66.0,
-            right: right_x + 166.0,
-            bottom: card.top + 96.0,
-        };
-        if let Ok(b) = self
-            .rt
-            .CreateSolidColorBrush(&AntiMagicNeutralPalette::CARD_ELEVATED, None)
-        {
-            self.rt.FillRoundedRectangle(
-                &D2D1_ROUNDED_RECT {
-                    rect: reset_rect,
-                    radiusX: 9.0,
-                    radiusY: 9.0,
-                },
-                &b,
-            );
-        }
-        self.draw_text_centered("Reset", &self.fmt_caption, reset_rect, s_col);
-    }
-
-    // =========================================================================
-    // SECTION 4: FILE SHELF
-    // =========================================================================
-    unsafe fn draw_shelf_panel(&self, ctrl: &NotchController, card: D2D_RECT_F, alpha: f32) {
-        let mut p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
-        p_col.a *= alpha;
-        let mut s_col = AntiMagicNeutralPalette::TEXT_SECONDARY;
-        s_col.a *= alpha;
-
-        self.draw_text_left(
-            "FILE SHELF · DRAG FILES INTO NOTCH OR CLICK FILE TO OPEN/USE",
-            &self.fmt_caption,
-            D2D_RECT_F {
-                left: card.left + 14.0,
-                top: card.top + 8.0,
-                right: card.right - 50.0,
-                bottom: card.top + 26.0,
-            },
-            AntiMagicNeutralPalette::ACCENT_CYAN,
-        );
-
-        if ctrl.shelf_files.is_empty() {
-            let drop_rect = D2D_RECT_F {
-                left: card.left + 14.0,
-                top: card.top + 32.0,
-                right: card.right - 56.0,
-                bottom: card.bottom - 12.0,
-            };
-            self.fill_gradient_glass_card(
-                drop_rect,
-                12.0,
-                D2D1_COLOR_F {
-                    r: 0.10,
-                    g: 0.13,
-                    b: 0.21,
-                    a: 0.85 * alpha,
-                },
-                D2D1_COLOR_F {
-                    r: 0.12,
-                    g: 0.16,
-                    b: 0.26,
-                    a: 0.85 * alpha,
-                },
-                D2D1_COLOR_F {
-                    r: 0.09,
-                    g: 0.12,
-                    b: 0.19,
-                    a: 0.85 * alpha,
-                },
-                D2D1_COLOR_F {
-                    r: 0.35,
-                    g: 0.48,
-                    b: 0.78,
-                    a: 0.55 * alpha,
-                },
-                1.2,
-            );
+                    &pb,
+                );
+            }
             self.draw_text_centered(
-                "📥 Drag & Drop file dari Explorer/App lain ke area Notch ini",
-                &self.fmt_body,
-                drop_rect,
-                s_col,
-            );
-            return;
-        }
-
-        for (i, (name, meta, _)) in ctrl.shelf_files.iter().take(2).enumerate() {
-            let item_w = (card.right - card.left - 80.0) * 0.5;
-            let ix = card.left + 14.0 + i as f32 * (item_w + 10.0);
-            let item_rect = D2D_RECT_F {
-                left: ix,
-                top: card.top + 32.0,
-                right: ix + item_w,
-                bottom: card.bottom - 12.0,
-            };
-
-            self.fill_gradient_glass_card(
-                item_rect,
-                12.0,
-                D2D1_COLOR_F {
-                    r: 0.12,
-                    g: 0.16,
-                    b: 0.25,
-                    a: 0.92 * alpha,
-                },
-                D2D1_COLOR_F {
-                    r: 0.15,
-                    g: 0.20,
-                    b: 0.31,
-                    a: 0.92 * alpha,
-                },
-                D2D1_COLOR_F {
-                    r: 0.10,
-                    g: 0.14,
-                    b: 0.22,
-                    a: 0.92 * alpha,
-                },
-                D2D1_COLOR_F {
-                    r: 0.35,
-                    g: 0.48,
-                    b: 0.75,
-                    a: 0.55 * alpha,
-                },
-                1.1,
-            );
-
-            self.draw_text_left(
-                name,
-                &self.fmt_title,
-                D2D_RECT_F {
-                    left: item_rect.left + 10.0,
-                    top: item_rect.top + 10.0,
-                    right: item_rect.right - 22.0,
-                    bottom: item_rect.top + 36.0,
-                },
-                p_col,
-            );
-            self.draw_text_left(
-                meta,
+                &format!("{}%", val),
                 &self.fmt_caption,
-                D2D_RECT_F {
-                    left: item_rect.left + 10.0,
-                    top: item_rect.top + 38.0,
-                    right: item_rect.right - 10.0,
-                    bottom: item_rect.bottom - 8.0,
-                },
-                s_col,
-            );
-            self.draw_text_centered(
-                "×",
-                &self.fmt_title,
-                D2D_RECT_F {
-                    left: item_rect.right - 22.0,
-                    top: item_rect.top + 6.0,
-                    right: item_rect.right - 6.0,
-                    bottom: item_rect.top + 24.0,
-                },
-                s_col,
+                pct_rect,
+                AntiMagicNeutralPalette::ACCENT_CYAN,
             );
         }
     }
-}
 ```
 
 ---
 
-### D. `src/notch/mod.rs` — Pencegahan Aplikasi Minimize (`WS_EX_NOACTIVATE` + `MA_NOACTIVATE`), 5-Slot Navigation, & Scroll Wheel Brightness/Volume
+### C. `src/notch/mod.rs` — Perbaikan Permanen Click Range 6-Slot (`Hub`, `Music`, `Control`, `Focus`, `Shelf`, `Stages`)
 
-Perhatikan penambahan **`WS_EX_NOACTIVATE`** di `CreateWindowExW` dan **`WM_MOUSEACTIVATE => return LRESULT(MA_NOACTIVATE as isize)`** di `notch_wnd_proc`: ini menjamin aplikasi/game apa pun yang sedang kamu jalankan **tidak akan pernah keluar atau ter-minimize** saat kamu mengklik atau men-*scroll* notch!
+Di `src/notch/mod.rs`, pastikan fungsi `on_lbutton_down` dan `current_pill_rect` menggunakan perhitungan **6 slot (`tabs_w / 6.0`)** dan koordinat logis `self.win_w as f32 / self.dpi_scale` yang 100% cocok dengan `draw_expanded_panel_shell`:
 
 ```rust
-// src/notch/mod.rs
-//! Notch window and rendering for Nusa Notch Clone (v5.0)
-
-pub mod layout;
-pub mod renderer;
-pub mod states;
-
-use anyhow::Result;
-use std::sync::{Arc, RwLock};
-use std::time::Instant;
-use tokio::sync::mpsc;
-use windows::core::PCWSTR;
-use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, POINT, WPARAM};
-use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
-use windows::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
-use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, InvalidateRect, MonitorFromWindow, UpdateWindow, HBRUSH, MONITORINFO,
-    MONITOR_DEFAULTTOPRIMARY,
-};
-use windows::Win32::UI::Controls::MARGINS;
-use windows::Win32::UI::HiDpi::GetDpiForWindow;
-use windows::Win32::UI::Shell::{DragAcceptFiles, DragFinish, DragQueryFileW, HDROP};
-use windows::Win32::UI::WindowsAndMessaging::*;
-
-use crate::settings::Settings;
-use crate::tray::{
-    handle_tray_command, remove_tray_icon, setup_tray_icon, show_tray_menu, TRAY_MESSAGE,
-};
-
-pub use renderer::NotchRenderer;
-pub use states::{NotchController, NotchState};
-
-pub const NOTCH_WINDOW_WIDTH: i32 = 540;
-pub const NOTCH_WINDOW_HEIGHT: i32 = 220;
-const TIMER_ID_ANIMATION: usize = 1;
-
-#[derive(Debug, Clone)]
-pub enum NotchEvent {
-    Toggle,
-    UpdateMedia(crate::media::MediaInfo),
-    UpdateLyrics(Vec<String>),
-    UpdateTimer(crate::timers::TimerInfo),
-    UpdateWater(crate::timers::WaterInfo),
-    UpdateShelf(Vec<crate::shelf::ShelfItem>),
-    HotkeyVolume(u8),
-    HotkeyBrightness(u8),
-    HotkeyCapsLock(bool),
-}
-
-pub struct NotchApp {
-    pub hwnd: HWND,
-    pub renderer: NotchRenderer,
-    pub controller: NotchController,
-    pub settings: Arc<RwLock<Settings>>,
-    pub event_rx: mpsc::Receiver<NotchEvent>,
-    pub dpi_scale: f32,
-    pub win_x: i32,
-    pub win_y: i32,
-    pub win_w: i32,
-    pub win_h: i32,
-    pub last_tick: Instant,
-    pub cursor_in_pill: bool,
-    pub last_cursor_logical_x: f32,
-}
-
-impl NotchApp {
-    pub fn new(
-        hwnd: HWND,
-        settings: Arc<RwLock<Settings>>,
-        event_rx: mpsc::Receiver<NotchEvent>,
-    ) -> Result<Self> {
-        let dpi = unsafe { GetDpiForWindow(hwnd) };
-        let dpi_scale = if dpi == 0 {
-            1.0
-        } else {
-            (dpi as f32 / 96.0).max(1.0)
-        };
-
-        let monitor_rect = unsafe {
-            let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY);
-            let mut info = MONITORINFO {
-                cbSize: std::mem::size_of::<MONITORINFO>() as u32,
-                ..Default::default()
-            };
-            let _ = GetMonitorInfoW(monitor, &mut info);
-            info.rcMonitor
-        };
-
-        let win_w = (NOTCH_WINDOW_WIDTH as f32 * dpi_scale).round() as i32;
-        let win_h = (NOTCH_WINDOW_HEIGHT as f32 * dpi_scale).round() as i32;
-        let screen_w = monitor_rect.right - monitor_rect.left;
-        let win_x = monitor_rect.left + (screen_w - win_w) / 2;
-        let win_y = monitor_rect.top;
-
-        unsafe {
-            let _ = SetWindowPos(
-                hwnd,
-                HWND_TOPMOST,
-                win_x,
-                win_y,
-                win_w,
-                win_h,
-                SWP_NOACTIVATE | SWP_NOZORDER,
-            );
-            let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA);
-
-            let margins = MARGINS {
-                cxLeftWidth: -1,
-                cxRightWidth: -1,
-                cyTopWidth: -1,
-                cyBottomWidth: -1,
-            };
-            let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
-            DragAcceptFiles(hwnd, true);
-        }
-
-        let renderer = NotchRenderer::new(hwnd, win_w as u32, win_h as u32, dpi_scale)?;
-        let mut controller = NotchController::new();
-
-        if let Ok(s) = settings.read() {
-            controller.mascot_enabled = s.show_mascot;
-            controller.minimal_mode = s.minimal_notch;
-        }
-
-        Ok(Self {
-            hwnd,
-            renderer,
-            controller,
-            settings,
-            event_rx,
-            dpi_scale,
-            win_x,
-            win_y,
-            win_w,
-            win_h,
-            last_tick: Instant::now(),
-            cursor_in_pill: false,
-            last_cursor_logical_x: 0.0,
-        })
-    }
-
     pub fn current_pill_rect(&self) -> D2D_RECT_F {
-        let logical_win_w = NOTCH_WINDOW_WIDTH as f32;
+        // Gunakan lebar logis aktual window agar posisi tengah pill 100% presisi di semua resolusi/DPI!
+        let logical_win_w = self.win_w as f32 / self.dpi_scale;
         let pw = self.controller.width.value;
         let ph = self.controller.height.value;
         let left = ((logical_win_w - pw) * 0.5).max(0.0);
@@ -4335,120 +1679,6 @@ impl NotchApp {
             right,
             bottom,
         }
-    }
-
-    pub fn on_tick(&mut self) -> Result<()> {
-        let now = Instant::now();
-        let dt = now.duration_since(self.last_tick).as_secs_f32();
-        self.last_tick = now;
-
-        while let Ok(ev) = self.event_rx.try_recv() {
-            match ev {
-                NotchEvent::Toggle => {
-                    if self.controller.is_hovered || self.controller.state != NotchState::Pet {
-                        self.controller.is_hovered = false;
-                        self.controller.transition_to(NotchState::Pet);
-                    } else {
-                        self.controller.is_hovered = true;
-                        let target = self.controller.last_expanded_tab;
-                        self.controller.transition_to(target);
-                    }
-                }
-                NotchEvent::UpdateMedia(info) => {
-                    if !info.title.is_empty() {
-                        self.controller.media_title = info.title;
-                    }
-                    if !info.artist.is_empty() {
-                        self.controller.media_artist = info.artist;
-                    }
-                    self.controller.media_playing = info.playing;
-                }
-                NotchEvent::UpdateLyrics(lines) => {
-                    if !lines.is_empty() {
-                        let step = (self.controller.media_total_secs.max(60.0))
-                            / (lines.len().max(1) as f32);
-                        self.controller.timed_lyrics = lines
-                            .into_iter()
-                            .enumerate()
-                            .map(|(i, l)| (i as f32 * step, l))
-                            .collect();
-                    }
-                }
-                NotchEvent::HotkeyVolume(vol) => {
-                    self.controller
-                        .trigger_overlay(crate::notch::states::OverlayKind::Volume(vol));
-                }
-                NotchEvent::HotkeyBrightness(bri) => {
-                    self.controller
-                        .trigger_overlay(crate::notch::states::OverlayKind::Brightness(bri));
-                }
-                NotchEvent::HotkeyCapsLock(on) => {
-                    self.controller
-                        .trigger_overlay(crate::notch::states::OverlayKind::CapsLock(on));
-                }
-                _ => {}
-            }
-        }
-
-        if let Ok(s) = self.settings.read() {
-            self.controller.mascot_enabled = s.show_mascot;
-            self.controller.minimal_mode = s.minimal_notch;
-        }
-
-        let pill_rect = self.current_pill_rect();
-        let mut pt = POINT::default();
-        unsafe {
-            let _ = GetCursorPos(&mut pt);
-        }
-
-        let local_logical_x = (pt.x - self.win_x) as f32 / self.dpi_scale;
-        let local_logical_y = (pt.y - self.win_y) as f32 / self.dpi_scale;
-        self.last_cursor_logical_x = local_logical_x;
-
-        let pad = 6.0;
-        let cursor_in_pill = local_logical_x >= pill_rect.left - pad
-            && local_logical_x <= pill_rect.right + pad
-            && local_logical_y >= pill_rect.top - pad
-            && local_logical_y <= pill_rect.bottom + pad;
-
-        self.cursor_in_pill = cursor_in_pill;
-
-        unsafe {
-            let style = GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE);
-            if cursor_in_pill {
-                if (style & (WS_EX_TRANSPARENT.0 as isize)) != 0 {
-                    let _ = SetWindowLongPtrW(
-                        self.hwnd,
-                        GWL_EXSTYLE,
-                        style & !(WS_EX_TRANSPARENT.0 as isize),
-                    );
-                }
-            } else if (style & (WS_EX_TRANSPARENT.0 as isize)) == 0 {
-                let _ = SetWindowLongPtrW(
-                    self.hwnd,
-                    GWL_EXSTYLE,
-                    style | (WS_EX_TRANSPARENT.0 as isize),
-                );
-            }
-        }
-
-        let pill_cx = (pill_rect.left + pill_rect.right) * 0.5;
-        let pill_cy = (pill_rect.top + pill_rect.bottom) * 0.5;
-        let dx = local_logical_x - pill_cx;
-        let dy = local_logical_y - pill_cy;
-        let cursor_offset = if (dx * dx + dy * dy).sqrt() <= 360.0 {
-            Some((dx, dy))
-        } else {
-            None
-        };
-
-        self.controller.update(dt, cursor_in_pill, cursor_offset);
-
-        unsafe {
-            let _ = InvalidateRect(self.hwnd, None, false);
-        }
-
-        Ok(())
     }
 
     pub fn on_lbutton_down(&mut self, phys_x: f32, phys_y: f32) {
@@ -4477,31 +1707,35 @@ impl NotchApp {
             return;
         }
 
-        // Bar Navigasi Atas (`<`, 5 Tab: Hub/Music/Control/Focus/Shelf, dan `>`)
-        if self.controller.height.value > 65.0 && (0.0..=28.0).contains(&ly) {
-            if (10.0..=36.0).contains(&lx) {
+        // Bar Navigasi Atas (`‹`, 6 Slot: Hub / Music / Control / Focus / Shelf / Stages, dan `›`)
+        if self.controller.height.value > 65.0 && (0.0..=27.0).contains(&ly) {
+            if (8.0..=34.0).contains(&lx) {
                 self.controller.prev_tab();
                 unsafe {
                     let _ = InvalidateRect(self.hwnd, None, false);
                 }
                 return;
-            } else if lx >= pill_w - 36.0 && lx <= pill_w - 10.0 {
+            } else if lx >= pill_w - 34.0 && lx <= pill_w - 8.0 {
                 self.controller.next_tab();
                 unsafe {
                     let _ = InvalidateRect(self.hwnd, None, false);
                 }
                 return;
-            } else if lx > 38.0 && lx < pill_w - 38.0 {
-                let tabs_w = (pill_w - 76.0).max(1.0);
-                let slot = ((lx - 38.0) / (tabs_w / 5.0)) as usize;
-                let next = match slot {
-                    0 => NotchState::Hub,
-                    1 => NotchState::Music,
-                    2 => NotchState::Control,
-                    3 => NotchState::Pomo,
-                    _ => NotchState::Shelf,
-                };
-                self.controller.transition_to(next);
+            } else if lx >= 36.0 && lx <= pill_w - 36.0 {
+                // PENTING: Bagi tepat dengan 6.0 sesuai 6 item yang digambar di draw_expanded_panel_shell!
+                let tabs_w = (pill_w - 72.0).max(1.0);
+                let slot = (((lx - 36.0) / (tabs_w / 6.0)).floor() as usize).min(5);
+                match slot {
+                    0 => self.controller.transition_to(NotchState::Hub),
+                    1 => self.controller.transition_to(NotchState::Music),
+                    2 => self.controller.transition_to(NotchState::Control),
+                    3 => self.controller.transition_to(NotchState::Pomo),
+                    4 => self.controller.transition_to(NotchState::Shelf),
+                    _ => {
+                        // Slot 5 ("Stages"): Langsung aktifkan StageDock di layar tanpa pindah ke panel kosong!
+                        self.controller.trigger_stagedock();
+                    }
+                }
                 unsafe {
                     let _ = InvalidateRect(self.hwnd, None, false);
                 }
@@ -4527,195 +1761,4 @@ impl NotchApp {
             }
         }
     }
-}
-
-pub fn run_ui(
-    hinstance: HINSTANCE,
-    event_rx: mpsc::Receiver<NotchEvent>,
-    settings: Arc<RwLock<Settings>>,
-) -> Result<()> {
-    let class_name = to_wide_string("NusaNotchCloneWindow\0");
-
-    let wc = WNDCLASSEXW {
-        cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
-        style: CS_HREDRAW | CS_VREDRAW,
-        lpfnWndProc: Some(notch_wnd_proc),
-        cbClsExtra: 0,
-        cbWndExtra: 0,
-        hInstance: hinstance,
-        hIcon: HICON::default(),
-        hCursor: unsafe { LoadCursorW(None, IDC_ARROW).unwrap_or_default() },
-        hbrBackground: HBRUSH::default(),
-        lpszMenuName: PCWSTR::null(),
-        lpszClassName: PCWSTR(class_name.as_ptr()),
-        hIconSm: HICON::default(),
-    };
-
-    unsafe {
-        RegisterClassExW(&wc);
-
-        // PENTING: Tambahkan WS_EX_NOACTIVATE agar klik pada notch TIDAK PERNAH mencuri fokus / mem-minimize app!
-        let hwnd = CreateWindowExW(
-            WS_EX_TOPMOST
-                | WS_EX_TOOLWINDOW
-                | WS_EX_LAYERED
-                | WS_EX_TRANSPARENT
-                | WS_EX_ACCEPTFILES
-                | WS_EX_NOACTIVATE,
-            PCWSTR(class_name.as_ptr()),
-            PCWSTR(to_wide_string("Nusa Notch\0").as_ptr()),
-            WS_POPUP,
-            0,
-            0,
-            NOTCH_WINDOW_WIDTH,
-            NOTCH_WINDOW_HEIGHT,
-            HWND::default(),
-            HMENU::default(),
-            hinstance,
-            None,
-        )?;
-
-        let app = Box::new(NotchApp::new(hwnd, settings.clone(), event_rx)?);
-        let win_x = app.win_x;
-        let win_y = app.win_y;
-        let win_w = app.win_w;
-        let win_h = app.win_h;
-
-        let raw_ptr = Box::into_raw(app);
-        SetWindowLongPtrW(hwnd, GWLP_USERDATA, raw_ptr as isize);
-
-        let nid = setup_tray_icon(hwnd)?;
-
-        let _ = SetWindowPos(
-            hwnd,
-            HWND_TOPMOST,
-            win_x,
-            win_y,
-            win_w,
-            win_h,
-            SWP_SHOWWINDOW | SWP_NOACTIVATE,
-        );
-        let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-        let _ = SetTimer(hwnd, TIMER_ID_ANIMATION, 8, None);
-
-        let _ = InvalidateRect(hwnd, None, false);
-        let _ = UpdateWindow(hwnd);
-
-        let mut msg = MSG::default();
-        while GetMessageW(&mut msg, HWND::default(), 0, 0).as_bool() {
-            let _ = TranslateMessage(&msg);
-            DispatchMessageW(&msg);
-        }
-
-        let _ = KillTimer(hwnd, TIMER_ID_ANIMATION);
-        let _ = remove_tray_icon(&nid);
-        let _ = Box::from_raw(raw_ptr);
-    }
-
-    Ok(())
-}
-
-extern "system" fn notch_wnd_proc(
-    hwnd: HWND,
-    msg: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-) -> LRESULT {
-    let ptr = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) } as *mut NotchApp;
-    if !ptr.is_null() {
-        let app = unsafe { &mut *ptr };
-        match msg {
-            WM_ERASEBKGND => return LRESULT(1),
-            // PENTING: Cegah Windows mengaktifkan window notch saat diklik (agar game/app tidak minimize!)
-            WM_MOUSEACTIVATE => return LRESULT(MA_NOACTIVATE as isize),
-            WM_TIMER => {
-                let _ = app.on_tick();
-                return LRESULT(0);
-            }
-            WM_PAINT => {
-                let pill_rect = app.current_pill_rect();
-                app.renderer.render_frame(&mut app.controller, pill_rect);
-                return LRESULT(0);
-            }
-            WM_LBUTTONDOWN => {
-                let x = (lparam.0 & 0xFFFF) as i16 as f32;
-                let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as f32;
-                app.on_lbutton_down(x, y);
-                return LRESULT(0);
-            }
-            WM_MOUSEWHEEL => {
-                let delta = ((wparam.0 >> 16) & 0xFFFF) as i16;
-                let pill_rect = app.current_pill_rect();
-                let pill_w = pill_rect.right - pill_rect.left;
-                let lx = app.last_cursor_logical_x - pill_rect.left;
-                app.controller.on_mouse_wheel(delta, lx, pill_w);
-                unsafe {
-                    let _ = InvalidateRect(hwnd, None, false);
-                }
-                return LRESULT(0);
-            }
-            WM_DROPFILES => {
-                let hdrop = HDROP(wparam.0 as *mut core::ffi::c_void);
-                unsafe {
-                    let count = DragQueryFileW(hdrop, 0xFFFFFFFF, None);
-                    for i in 0..count {
-                        let len = DragQueryFileW(hdrop, i, None);
-                        if len > 0 {
-                            let mut buf = vec![0u16; (len + 1) as usize];
-                            DragQueryFileW(hdrop, i, Some(&mut buf));
-                            if let Some(pos) = buf.iter().position(|&c| c == 0) {
-                                buf.truncate(pos);
-                            }
-                            let path = String::from_utf16_lossy(&buf);
-                            app.controller.add_dropped_file(path);
-                        }
-                    }
-                    DragFinish(hdrop);
-                    let _ = InvalidateRect(hwnd, None, false);
-                }
-                return LRESULT(0);
-            }
-            TRAY_MESSAGE => {
-                let event = lparam.0 as u32;
-                if event == WM_RBUTTONUP {
-                    if let Ok(cmd) = show_tray_menu(hwnd, &app.settings) {
-                        if handle_tray_command(cmd, hwnd, &app.settings).unwrap_or(false) {
-                            unsafe {
-                                let _ = KillTimer(hwnd, TIMER_ID_ANIMATION);
-                                let _ = DestroyWindow(hwnd);
-                            }
-                        }
-                    }
-                } else if event == WM_LBUTTONUP {
-                    if app.controller.is_hovered || app.controller.state != NotchState::Pet {
-                        app.controller.is_hovered = false;
-                        app.controller.transition_to(NotchState::Pet);
-                    } else {
-                        app.controller.is_hovered = true;
-                        let target = app.controller.last_expanded_tab;
-                        app.controller.transition_to(target);
-                    }
-                    unsafe {
-                        let _ = InvalidateRect(hwnd, None, false);
-                    }
-                }
-                return LRESULT(0);
-            }
-            WM_DESTROY => {
-                unsafe {
-                    PostQuitMessage(0);
-                }
-                return LRESULT(0);
-            }
-            _ => {}
-        }
-    }
-    unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
-}
-
-fn to_wide_string(s: &str) -> Vec<u16> {
-    use std::ffi::OsStr;
-    use std::os::windows::ffi::OsStrExt;
-    OsStr::new(s).encode_wide().collect()
-}
 ```

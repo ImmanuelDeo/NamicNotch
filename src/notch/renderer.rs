@@ -117,7 +117,7 @@ impl NotchRenderer {
                 DWRITE_FONT_WEIGHT_BOLD,
                 DWRITE_FONT_STYLE_NORMAL,
                 DWRITE_FONT_STRETCH_NORMAL,
-                26.0,
+                21.0,
                 w!("en-us"),
             )?;
 
@@ -934,56 +934,56 @@ impl NotchRenderer {
             );
 
             let now = Local::now();
-            let time_big = now.format("%H:%M").to_string();
-            let date_str = now.format("%a, %d %b %Y").to_string();
+                        let time_big = now.format("%H:%M").to_string();
+                        let date_str = now.format("%a, %d %b %Y").to_string();
 
-            self.draw_text_left(
-                &time_big,
-                &self.fmt_clock_hero,
-                D2D_RECT_F {
-                    left: left_card.left + 12.0,
-                    top: left_card.top + 6.0,
-                    right: left_card.right - 8.0,
-                    bottom: left_card.top + 40.0,
-                },
-                p_col,
-            );
-            self.draw_text_left(
-                &date_str,
-                &self.fmt_caption,
-                D2D_RECT_F {
-                    left: left_card.left + 12.0,
-                    top: left_card.top + 40.0,
-                    right: left_card.right - 8.0,
-                    bottom: left_card.top + 58.0,
-                },
-                s_col,
-            );
+                        self.draw_text_left(
+                            &time_big,
+                            &self.fmt_clock_hero,
+                            D2D_RECT_F {
+                                left: left_card.left + 12.0,
+                                top: left_card.top + 4.0,
+                                right: left_card.right - 8.0,
+                                bottom: left_card.top + 32.0,
+                            },
+                            p_col,
+                        );
+                        self.draw_text_left(
+                            &date_str,
+                            &self.fmt_caption,
+                            D2D_RECT_F {
+                                left: left_card.left + 12.0,
+                                top: left_card.top + 33.0,
+                                right: left_card.right - 8.0,
+                                bottom: left_card.top + 49.0,
+                            },
+                            s_col,
+                        );
 
-            // Baterai iOS lebih ke bawah agar tidak tabrakan dengan tanggal
-            self.draw_ios_battery_icon(
-                left_card.left + 12.0,
-                left_card.bottom - 32.0,
-                ctrl.battery_percent,
-                ctrl.is_charging,
-                alpha,
-            );
+                        // Baterai iOS di bawah (bottom-anchored)
+                        self.draw_ios_battery_icon(
+                            left_card.left + 12.0,
+                            left_card.bottom - 21.0,
+                            ctrl.battery_percent,
+                            ctrl.is_charging,
+                            alpha,
+                        );
 
-            self.draw_text_left(
-                if ctrl.is_charging {
-                    "Charging"
-                } else {
-                    "Battery OK"
-                },
-                &self.fmt_caption,
-                D2D_RECT_F {
-                    left: left_card.left + 56.0,
-                    top: left_card.bottom - 34.0,
-                    right: left_card.right - 6.0,
-                    bottom: left_card.bottom - 10.0,
-                },
-                AntiMagicNeutralPalette::ACCENT_CYAN,
-            );
+                        self.draw_text_left(
+                            if ctrl.is_charging {
+                                "Charging"
+                            } else {
+                                "Battery OK"
+                            },
+                            &self.fmt_caption,
+                            D2D_RECT_F {
+                                left: left_card.left + 56.0,
+                                top: left_card.bottom - 21.0,
+                                right: left_card.right - 6.0,
+                                bottom: left_card.bottom - 5.0,
+                            },
+                            AntiMagicNeutralPalette::ACCENT_CYAN,
+                        );
 
             // Kanan: Kartu WORD & QUOTE OF THE DAY (Semi-Glass Multi-Gradient)
             let q_card = D2D_RECT_F {
@@ -1391,125 +1391,142 @@ impl NotchRenderer {
     // SECTION 2: ALL-IN-ONE CONTROL CENTER (Click & Scroll Wheel Supported!)
     // =========================================================================
     unsafe fn draw_control_panel(&self, ctrl: &NotchController, card: D2D_RECT_F, alpha: f32) {
-            let mut p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
-            p_col.a *= alpha;
+                let mut p_col = AntiMagicNeutralPalette::TEXT_PRIMARY;
+                p_col.a *= alpha;
 
-            let card_h = card.bottom - card.top;
-        
-            // 2 slider cards (Volume & Brightness) dengan tinggi penuh agar fit rapi
-            let slider_h = (card_h - 30.0) * 0.5; // 2 slider dengan gap 10px
-        
-            let sliders = [
-                (
-                    card.left + 10.0,
-                    card.right - 10.0,
-                    "🔊 Volume (Click/Scroll)",
-                    ctrl.volume_level,
-                    card.top + 10.0,
-                    card.top + 10.0 + slider_h,
-                ),
-                (
-                    card.left + 10.0,
-                    card.right - 10.0,
-                    "🔆 Brightness (Click/Scroll)",
-                    ctrl.brightness_level,
-                    card.top + 20.0 + slider_h,
-                    card.bottom - 10.0,
-                ),
-            ];
+                let card_h = card.bottom - card.top;
+                let slider_h = (card_h - 26.0) * 0.5;
 
-            for (l, r, label, val, top, bottom) in sliders {
-                let s_rect = D2D_RECT_F {
-                    left: l,
-                    top,
-                    right: r,
-                    bottom,
-                };
-                self.fill_gradient_glass_card(
-                    s_rect,
-                    12.0,
-                    D2D1_COLOR_F {
-                        r: 0.11,
-                        g: 0.14,
-                        b: 0.22,
-                        a: 0.92 * alpha,
-                    },
-                    D2D1_COLOR_F {
-                        r: 0.13,
-                        g: 0.17,
-                        b: 0.26,
-                        a: 0.92 * alpha,
-                    },
-                    D2D1_COLOR_F {
-                        r: 0.10,
-                        g: 0.13,
-                        b: 0.20,
-                        a: 0.92 * alpha,
-                    },
-                    D2D1_COLOR_F {
-                        r: 0.28,
-                        g: 0.36,
-                        b: 0.54,
-                        a: 0.50 * alpha,
-                    },
-                    1.0,
-                );
+                let sliders = [
+                    (
+                        card.left + 10.0,
+                        card.right - 10.0,
+                        "🔊 Volume",
+                        ctrl.volume_level,
+                        card.top + 8.0,
+                        card.top + 8.0 + slider_h,
+                    ),
+                    (
+                        card.left + 10.0,
+                        card.right - 10.0,
+                        "🔆 Brightness",
+                        ctrl.brightness_level,
+                        card.top + 18.0 + slider_h,
+                        card.bottom - 8.0,
+                    ),
+                ];
 
-                self.draw_text_left(
-                    &format!("{} · {}%", label, val),
-                    &self.fmt_caption,
-                    D2D_RECT_F {
-                        left: l + 10.0,
-                        top: s_rect.top + 6.0,
-                        right: r - 10.0,
-                        bottom: s_rect.top + 26.0,
-                    },
-                    p_col,
-                );
-
-                let tl = l + 10.0;
-                let tr = r - 10.0;
-                let ty = s_rect.top + (s_rect.bottom - s_rect.top) * 0.5;
-                if let Ok(tb) = self.rt.CreateSolidColorBrush(
-                    &D2D1_COLOR_F {
-                        r: 0.18,
-                        g: 0.23,
-                        b: 0.34,
-                        a: 0.8 * alpha,
-                    },
-                    None,
-                ) {
-                    self.rt.FillRoundedRectangle(
-                        &D2D1_ROUNDED_RECT {
-                            rect: D2D_RECT_F {
-                                left: tl,
-                                top: ty - 6.0,
-                                right: tr,
-                                bottom: ty + 6.0,
-                            },
-                            radiusX: 6.0,
-                            radiusY: 6.0,
+                for (l, r, label, val, top, bottom) in sliders {
+                    let s_rect = D2D_RECT_F {
+                        left: l,
+                        top,
+                        right: r,
+                        bottom,
+                    };
+                    self.fill_gradient_glass_card(
+                        s_rect,
+                        12.0,
+                        D2D1_COLOR_F {
+                            r: 0.11,
+                            g: 0.14,
+                            b: 0.22,
+                            a: 0.92 * alpha,
                         },
-                        &tb,
+                        D2D1_COLOR_F {
+                            r: 0.13,
+                            g: 0.17,
+                            b: 0.26,
+                            a: 0.92 * alpha,
+                        },
+                        D2D1_COLOR_F {
+                            r: 0.10,
+                            g: 0.13,
+                            b: 0.20,
+                            a: 0.92 * alpha,
+                        },
+                        D2D1_COLOR_F {
+                            r: 0.28,
+                            g: 0.36,
+                            b: 0.54,
+                            a: 0.50 * alpha,
+                        },
+                        1.0,
+                    );
+
+                    let cy_mid = s_rect.top + (s_rect.bottom - s_rect.top) * 0.5;
+
+                    // 1. KIRI (l + 12.0 .. l + 105.0): Label
+                    self.draw_text_left(
+                        label,
+                        &self.fmt_caption,
+                        D2D_RECT_F {
+                            left: l + 12.0,
+                            top: cy_mid - 10.0,
+                            right: l + 105.0,
+                            bottom: cy_mid + 10.0,
+                        },
+                        p_col,
+                    );
+
+                    // 2. TENGAH (l + 110.0 .. r - 54.0): Slider track dan fill bar bergradien
+                    let tl = l + 110.0;
+                    let tr = r - 54.0;
+                    let track_w = tr - tl;
+                    if let Ok(tb) = self.rt.CreateSolidColorBrush(
+                        &D2D1_COLOR_F {
+                            r: 0.18,
+                            g: 0.23,
+                            b: 0.34,
+                            a: 0.8 * alpha,
+                        },
+                        None,
+                    ) {
+                        self.rt.FillRoundedRectangle(
+                            &D2D1_ROUNDED_RECT {
+                                rect: D2D_RECT_F {
+                                    left: tl,
+                                    top: cy_mid - 4.0,
+                                    right: tr,
+                                    bottom: cy_mid + 4.0,
+                                },
+                                radiusX: 4.0,
+                                radiusY: 4.0,
+                            },
+                            &tb,
+                        );
+                    }
+                    let fw = track_w * (val as f32 / 100.0).clamp(0.0, 1.0);
+                    if fw > 0.0 {
+                        self.fill_gradient_glass_card(
+                            D2D_RECT_F {
+                                left: tl,
+                                top: cy_mid - 4.0,
+                                right: tl + fw,
+                                bottom: cy_mid + 4.0,
+                            },
+                            4.0,
+                            AntiMagicNeutralPalette::ACCENT_BLUE,
+                            AntiMagicNeutralPalette::ACCENT_CYAN,
+                            AntiMagicNeutralPalette::ACCENT_CYAN,
+                            AntiMagicNeutralPalette::ACCENT_CYAN,
+                            0.0,
+                        );
+                    }
+
+                    // 3. KANAN (r - 48.0 .. r - 10.0): Teks persentase rata tengah
+                    self.draw_text_centered(
+                        &format!("{}%", val),
+                        &self.fmt_caption,
+                        D2D_RECT_F {
+                            left: r - 48.0,
+                            top: cy_mid - 10.0,
+                            right: r - 10.0,
+                            bottom: cy_mid + 10.0,
+                        },
+                        AntiMagicNeutralPalette::ACCENT_CYAN,
                     );
                 }
-                let fw = (tr - tl) * (val as f32 / 100.0).clamp(0.0, 1.0);
-                self.fill_gradient_glass_card(
-                    D2D_RECT_F {
-                        left: tl,
-                        top: ty - 6.0,
-                        right: tl + fw.max(10.0),
-                        bottom: ty + 6.0,
-                    },
-                    6.0,
-                    AntiMagicNeutralPalette::ACCENT_BLUE,
-                    AntiMagicNeutralPalette::ACCENT_CYAN,
-                    AntiMagicNeutralPalette::ACCENT_CYAN,
-                    AntiMagicNeutralPalette::ACCENT_CYAN,
-                    0.0,
-                );
             }
-        }
 
     // =========================================================================
     // SECTION 3: POMODORO FOCUS TIMER
