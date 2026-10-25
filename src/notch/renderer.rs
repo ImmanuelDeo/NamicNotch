@@ -19,21 +19,21 @@ impl AntiMagicNeutralPalette {
         r: 0.043,
         g: 0.055,
         b: 0.078,
-        a: 0.97,
+        a: 0.98,
     };
     /// Dark Slate Card / Inner Surface (#131822)
     pub const CARD_SURFACE: D2D1_COLOR_F = D2D1_COLOR_F {
         r: 0.075,
         g: 0.094,
         b: 0.133,
-        a: 0.92,
+        a: 0.94,
     };
     /// Cool Steel Border (#263042)
     pub const STEEL_BORDER: D2D1_COLOR_F = D2D1_COLOR_F {
-        r: 0.149,
-        g: 0.188,
-        b: 0.259,
-        a: 0.55,
+        r: 0.180,
+        g: 0.230,
+        b: 0.320,
+        a: 0.70,
     };
     /// Steel Blue Accent (#6488EA)
     pub const ACCENT_BLUE: D2D1_COLOR_F = D2D1_COLOR_F {
@@ -69,7 +69,10 @@ impl NotchRenderer {
 
             let hwnd_props = D2D1_HWND_RENDER_TARGET_PROPERTIES {
                 hwnd,
-                pixelSize: D2D_SIZE_U { width, height },
+                pixelSize: D2D_SIZE_U {
+                    width: width.max(100),
+                    height: height.max(50),
+                },
                 presentOptions: D2D1_PRESENT_OPTIONS_IMMEDIATELY,
             };
 
@@ -88,7 +91,7 @@ impl NotchRenderer {
 
             self.rt.BeginDraw();
 
-            // 1. Clear with fully transparent black (DWM glass composition)
+            // 1. Bersihkan seluruh canvas dengan alpha 0.0 (DWM glass composition)
             self.rt.Clear(Some(&D2D1_COLOR_F {
                 r: 0.0,
                 g: 0.0,
@@ -110,14 +113,14 @@ impl NotchRenderer {
                 self.rt.FillRoundedRectangle(&rounded_pill, &bg_brush);
             }
 
-            // 3. Gambar tepi luar (Cool Steel Grey dengan sedikit denyut Slate-Wine saat mode Pet)
+            // 3. Gambar tepi luar (Cool Steel Grey dengan denyut Slate-Wine halus saat mode Pet)
             let border_color = if controller.state == NotchState::Pet {
-                let pulse = controller.devil_eyes.aura_intensity.clamp(0.3, 1.2);
+                let pulse = controller.devil_eyes.aura_intensity.clamp(0.4, 1.2);
                 D2D1_COLOR_F {
-                    r: 0.24 * pulse,
-                    g: 0.22,
-                    b: 0.34,
-                    a: 0.45,
+                    r: 0.28 * pulse,
+                    g: 0.25,
+                    b: 0.38,
+                    a: 0.65,
                 }
             } else {
                 AntiMagicNeutralPalette::STEEL_BORDER
@@ -125,7 +128,7 @@ impl NotchRenderer {
 
             if let Ok(border_brush) = self.rt.CreateSolidColorBrush(&border_color, None) {
                 self.rt
-                    .DrawRoundedRectangle(&rounded_pill, &border_brush, 1.15, None);
+                    .DrawRoundedRectangle(&rounded_pill, &border_brush, 1.25, None);
             }
 
             // 4. Render konten berdasarkan state aktif
@@ -140,12 +143,10 @@ impl NotchRenderer {
             } else if controller.height.value > 65.0 {
                 let content_alpha = controller.content_alpha.value.clamp(0.0, 1.0);
 
-                // Gambar indikator bar navigasi atas bertema Slate-Blue
-                self.draw_top_tab_indicator(controller.state, pill_rect, content_alpha);
+                // Gambar bar navigasi tab atas + kartu dalam
+                self.draw_expanded_panel_shell(controller.state, pill_rect, content_alpha);
 
-                // Panggil fungsi render konten panel (Music, Lyrics, Pomo, Water, Shelf, Todo) milikmu di sini
-
-                // Render Chibi Liebe secara selektif (HANYA tampil jika state adalah Music, Pomo, atau Shelf)
+                // Render Chibi Liebe secara selektif (HANYA tampil pada Music, Pomo, atau Shelf)
                 if controller.mascot_enabled {
                     controller.chibi_liebe.render(
                         &self.factory,
@@ -161,13 +162,17 @@ impl NotchRenderer {
         }
     }
 
-    unsafe fn draw_top_tab_indicator(
+    unsafe fn draw_expanded_panel_shell(
         &self,
         state: NotchState,
         pill_rect: D2D_RECT_F,
         alpha: f32,
     ) {
-        let idx = match state {
+        let total_w = pill_rect.right - pill_rect.left;
+        let slot_w = total_w / 5.0;
+
+        // Gambar titik/indikator kelima tab di bagian atas panel agar pengguna tahu posisi klik tab
+        let active_idx = match state {
             NotchState::Music => 0,
             NotchState::Lyrics => 1,
             NotchState::Pomo => 2,
@@ -176,28 +181,56 @@ impl NotchRenderer {
             _ => return,
         };
 
-        let total_w = pill_rect.right - pill_rect.left;
-        let slot_w = total_w / 5.0;
-        let indicator_x = pill_rect.left + slot_w * (idx as f32 + 0.5);
-        let indicator_y = pill_rect.top + 10.0;
+        for i in 0..5 {
+            let cx = pill_rect.left + slot_w * (i as f32 + 0.5);
+            let cy = pill_rect.top + 12.0;
 
-        let mut accent = AntiMagicNeutralPalette::ACCENT_BLUE;
-        accent.a *= alpha;
+            let color = if i == active_idx {
+                let mut c = AntiMagicNeutralPalette::ACCENT_BLUE;
+                c.a *= alpha;
+                c
+            } else {
+                D2D1_COLOR_F {
+                    r: 0.35,
+                    g: 0.42,
+                    b: 0.55,
+                    a: 0.45 * alpha,
+                }
+            };
 
-        if let Ok(brush) = self.rt.CreateSolidColorBrush(&accent, None) {
-            self.rt.DrawLine(
-                D2D_POINT_2F {
-                    x: indicator_x - 14.0,
-                    y: indicator_y,
+            if let Ok(brush) = self.rt.CreateSolidColorBrush(&color, None) {
+                let half_len = if i == active_idx { 14.0 } else { 6.0 };
+                self.rt.DrawLine(
+                    D2D_POINT_2F {
+                        x: cx - half_len,
+                        y: cy,
+                    },
+                    D2D_POINT_2F {
+                        x: cx + half_len,
+                        y: cy,
+                    },
+                    &brush,
+                    2.4,
+                    None,
+                );
+            }
+        }
+
+        // Gambar kartu permukaan dalam (Inner Slate Card #131822) untuk konten fitur
+        let mut card_color = AntiMagicNeutralPalette::CARD_SURFACE;
+        card_color.a *= alpha;
+        if let Ok(card_brush) = self.rt.CreateSolidColorBrush(&card_color, None) {
+            let inner_card = D2D1_ROUNDED_RECT {
+                rect: D2D_RECT_F {
+                    left: pill_rect.left + 12.0,
+                    top: pill_rect.top + 26.0,
+                    right: pill_rect.right - 12.0,
+                    bottom: pill_rect.bottom - 12.0,
                 },
-                D2D_POINT_2F {
-                    x: indicator_x + 14.0,
-                    y: indicator_y,
-                },
-                &brush,
-                2.2,
-                None,
-            );
+                radiusX: 16.0,
+                radiusY: 16.0,
+            };
+            self.rt.FillRoundedRectangle(&inner_card, &card_brush);
         }
     }
 }
