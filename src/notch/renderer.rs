@@ -708,9 +708,9 @@ impl NotchRenderer {
             white,
         );
 
-        let tabs_left = pill_rect.left + 36.0;
-        let tabs_right = pill_rect.right - 36.0;
-        let slot_w = (tabs_right - tabs_left) / 6.0;
+        let tabs_left = pill_rect.left + 28.0;
+                let tabs_right = pill_rect.right - 28.0;
+                let slot_w = (tabs_right - tabs_left) / 6.0;
 
         for (i, label) in tabs.iter().enumerate() {
             let sl = tabs_left + slot_w * i as f32;
@@ -796,10 +796,10 @@ impl NotchRenderer {
         }
 
         D2D_RECT_F {
-            left: pill_rect.left + 32.0,
+            left: pill_rect.left + 26.0,
             top: pill_rect.top + 26.0,
-            right: pill_rect.right - 32.0,
-            bottom: pill_rect.bottom - 10.0,
+            right: pill_rect.right - 26.0,
+            bottom: pill_rect.bottom - 8.0,
         }
     }
 
@@ -825,9 +825,9 @@ impl NotchRenderer {
             &time_big,
             &self.fmt_clock_hero,
             D2D_RECT_F {
-                left: area.left + 4.0,
+                left: area.left + 2.0,
                 top: area.top + 8.0,
-                right: area.left + 138.0,
+                right: area.left + 118.0,
                 bottom: area.top + 40.0,
             },
             white,
@@ -837,16 +837,16 @@ impl NotchRenderer {
             &date_str,
             &self.fmt_caption,
             D2D_RECT_F {
-                left: area.left + 4.0,
+                left: area.left + 2.0,
                 top: area.top + 42.0,
-                right: area.left + 138.0,
+                right: area.left + 118.0,
                 bottom: area.top + 60.0,
             },
             muted,
         );
 
         self.draw_nusa_ring_battery(
-            area.left + 12.0,
+            area.left + 8.0,
             area.bottom - 18.0,
             ctrl.battery_percent,
             ctrl.is_charging,
@@ -861,9 +861,9 @@ impl NotchRenderer {
             &bat_label,
             &self.fmt_caption,
             D2D_RECT_F {
-                left: area.left + 24.0,
+                left: area.left + 20.0,
                 top: area.bottom - 27.0,
-                right: area.left + 138.0,
+                right: area.left + 118.0,
                 bottom: area.bottom - 9.0,
             },
             white,
@@ -880,11 +880,11 @@ impl NotchRenderer {
         ) {
             self.rt.DrawLine(
                 D2D_POINT_2F {
-                    x: area.left + 142.0,
+                    x: area.left + 122.0,
                     y: area.top + 10.0,
                 },
                 D2D_POINT_2F {
-                    x: area.left + 142.0,
+                    x: area.left + 122.0,
                     y: area.bottom - 10.0,
                 },
                 &div_b,
@@ -893,7 +893,7 @@ impl NotchRenderer {
             );
         }
 
-        let q_left = area.left + 154.0;
+        let q_left = area.left + 130.0;
         let daily = ctrl.current_quote();
         let header = format!("✨ {}", daily.word_of_the_day);
         self.draw_text_left(
@@ -902,7 +902,7 @@ impl NotchRenderer {
             D2D_RECT_F {
                 left: q_left,
                 top: area.top + 8.0,
-                right: area.right - 4.0,
+                right: area.right - 2.0,
                 bottom: area.top + 24.0,
             },
             AntiMagicNeutralPalette::ACCENT_CYAN,
@@ -914,7 +914,7 @@ impl NotchRenderer {
             D2D_RECT_F {
                 left: q_left,
                 top: area.top + 25.0,
-                right: area.right - 4.0,
+                right: area.right - 2.0,
                 bottom: area.bottom - 24.0,
             },
             white,
@@ -927,7 +927,7 @@ impl NotchRenderer {
             D2D_RECT_F {
                 left: q_left,
                 top: area.bottom - 23.0,
-                right: area.right - 4.0,
+                right: area.right - 2.0,
                 bottom: area.bottom - 6.0,
             },
             muted,
@@ -1259,16 +1259,16 @@ impl NotchRenderer {
                 label,
                 &self.fmt_body,
                 D2D_RECT_F {
-                    left: area.left + 4.0,
+                    left: area.left + 2.0,
                     top: ry,
-                    right: area.left + 100.0,
+                    right: area.left + 92.0,
                     bottom: ry + row_h,
                 },
                 white,
             );
 
-            let track_l = area.left + 104.0;
-            let track_r = (area.right - 52.0).max(track_l + 20.0);
+            let track_l = area.left + 96.0;
+            let track_r = (area.right - 44.0).max(track_l + 20.0);
 
             if let Ok(tb) = self.rt.CreateSolidColorBrush(
                 &D2D1_COLOR_F {
@@ -1326,9 +1326,9 @@ impl NotchRenderer {
                 &format!("{}%", val),
                 &self.fmt_body,
                 D2D_RECT_F {
-                    left: area.right - 48.0,
+                    left: area.right - 40.0,
                     top: ry,
-                    right: area.right - 4.0,
+                    right: area.right - 2.0,
                     bottom: ry + row_h,
                 },
                 white,
@@ -1337,136 +1337,136 @@ impl NotchRenderer {
     }
 
     unsafe fn draw_pomo_panel(&self, ctrl: &NotchController, area: D2D_RECT_F, alpha: f32) {
-        let white = D2D1_COLOR_F {
-            r: 1.0,
-            g: 1.0,
-            b: 1.0,
-            a: alpha,
-        };
-        let muted = D2D1_COLOR_F {
-            r: 0.60,
-            g: 0.64,
-            b: 0.72,
-            a: alpha,
-        };
+            let white = D2D1_COLOR_F {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: alpha,
+            };
+            let muted = D2D1_COLOR_F {
+                r: 0.60,
+                g: 0.64,
+                b: 0.72,
+                a: alpha,
+            };
 
-        let mins = ctrl.pomo_remaining_secs / 60;
-        let secs = ctrl.pomo_remaining_secs % 60;
-        let time_str = format!("{:02}:{:02}", mins, secs);
+            let mins = ctrl.pomo_remaining_secs / 60;
+            let secs = ctrl.pomo_remaining_secs % 60;
+            let time_str = format!("{:02}:{:02}", mins, secs);
 
-        self.draw_text_left(
-            &time_str,
-            &self.fmt_clock_hero,
-            D2D_RECT_F {
-                left: area.left + 6.0,
-                top: area.top + 14.0,
-                right: area.left + 112.0,
-                bottom: area.top + 54.0,
-            },
-            white,
-        );
-        self.draw_text_left(
-            if ctrl.pomo_is_break {
-                "☕ Break Mode"
-            } else {
-                "🎯 Focus Mode"
-            },
-            &self.fmt_caption,
-            D2D_RECT_F {
-                left: area.left + 6.0,
-                top: area.top + 56.0,
-                right: area.left + 112.0,
-                bottom: area.top + 78.0,
-            },
-            AntiMagicNeutralPalette::ACCENT_CYAN,
-        );
-
-        let focus_mode_rect = D2D_RECT_F {
-            left: area.left + 118.0,
-            top: area.top + 12.0,
-            right: area.left + 214.0,
-            bottom: area.top + 42.0,
-        };
-        let break_mode_rect = D2D_RECT_F {
-            left: area.left + 222.0,
-            top: area.top + 12.0,
-            right: area.left + 316.0,
-            bottom: area.top + 42.0,
-        };
-
-        let active_pill_col = D2D1_COLOR_F {
-            r: 0.23,
-            g: 0.51,
-            b: 0.96,
-            a: 0.90 * alpha,
-        };
-        let inactive_pill_col = D2D1_COLOR_F {
-            r: 0.14,
-            g: 0.17,
-            b: 0.24,
-            a: 0.90 * alpha,
-        };
-
-        if let Ok(fb) = self.rt.CreateSolidColorBrush(
-            if !ctrl.pomo_is_break {
-                &active_pill_col
-            } else {
-                &inactive_pill_col
-            },
-            None,
-        ) {
-            self.rt.FillRoundedRectangle(
-                &D2D1_ROUNDED_RECT {
-                    rect: focus_mode_rect,
-                    radiusX: 8.0,
-                    radiusY: 8.0,
+            self.draw_text_left(
+                &time_str,
+                &self.fmt_clock_hero,
+                D2D_RECT_F {
+                    left: area.left + 6.0,
+                    top: area.top + 14.0,
+                    right: area.left + 112.0,
+                    bottom: area.top + 54.0,
                 },
-                &fb,
+                white,
             );
-        }
-        if let Ok(bb) = self.rt.CreateSolidColorBrush(
-            if ctrl.pomo_is_break {
-                &active_pill_col
-            } else {
-                &inactive_pill_col
-            },
-            None,
-        ) {
-            self.rt.FillRoundedRectangle(
-                &D2D1_ROUNDED_RECT {
-                    rect: break_mode_rect,
-                    radiusX: 8.0,
-                    radiusY: 8.0,
+            self.draw_text_left(
+                if ctrl.pomo_is_break {
+                    "☕ Break Mode"
+                } else {
+                    "🎯 Focus Mode"
                 },
-                &bb,
+                &self.fmt_caption,
+                D2D_RECT_F {
+                    left: area.left + 6.0,
+                    top: area.top + 56.0,
+                    right: area.left + 112.0,
+                    bottom: area.top + 78.0,
+                },
+                AntiMagicNeutralPalette::ACCENT_CYAN,
             );
-        }
 
-        self.draw_text_centered(
-            "Focus 25m",
-            &self.fmt_caption,
-            focus_mode_rect,
-            if !ctrl.pomo_is_break { white } else { muted },
-        );
-        self.draw_text_centered(
-            "Break 5m",
-            &self.fmt_caption,
-            break_mode_rect,
-            if ctrl.pomo_is_break { white } else { muted },
-        );
+            let focus_mode_rect = D2D_RECT_F {
+                left: area.left + 102.0,
+                top: area.top + 10.0,
+                right: area.left + 192.0,
+                bottom: area.top + 42.0,
+            };
+            let break_mode_rect = D2D_RECT_F {
+                left: area.left + 198.0,
+                top: area.top + 10.0,
+                right: area.left + 288.0,
+                bottom: area.top + 42.0,
+            };
 
-        let start_rect = D2D_RECT_F {
-            left: area.left + 118.0,
-            top: area.top + 54.0,
-            right: area.left + 214.0,
-            bottom: area.top + 86.0,
-        };
-        let reset_rect = D2D_RECT_F {
-            left: area.left + 222.0,
-            top: area.top + 54.0,
-            right: area.left + 300.0,
-            bottom: area.top + 86.0,
-        };
+            let active_pill_col = D2D1_COLOR_F {
+                r: 0.23,
+                g: 0.51,
+                b: 0.96,
+                a: 0.90 * alpha,
+            };
+            let inactive_pill_col = D2D1_COLOR_F {
+                r: 0.14,
+                g: 0.17,
+                b: 0.24,
+                a: 0.90 * alpha,
+            };
+
+            if let Ok(fb) = self.rt.CreateSolidColorBrush(
+                if !ctrl.pomo_is_break {
+                    &active_pill_col
+                } else {
+                    &inactive_pill_col
+                },
+                None,
+            ) {
+                self.rt.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT {
+                        rect: focus_mode_rect,
+                        radiusX: 8.0,
+                        radiusY: 8.0,
+                    },
+                    &fb,
+                );
+            }
+            if let Ok(bb) = self.rt.CreateSolidColorBrush(
+                if ctrl.pomo_is_break {
+                    &active_pill_col
+                } else {
+                    &inactive_pill_col
+                },
+                None,
+            ) {
+                self.rt.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT {
+                        rect: break_mode_rect,
+                        radiusX: 8.0,
+                        radiusY: 8.0,
+                    },
+                    &bb,
+                );
+            }
+
+            self.draw_text_centered(
+                "Focus 25m",
+                &self.fmt_caption,
+                focus_mode_rect,
+                if !ctrl.pomo_is_break { white } else { muted },
+            );
+            self.draw_text_centered(
+                "Break 5m",
+                &self.fmt_caption,
+                break_mode_rect,
+                if ctrl.pomo_is_break { white } else { muted },
+            );
+
+            let start_rect = D2D_RECT_F {
+                left: area.left + 102.0,
+                top: area.top + 50.0,
+                right: area.left + 192.0,
+                bottom: area.top + 92.0,
+            };
+            let reset_rect = D2D_RECT_F {
+                left: area.left + 198.0,
+                top: area.top + 50.0,
+                right: area.left + 278.0,
+                bottom: area.top + 92.0,
+            };
 
         if let Ok(sb) = self.rt.CreateSolidColorBrush(
             &D2D1_COLOR_F {

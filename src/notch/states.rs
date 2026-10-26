@@ -225,9 +225,9 @@ impl NotchController {
             minimal_mode: false,
             mascot_enabled: true,
             anim_time: 0.0,
-            width: SpringValue::new(190.0, 310.0, 26.0),
-            height: SpringValue::new(36.0, 310.0, 26.0),
-            corner_radius: SpringValue::new(16.0, 310.0, 26.0),
+            width: SpringValue::new(156.0, 310.0, 26.0),
+            height: SpringValue::new(34.0, 310.0, 26.0),
+            corner_radius: SpringValue::new(15.0, 310.0, 26.0),
             content_alpha: SpringValue::new(1.0, 240.0, 28.0),
             closed_quiet_timer: 0.0,
             hover_grace_timer: 0.0,
@@ -511,19 +511,19 @@ impl NotchController {
     }
 
     pub fn trigger_overlay(&mut self, kind: OverlayKind) {
-        match kind {
-            OverlayKind::Volume(v) => self.volume_level = v.min(100),
-            OverlayKind::Brightness(b) => self.brightness_level = b.min(100),
-            _ => {}
+            match kind {
+                OverlayKind::Volume(v) => self.volume_level = v.min(100),
+                OverlayKind::Brightness(b) => self.brightness_level = b.min(100),
+                _ => {}
+            }
+            self.active_overlay = Some(kind);
+            self.overlay_timer = 3.2;
+            if !self.is_hovered {
+                self.width.set_target(230.0);
+                self.height.set_target(40.0);
+                self.corner_radius.set_target(16.0);
+            }
         }
-        self.active_overlay = Some(kind);
-        self.overlay_timer = 3.2;
-        if !self.is_hovered {
-            self.width.set_target(280.0);
-            self.height.set_target(44.0);
-            self.corner_radius.set_target(18.0);
-        }
-    }
 
     pub fn ordered_tabs() -> [NotchState; 5] {
         [
@@ -551,17 +551,17 @@ impl NotchController {
 
     pub fn target_dimensions_for(state: NotchState, minimal_mode: bool) -> (f32, f32, f32) {
         if minimal_mode && matches!(state, NotchState::Pet | NotchState::Idle) {
-            return (130.0, 6.0, 3.0);
+            return (110.0, 6.0, 3.0);
         }
 
         match state {
-            NotchState::Pet => (190.0, 36.0, 16.0),
-            NotchState::Idle => (210.0, 36.0, 16.0),
-            NotchState::Hub => (446.0, 146.0, 22.0),
-            NotchState::Music => (462.0, 148.0, 22.0),
-            NotchState::Control => (446.0, 142.0, 22.0),
-            NotchState::Pomo => (446.0, 146.0, 22.0),
-            NotchState::Shelf => (446.0, 146.0, 22.0),
+            NotchState::Pet => (156.0, 34.0, 15.0),
+            NotchState::Idle => (168.0, 34.0, 15.0),
+            NotchState::Hub => (380.0, 140.0, 20.0),
+            NotchState::Music => (390.0, 142.0, 20.0),
+            NotchState::Control => (380.0, 138.0, 20.0),
+            NotchState::Pomo => (380.0, 140.0, 20.0),
+            NotchState::Shelf => (380.0, 140.0, 20.0),
         }
     }
 
@@ -924,9 +924,9 @@ impl NotchController {
 
     /// Menangani klik pada konten section (koordinat relatif terhadap area konten `left: 34.0, top: 26.0`)
     pub fn handle_panel_click(&mut self, lx: f32, ly: f32, pill_w: f32) -> bool {
-        let content_l = 32.0;
+        let content_l = 26.0;
         let content_t = 26.0;
-        let content_w = pill_w - 64.0;
+        let content_w = pill_w - 52.0;
         let content_h = (self.height.value - 34.0).max(60.0);
 
         let cx = lx - content_l;
@@ -937,7 +937,7 @@ impl NotchController {
 
         match self.state {
             NotchState::Hub => {
-                if cx >= 145.0 {
+                if cx >= 122.0 {
                     self.quote_offset = (self.quote_offset + 1) % MOTIVATIONAL_QUOTES.len();
                     return true;
                 }
@@ -946,35 +946,33 @@ impl NotchController {
                 let right_limit = if self.show_side_lyrics {
                     content_w * 0.56
                 } else {
-                    content_w - 8.0
+                    content_w - 6.0
                 };
 
-                // 1. Klik pada garis timeline musik (cy: 54..74) untuk seek waktu & lirik
-                let bar_l = 38.0;
-                let bar_r = (right_limit - 42.0).max(bar_l + 40.0);
-                if (52.0..=74.0).contains(&cy) && cx >= bar_l && cx <= bar_r {
+                let bar_l = 36.0;
+                let bar_r = (right_limit - 38.0).max(bar_l + 30.0);
+                if (50.0..=72.0).contains(&cy) && cx >= bar_l && cx <= bar_r {
                     let ratio = ((cx - bar_l) / (bar_r - bar_l)).clamp(0.0, 1.0);
                     self.media_progress = ratio;
                     self.media_elapsed_exact = ratio * self.media_total_secs;
                     return true;
                 }
 
-                // 2. Klik pada baris kontrol bawah (cy: 75..116): [💬 Lyrics] [⏮] [▶/⏸] [⏭]
-                if cy >= 75.0 && cx <= right_limit {
+                if cy >= 73.0 && cx <= right_limit {
                     let mid = right_limit * 0.52;
-                    if cx < mid - 52.0 {
+                    if cx < mid - 46.0 {
                         self.show_side_lyrics = !self.show_side_lyrics;
                         return true;
-                    } else if cx >= mid - 48.0 && cx < mid - 16.0 {
+                    } else if cx >= mid - 44.0 && cx < mid - 14.0 {
                         Self::send_system_media_command("prev");
                         self.media_elapsed_exact = 0.0;
                         self.media_progress = 0.0;
                         return true;
-                    } else if cx >= mid - 16.0 && cx <= mid + 18.0 {
+                    } else if cx >= mid - 14.0 && cx <= mid + 16.0 {
                         Self::send_system_media_command("toggle");
                         self.media_playing = !self.media_playing;
                         return true;
-                    } else if cx > mid + 18.0 && cx <= mid + 54.0 {
+                    } else if cx > mid + 16.0 && cx <= mid + 48.0 {
                         Self::send_system_media_command("next");
                         self.media_elapsed_exact = 0.0;
                         self.media_progress = 0.0;
@@ -982,16 +980,14 @@ impl NotchController {
                     }
                 }
 
-                // 3. Klik area lirik kanan untuk lompat baris
                 if self.show_side_lyrics && cx > right_limit && !self.timed_lyrics.is_empty() {
                     self.active_lyric_idx = (self.active_lyric_idx + 1) % self.timed_lyrics.len();
                     return true;
                 }
             }
             NotchState::Control => {
-                // 2 Baris Slider Bersih: Baris Atas = Volume, Baris Bawah = Brightness
-                let track_l = 104.0;
-                let track_r = (content_w - 52.0).max(track_l + 20.0);
+                let track_l = 96.0;
+                let track_r = (content_w - 44.0).max(track_l + 20.0);
                 if cx >= track_l - 8.0 && cx <= track_r + 8.0 {
                     let pct = (((cx - track_l) / (track_r - track_l)).clamp(0.0, 1.0) * 100.0)
                         .round() as u8;
@@ -1006,22 +1002,22 @@ impl NotchController {
                 }
             }
             NotchState::Pomo => {
-                // Baris Atas (cy: 12..44): Pemilih Mode [Focus 25m] (cx: 118..214) dan [Break 5m] (cx: 222..314)
-                if (10.0..=46.0).contains(&cy) {
-                    if (116.0..=216.0).contains(&cx) {
-                        self.set_pomo_mode(false); // Focus 25 menit
+                // Baris Atas (cy: 10..44): [Focus 25m] (cx: 102..192) dan [Break 5m] (cx: 198..288)
+                if (10.0..=44.0).contains(&cy) {
+                    if (100.0..=194.0).contains(&cx) {
+                        self.set_pomo_mode(false);
                         return true;
-                    } else if (220.0..=320.0).contains(&cx) {
-                        self.set_pomo_mode(true); // Break 5 menit
+                    } else if (196.0..=292.0).contains(&cx) {
+                        self.set_pomo_mode(true);
                         return true;
                     }
                 }
-                // Baris Bawah (cy: 56..98): Tombol [Start / Pause] (cx: 116..216) dan [Reset] (cx: 220..300)
-                if (54.0..=102.0).contains(&cy) {
-                    if (116.0..=216.0).contains(&cx) {
+                // Baris Bawah (cy: 50..92): [Start / Pause] (cx: 102..192) dan [Reset] (cx: 198..274)
+                if (50.0..=92.0).contains(&cy) {
+                    if (100.0..=194.0).contains(&cx) {
                         self.pomo_running = !self.pomo_running;
                         return true;
-                    } else if (220.0..=305.0).contains(&cx) {
+                    } else if (196.0..=278.0).contains(&cx) {
                         self.pomo_running = false;
                         self.pomo_remaining_secs = self.pomo_total_secs;
                         return true;
@@ -1030,11 +1026,11 @@ impl NotchController {
             }
             NotchState::Shelf => {
                 if !self.shelf_files.is_empty() {
-                    let slot_w = (content_w - 24.0) * 0.5;
-                    let idx = if cx < 8.0 + slot_w { 0 } else { 1 };
+                    let slot_w = (content_w - 20.0) * 0.5;
+                    let idx = if cx < 6.0 + slot_w { 0 } else { 1 };
                     if idx < self.shelf_files.len() {
-                        let item_r = 8.0 + (idx as f32 + 1.0) * slot_w + idx as f32 * 8.0;
-                        if cx >= item_r - 24.0 && cy <= 46.0 {
+                        let item_r = 6.0 + (idx as f32 + 1.0) * slot_w + idx as f32 * 8.0;
+                        if cx >= item_r - 22.0 && cy <= 44.0 {
                             self.shelf_files.remove(idx);
                         } else {
                             let path = self.shelf_files[idx].2.clone();
