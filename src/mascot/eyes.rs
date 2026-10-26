@@ -4,9 +4,9 @@ use windows::Win32::Graphics::Direct2D::Common::{
     D2D1_FIGURE_END_CLOSED, D2D1_FIGURE_END_OPEN, D2D1_GRADIENT_STOP, D2D_POINT_2F, D2D_RECT_F,
 };
 use windows::Win32::Graphics::Direct2D::{
-    ID2D1Factory, ID2D1HwndRenderTarget, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_ELLIPSE,
-    D2D1_EXTEND_MODE_CLAMP, D2D1_GAMMA_2_2, D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES,
-    D2D1_ROUNDED_RECT,
+    ID2D1Factory, ID2D1HwndRenderTarget, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_CAP_STYLE_ROUND,
+    D2D1_ELLIPSE, D2D1_EXTEND_MODE_CLAMP, D2D1_GAMMA_2_2, D2D1_LINE_JOIN_ROUND,
+    D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES, D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES,
 };
 
 pub struct DevilUnionEyes {
@@ -19,12 +19,15 @@ pub struct DevilUnionEyes {
     pub target_look_y: f32,
     pub flare_intensity: f32,
 
-    // Motion & Gesture Versi 6.0 + Iluminasi Background
+    // Siklus 2 Fase:
+    // false = Fase 1: Asta Devil Union (Rambut Hitam + Tanduk Hitam + Aksesori Salib Merah + Mata Kapsul Merah Illuminated + Ambil & Tarik Pedang + Crimson Thunder)
+    // true  = Fase 2: Asta Normal Happy (Rambut Abu-Abu + Ikat Kepala Banteng Hitam + Mata Hijau Muda Illuminated ^ ^ / ● ● + Tangan Senang ● + Healing)
     pub idle_cycle_timer: f32,
-    pub is_cheer_mode: bool,      // false = Devil Union + Pedang & Tangan, true = Normal Happy + Mulut Senyum
-    pub mode_aura_timer: f32,     // Durasi iluminasi background saat berganti mode
-    pub sword_float_phase: f32,   // Fase melayang pedang Demon-Slayer
-    pub hand_grab_progress: f32,  // 0.0 = tangan di bawah, 1.0 = tangan muncul & menggenggam gagang pedang
+    pub is_cheer_mode: bool,
+    pub mode_aura_timer: f32,
+    pub sword_float_phase: f32,
+    pub grab_reach: f32, // 0.0..1.0: Tangan muncul meraih gagang pedang
+    pub sword_pull: f32, // 0.0..1.0: Tangan menarik pedang mendekat ke arah Asta
 }
 
 impl DevilUnionEyes {
@@ -42,7 +45,8 @@ impl DevilUnionEyes {
             is_cheer_mode: false,
             mode_aura_timer: 0.0,
             sword_float_phase: 0.0,
-            hand_grab_progress: 0.0,
+            grab_reach: 0.0,
+            sword_pull: 0.0,
         }
     }
 
@@ -56,15 +60,14 @@ impl DevilUnionEyes {
         self.flare_intensity = 2.4;
     }
 
-    /// Amplop intensitas iluminasi background (aktif 4.0 detik di awal pergantian mode, lalu meredup ke 0.0)
     pub fn current_aura_envelope(&self) -> f32 {
-        let dur = 4.0_f32;
+        let dur = 5.2_f32;
         if self.mode_aura_timer >= dur {
-            0.0
-        } else if self.mode_aura_timer < 0.65 {
-            (self.mode_aura_timer / 0.65).clamp(0.0, 1.0)
-        } else if self.mode_aura_timer > dur - 1.15 {
-            ((dur - self.mode_aura_timer) / 1.15).clamp(0.0, 1.0)
+            0.22
+        } else if self.mode_aura_timer < 0.6 {
+            0.22 + 0.78 * (self.mode_aura_timer / 0.6).clamp(0.0, 1.0)
+        } else if self.mode_aura_timer > dur - 1.2 {
+            0.22 + 0.78 * ((dur - self.mode_aura_timer) / 1.2).clamp(0.0, 1.0)
         } else {
             1.0
         }
@@ -74,45 +77,52 @@ impl DevilUnionEyes {
         self.phase_time += dt;
         self.idle_cycle_timer += dt;
         self.mode_aura_timer += dt;
-        self.sword_float_phase += dt * 2.4;
+        self.sword_float_phase += dt * 2.6;
 
-        // Siklus 16 detik: 0..8s = Devil Union (Pedang + Tangan Meraih), 8..16s = Normal Happy (Mulut Senyum + Healing)
-        let cycle = self.idle_cycle_timer % 16.0;
-        let next_cheer = cycle >= 8.0;
+        // Siklus 15 detik:
+        // 0.0 .. 7.5s  = Fase 1: Devil Union Mode (Ambil & Tarik Pedang + Crimson Thunder)
+        // 7.5 .. 15.0s = Fase 2: Normal Happy Mode (Ekspresi Happy ^ ^ Hijau Muda + Tangan ● + Healing)
+        let cycle = self.idle_cycle_timer % 15.0;
+        let next_cheer = cycle >= 7.5;
         if next_cheer != self.is_cheer_mode {
             self.is_cheer_mode = next_cheer;
             self.mode_aura_timer = 0.0;
-            self.blink_progress = 0.85;
+            self.blink_progress = 0.90;
         }
 
-        // Gerakan Tangan Muncul Perlahan & Mengambil Pedang (0.0 -> 1.0 -> 0.0)
-        let grab_wave = (self.sword_float_phase * 0.65).sin();
-        self.hand_grab_progress = ((grab_wave + 0.25) / 1.25).clamp(0.0, 1.0);
-
-        // Lirikan Mata Hidup:
-        // Saat mode Devil Union dan tangan sedang naik mengambil pedang (`hand_grab_progress > 0.35`),
-        // mata Asta otomatis melirik ke kanan ke arah pedang & tangannya!
-        if let Some((dx, dy)) = cursor_offset {
-            let base_x = (dx / 180.0).clamp(-1.0, 1.0) * 2.5;
-            let base_y = (dy / 100.0).clamp(-1.0, 1.0) * 1.2;
-            if !self.is_cheer_mode && self.hand_grab_progress > 0.35 {
-                let glance_strength = (self.hand_grab_progress - 0.35) / 0.65;
-                self.target_look_x = base_x * (1.0 - glance_strength) + 2.4 * glance_strength;
-                self.target_look_y = base_y * (1.0 - glance_strength) - 0.4 * glance_strength;
-            } else {
-                self.target_look_x = base_x;
-                self.target_look_y = base_y;
-            }
-        } else if !self.is_cheer_mode && self.hand_grab_progress > 0.35 {
-            let glance_strength = (self.hand_grab_progress - 0.35) / 0.65;
-            self.target_look_x = 2.4 * glance_strength;
-            self.target_look_y = -0.3 * glance_strength;
+        // Koreografi 3 Tahap Tangan Mengambil & Menarik Pedang (di Fase 1):
+        let t = cycle.clamp(0.0, 7.5);
+        if t < 1.6 {
+            self.grab_reach = 0.0;
+            self.sword_pull = 0.0;
+        } else if t < 3.2 {
+            let p = ((t - 1.6) / 1.6).clamp(0.0, 1.0);
+            self.grab_reach = p * p * (3.0 - 2.0 * p);
+            self.sword_pull = 0.0;
+        } else if t < 5.6 {
+            self.grab_reach = 1.0;
+            let p = ((t - 3.2) / 1.4).clamp(0.0, 1.0);
+            self.sword_pull = p * p * (3.0 - 2.0 * p);
         } else {
-            self.target_look_x = (self.phase_time * 0.9).sin() * 1.5;
-            self.target_look_y = (self.phase_time * 0.6).cos() * 0.5;
+            let p = (1.0 - (t - 5.6) / 1.6).clamp(0.0, 1.0);
+            self.grab_reach = p;
+            self.sword_pull = p;
         }
 
-        let follow = (dt * 9.0).min(1.0);
+        // Lirikan Mata Hidup mengikuti pedang saat diambil & ditarik:
+        if !self.is_cheer_mode && self.grab_reach > 0.1 {
+            let look_target = 2.8 * self.grab_reach - 1.2 * self.sword_pull;
+            self.target_look_x = look_target;
+            self.target_look_y = -0.2 * self.grab_reach;
+        } else if let Some((dx, dy)) = cursor_offset {
+            self.target_look_x = (dx / 160.0).clamp(-1.0, 1.0) * 2.5;
+            self.target_look_y = (dy / 90.0).clamp(-1.0, 1.0) * 1.2;
+        } else {
+            self.target_look_x = (self.phase_time * 1.0).sin() * 1.6;
+            self.target_look_y = (self.phase_time * 0.7).cos() * 0.5;
+        }
+
+        let follow = (dt * 10.0).min(1.0);
         self.look_x += (self.target_look_x - self.look_x) * follow;
         self.look_y += (self.target_look_y - self.look_y) * follow;
 
@@ -122,7 +132,7 @@ impl DevilUnionEyes {
 
         self.blink_timer -= dt;
         if self.blink_timer <= 0.0 {
-            self.blink_progress += dt * 14.0;
+            self.blink_progress += dt * 15.0;
             if self.blink_progress >= 1.0 {
                 self.blink_progress = 0.0;
                 self.blink_timer = 2.6 + (self.phase_time.sin().abs() * 2.2);
@@ -130,44 +140,47 @@ impl DevilUnionEyes {
         }
     }
 
-    /// Helper: Iluminasi Radial Blurry (Tanpa Tepi Lingkaran Solid)
-    unsafe fn draw_soft_radial_illumination(
+    /// Helper: Menggambar Soft Radial Illumination (Blurry Glow tanpa tepi lingkaran)
+    unsafe fn draw_soft_radial_glow(
         &self,
         rt: &ID2D1HwndRenderTarget,
         center: D2D_POINT_2F,
         radius_x: f32,
         radius_y: f32,
-        core_r: f32,
-        core_g: f32,
-        core_b: f32,
+        r: f32,
+        g: f32,
+        b: f32,
         peak_alpha: f32,
     ) {
+        if peak_alpha <= 0.005 {
+            return;
+        }
         let stops = [
             D2D1_GRADIENT_STOP {
                 position: 0.0,
                 color: D2D1_COLOR_F {
-                    r: core_r,
-                    g: core_g,
-                    b: core_b,
+                    r,
+                    g,
+                    b,
                     a: peak_alpha,
                 },
             },
             D2D1_GRADIENT_STOP {
-                position: 0.45,
+                position: 0.42,
                 color: D2D1_COLOR_F {
-                    r: core_r * 0.8,
-                    g: core_g * 0.8,
-                    b: core_b * 0.8,
-                    a: peak_alpha * 0.42,
+                    r,
+                    g,
+                    b,
+                    a: peak_alpha * 0.46,
                 },
             },
             D2D1_GRADIENT_STOP {
-                position: 0.80,
+                position: 0.76,
                 color: D2D1_COLOR_F {
-                    r: core_r * 0.5,
-                    g: core_g * 0.5,
-                    b: core_b * 0.5,
-                    a: peak_alpha * 0.10,
+                    r: r * 0.7,
+                    g: g * 0.7,
+                    b: b * 0.7,
+                    a: peak_alpha * 0.14,
                 },
             },
             D2D1_GRADIENT_STOP {
@@ -204,7 +217,7 @@ impl DevilUnionEyes {
         }
     }
 
-    /// Efek Background Iluminasi Blurry + Partikel HD (Crimson Thunder & Healing)
+    /// Menggambar Iluminasi Latar & Tepi Bawah Notch + Partikel Crimson Thunder / Healing
     pub unsafe fn draw_idle_aura_background(
         &self,
         rt: &ID2D1HwndRenderTarget,
@@ -215,47 +228,45 @@ impl DevilUnionEyes {
         rt.SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 
         let env = self.current_aura_envelope() * alpha;
-        if env <= 0.01 {
-            return;
-        }
-
         let pw = pill_rect.right - pill_rect.left;
         let ph = pill_rect.bottom - pill_rect.top;
         let cx = (pill_rect.left + pill_rect.right) * 0.5;
         let cy = (pill_rect.top + pill_rect.bottom) * 0.5;
 
         if !self.is_cheer_mode {
-            // 1. Iluminasi Merah-Hitam Blurry (Devil Union) + Kilatan Petir Merah HD
-            let drift_x = (self.phase_time * 2.2).sin() * 10.0;
-            let breathe = 0.82 + 0.18 * (self.phase_time * 4.5).sin();
-            self.draw_soft_radial_illumination(
+            // 1A. Iluminasi Tepi Bawah & Tengah Merah-Biru Gelap (Devil Union)
+            let pull_boost = 1.0 + self.sword_pull * 0.50;
+            self.draw_soft_radial_glow(
                 rt,
                 D2D_POINT_2F {
-                    x: cx + drift_x,
-                    y: cy + 1.0,
+                    x: cx,
+                    y: pill_rect.bottom - 2.0,
                 },
-                pw * 0.48,
-                ph * 0.95,
-                0.78,
-                0.08,
-                0.15,
-                0.32 * env * breathe,
+                pw * 0.46,
+                ph * 0.70,
+                0.85,
+                0.12,
+                0.24,
+                (0.32 * env * pull_boost).min(0.50),
             );
 
+            // Kilatan Crimson Thunder HD di Belakang Mata & Pedang
             let flash_wave =
-                ((self.phase_time * 11.0).sin() + (self.phase_time * 19.0).cos()) * 0.5;
-            if flash_wave > -0.10 {
-                let spark_alpha = ((flash_wave + 0.15) * 1.1).clamp(0.2, 0.92) * env;
+                ((self.phase_time * 12.0).sin() + (self.phase_time * 21.0).cos()) * 0.5;
+            if flash_wave > -0.15 || self.sword_pull > 0.3 {
+                let spark_alpha =
+                    (((flash_wave + 0.25) * 0.9).max(self.sword_pull * 0.85)).clamp(0.2, 0.92)
+                        * env;
                 let glow_col = D2D1_COLOR_F {
-                    r: 0.90,
-                    g: 0.10,
-                    b: 0.20,
-                    a: spark_alpha * 0.36,
+                    r: 0.94,
+                    g: 0.12,
+                    b: 0.22,
+                    a: spark_alpha * 0.38,
                 };
                 let core_col = D2D1_COLOR_F {
                     r: 1.0,
-                    g: 0.38,
-                    b: 0.44,
+                    g: 0.42,
+                    b: 0.48,
                     a: spark_alpha,
                 };
 
@@ -263,9 +274,9 @@ impl DevilUnionEyes {
                     rt.CreateSolidColorBrush(&glow_col, None),
                     rt.CreateSolidColorBrush(&core_col, None),
                 ) {
-                    let anchors = [-pw * 0.28, pw * 0.24];
+                    let anchors = [-pw * 0.26, pw * 0.22];
                     for (i, ax) in anchors.iter().enumerate() {
-                        let shift = (self.phase_time * 14.0 + i as f32 * 2.5).sin() * 4.0;
+                        let shift = (self.phase_time * 14.0 + i as f32 * 2.3).sin() * 4.0;
                         let bx = cx + ax + shift;
                         let by = pill_rect.top + 5.0;
 
@@ -288,7 +299,7 @@ impl DevilUnionEyes {
                                         y: by + 11.0,
                                     },
                                     D2D_POINT_2F {
-                                        x: bx + 3.0,
+                                        x: bx + 3.5,
                                         y: by + 19.0,
                                     },
                                     D2D_POINT_2F {
@@ -296,7 +307,7 @@ impl DevilUnionEyes {
                                         y: by + 13.5,
                                     },
                                     D2D_POINT_2F {
-                                        x: bx + 7.0,
+                                        x: bx + 7.5,
                                         y: by + 21.0,
                                     },
                                 ]);
@@ -310,41 +321,39 @@ impl DevilUnionEyes {
                 }
             }
         } else {
-            // 2. Iluminasi Hijau Blurry (Healing) + Partikel '+' & Micro-Glow
-            let drift_x = (self.phase_time * 1.8).sin() * 10.0;
-            let breathe = 0.85 + 0.15 * (self.phase_time * 3.2).sin();
-            self.draw_soft_radial_illumination(
+            // 1B. Iluminasi Tepi Bawah Hijau Muda & Biru Lembut Saat Normal Happy Mode + Partikel Healing '+'
+            self.draw_soft_radial_glow(
                 rt,
                 D2D_POINT_2F {
-                    x: cx + drift_x,
-                    y: cy + 2.0,
+                    x: cx,
+                    y: pill_rect.bottom - 2.0,
                 },
                 pw * 0.46,
-                ph * 0.92,
-                0.08,
-                0.72,
-                0.46,
-                0.28 * env * breathe,
+                ph * 0.70,
+                0.20,
+                0.88,
+                0.56,
+                0.34 * env,
             );
 
             let halo_col = D2D1_COLOR_F {
-                r: 0.16,
-                g: 0.85,
-                b: 0.56,
-                a: 0.28 * env,
+                r: 0.22,
+                g: 0.92,
+                b: 0.58,
+                a: 0.30 * env,
             };
             let core_col = D2D1_COLOR_F {
-                r: 0.65,
-                g: 0.98,
-                b: 0.82,
-                a: 0.88 * env,
+                r: 0.74,
+                g: 1.0,
+                b: 0.86,
+                a: 0.90 * env,
             };
 
             if let (Ok(halo_b), Ok(core_b)) = (
                 rt.CreateSolidColorBrush(&halo_col, None),
                 rt.CreateSolidColorBrush(&core_col, None),
             ) {
-                let slots = [-0.34_f32, -0.20, 0.20, 0.34];
+                let slots = [-0.33_f32, -0.20, 0.23, 0.35];
                 for (i, rel_x) in slots.iter().enumerate() {
                     let speed = 10.5 + (i as f32 * 2.0);
                     let progress = ((self.phase_time * speed + i as f32 * 6.0) % (ph - 8.0))
@@ -354,57 +363,43 @@ impl DevilUnionEyes {
 
                     let fade = (progress * std::f32::consts::PI).sin().clamp(0.0, 1.0);
                     if fade > 0.1 {
-                        if i % 2 == 0 {
-                            let arm = 2.2_f32;
-                            rt.DrawLine(
-                                D2D_POINT_2F { x: px - arm, y: py },
-                                D2D_POINT_2F { x: px + arm, y: py },
-                                &halo_b,
-                                2.6,
-                                None,
-                            );
-                            rt.DrawLine(
-                                D2D_POINT_2F { x: px, y: py - arm },
-                                D2D_POINT_2F { x: px, y: py + arm },
-                                &halo_b,
-                                2.6,
-                                None,
-                            );
-                            rt.DrawLine(
-                                D2D_POINT_2F { x: px - arm, y: py },
-                                D2D_POINT_2F { x: px + arm, y: py },
-                                &core_b,
-                                1.0,
-                                None,
-                            );
-                            rt.DrawLine(
-                                D2D_POINT_2F { x: px, y: py - arm },
-                                D2D_POINT_2F { x: px, y: py + arm },
-                                &core_b,
-                                1.0,
-                                None,
-                            );
-                        } else {
-                            self.draw_soft_radial_illumination(
-                                rt,
-                                D2D_POINT_2F { x: px, y: py },
-                                4.0,
-                                4.0,
-                                0.45,
-                                0.96,
-                                0.76,
-                                0.72 * env * fade,
-                            );
-                        }
+                        let arm = 2.1_f32;
+                        rt.DrawLine(
+                            D2D_POINT_2F { x: px - arm, y: py },
+                            D2D_POINT_2F { x: px + arm, y: py },
+                            &halo_b,
+                            2.5,
+                            None,
+                        );
+                        rt.DrawLine(
+                            D2D_POINT_2F { x: px, y: py - arm },
+                            D2D_POINT_2F { x: px, y: py + arm },
+                            &halo_b,
+                            2.5,
+                            None,
+                        );
+                        rt.DrawLine(
+                            D2D_POINT_2F { x: px - arm, y: py },
+                            D2D_POINT_2F { x: px + arm, y: py },
+                            &core_b,
+                            1.0,
+                            None,
+                        );
+                        rt.DrawLine(
+                            D2D_POINT_2F { x: px, y: py - arm },
+                            D2D_POINT_2F { x: px, y: py + arm },
+                            &core_b,
+                            1.0,
+                            None,
+                        );
                     }
                 }
             }
         }
     }
 
-    /// Menggambar Maskot Asta Versi 6.0:
-    /// - Mode Devil Union: Mata Merah + Mahkota Tanduk + Pedang Demon-Slayer Akurat Mengambang + Tangan Muncul Meraih Pedang + Mata Melirik
-    /// - Mode Normal Happy: Mata Hijau Khas Asta + Mulut Tersenyum Bahagia (`◡`) + Ikat Kepala Black Bulls
+    /// Menggambar Mata Bersinar (Illuminated) Model Foto 1 & Foto 2 yang Dipadukan dengan
+    /// Warna Mata, Rambut Spiky, & Aksesori Kepala Khas Asta (Devil Union vs Normal Happy)!
     pub unsafe fn draw(
         &self,
         rt: &ID2D1HwndRenderTarget,
@@ -418,472 +413,704 @@ impl DevilUnionEyes {
         }
         rt.SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 
-        // Geser sedikit pusat mata ke kiri (-6px) saat Devil Union agar ruang kanan pas untuk pedang & tangan
-        let face_cx = if !self.is_cheer_mode {
-            center_x - 6.0
-        } else {
-            center_x
-        };
-        let eye_spacing = 12.5_f32;
-        let open_factor = (1.0 - self.blink_progress).clamp(0.08, 1.0);
-
-        let skin_peach = D2D1_COLOR_F {
-            r: 0.96,
-            g: 0.82,
-            b: 0.72,
+        // Palet Warna Karakter Asta + Efek Illuminated
+        let obsidian_hair = D2D1_COLOR_F {
+            r: 0.08,
+            g: 0.09,
+            b: 0.13,
             a: alpha,
         };
-        let hair_ash_light = D2D1_COLOR_F {
-            r: 0.85,
+        let obsidian_horn = D2D1_COLOR_F {
+            r: 0.12,
+            g: 0.14,
+            b: 0.19,
+            a: alpha,
+        };
+        let ash_grey_light = D2D1_COLOR_F {
+            r: 0.84,
             g: 0.87,
             b: 0.91,
             a: alpha,
         };
-        let hair_ash_mid = D2D1_COLOR_F {
+        let ash_grey_mid = D2D1_COLOR_F {
             r: 0.64,
             g: 0.68,
-            b: 0.75,
+            b: 0.74,
             a: alpha,
         };
-        let headband_obsidian = D2D1_COLOR_F {
-            r: 0.09,
-            g: 0.11,
-            b: 0.15,
-            a: alpha,
-        };
-        let blade_iron = D2D1_COLOR_F {
-            r: 0.14,
-            g: 0.16,
-            b: 0.21,
-            a: alpha,
-        };
-        let crimson_core = D2D1_COLOR_F {
+        let crimson_crown = D2D1_COLOR_F {
             r: 0.94,
-            g: 0.16,
-            b: 0.24,
+            g: 0.14,
+            b: 0.26,
             a: alpha,
         };
-        let emerald_green = D2D1_COLOR_F {
-            r: 0.18,
-            g: 0.84,
-            b: 0.46,
+        let crimson_eye_outer = D2D1_COLOR_F {
+            r: 0.98,
+            g: 0.18,
+            b: 0.30,
             a: alpha,
         };
-        let sclera_white = D2D1_COLOR_F {
-            r: 0.97,
-            g: 0.98,
-            b: 1.00,
+        let crimson_eye_core = D2D1_COLOR_F {
+            r: 1.0,
+            g: 0.62,
+            b: 0.68,
             a: alpha,
         };
-        let smile_pink = D2D1_COLOR_F {
-            r: 0.94,
-            g: 0.45,
+        let light_green_outer = D2D1_COLOR_F {
+            r: 0.24,
+            g: 0.92,
             b: 0.52,
             a: alpha,
         };
+        let light_green_core = D2D1_COLOR_F {
+            r: 0.78,
+            g: 1.0,
+            b: 0.86,
+            a: alpha,
+        };
+        let light_green_glow_stroke = D2D1_COLOR_F {
+            r: 0.24,
+            g: 0.94,
+            b: 0.54,
+            a: alpha * 0.42,
+        };
+        let gold_badge = D2D1_COLOR_F {
+            r: 0.98,
+            g: 0.82,
+            b: 0.24,
+            a: alpha,
+        };
 
-        let Ok(skin_brush) = rt.CreateSolidColorBrush(&skin_peach, None) else { return };
-        let Ok(hair_light_brush) = rt.CreateSolidColorBrush(&hair_ash_light, None) else { return };
-        let Ok(hair_mid_brush) = rt.CreateSolidColorBrush(&hair_ash_mid, None) else { return };
-        let Ok(band_brush) = rt.CreateSolidColorBrush(&headband_obsidian, None) else { return };
-        let Ok(blade_brush) = rt.CreateSolidColorBrush(&blade_iron, None) else { return };
-        let Ok(crimson_brush) = rt.CreateSolidColorBrush(&crimson_core, None) else { return };
-        let Ok(emerald_brush) = rt.CreateSolidColorBrush(&emerald_green, None) else { return };
-        let Ok(sclera_brush) = rt.CreateSolidColorBrush(&sclera_white, None) else { return };
-        let Ok(smile_brush) = rt.CreateSolidColorBrush(&smile_pink, None) else { return };
+        let Ok(obs_hair_b) = rt.CreateSolidColorBrush(&obsidian_hair, None) else { return };
+        let Ok(obs_horn_b) = rt.CreateSolidColorBrush(&obsidian_horn, None) else { return };
+        let Ok(ash_light_b) = rt.CreateSolidColorBrush(&ash_grey_light, None) else { return };
+        let Ok(ash_mid_b) = rt.CreateSolidColorBrush(&ash_grey_mid, None) else { return };
+        let Ok(crimson_crown_b) = rt.CreateSolidColorBrush(&crimson_crown, None) else { return };
+        let Ok(crimson_eye_b) = rt.CreateSolidColorBrush(&crimson_eye_outer, None) else { return };
+        let Ok(crimson_core_b) = rt.CreateSolidColorBrush(&crimson_eye_core, None) else { return };
+        let Ok(green_eye_b) = rt.CreateSolidColorBrush(&light_green_outer, None) else { return };
+        let Ok(green_core_b) = rt.CreateSolidColorBrush(&light_green_core, None) else { return };
+        let Ok(green_glow_b) = rt.CreateSolidColorBrush(&light_green_glow_stroke, None) else {
+            return;
+        };
+        let Ok(gold_b) = rt.CreateSolidColorBrush(&gold_badge, None) else { return };
 
-        // 1. IKAT KEPALA BLACK BULLS & RAMBUT SPIKY ATAS (Simple & Gemas)
-        rt.FillRoundedRectangle(
-            &D2D1_ROUNDED_RECT {
-                rect: D2D_RECT_F {
-                    left: face_cx - 21.0,
-                    top: center_y - 11.0,
-                    right: face_cx + 21.0,
-                    bottom: center_y - 4.2,
+        let round_stroke = factory
+            .CreateStrokeStyle(
+                &D2D1_STROKE_STYLE_PROPERTIES {
+                    startCap: D2D1_CAP_STYLE_ROUND,
+                    endCap: D2D1_CAP_STYLE_ROUND,
+                    dashCap: D2D1_CAP_STYLE_ROUND,
+                    lineJoin: D2D1_LINE_JOIN_ROUND,
+                    miterLimit: 10.0,
+                    ..Default::default()
                 },
-                radiusX: 3.2,
-                radiusY: 3.2,
-            },
-            &band_brush,
-        );
+                None,
+            )
+            .ok();
 
-        // Insignia Cross Merah di sisi kiri headband
-        let bx = face_cx - 14.0;
-        let by = center_y - 7.6;
-        rt.DrawLine(
-            D2D_POINT_2F { x: bx - 2.6, y: by },
-            D2D_POINT_2F { x: bx + 2.6, y: by },
-            &crimson_brush,
-            1.5,
-            None,
-        );
-        rt.DrawLine(
-            D2D_POINT_2F { x: bx, y: by - 2.6 },
-            D2D_POINT_2F { x: bx, y: by + 2.6 },
-            &crimson_brush,
-            1.5,
-            None,
-        );
+        let face_cx = if !self.is_cheer_mode {
+            center_x - 5.5
+        } else {
+            center_x - 2.0
+        };
+        let eye_spacing = 10.0_f32;
+        let open_factor = (1.0 - self.blink_progress).clamp(0.10, 1.0);
+        let ey = center_y + 3.2 + self.look_y;
 
-        // Spiky Hair Ash-Silver di atas headband
-        let spikes = [
-            (-21.0_f32, -5.0_f32, -25.0_f32, -13.0_f32, -14.0_f32, -10.5_f32),
-            (-15.0, -9.5, -16.0, -16.5, -6.0, -10.5),
-            (-7.0, -10.0, -4.0, -17.5, 3.0, -10.0),
-            (1.0, -10.0, 7.0, -17.5, 12.0, -9.5),
-            (9.0, -9.5, 17.0, -16.0, 19.0, -7.5),
-            (15.0, -7.5, 25.0, -12.0, 21.0, -3.5),
-        ];
-        for (i, &(x1, y1, tx, ty, x2, y2)) in spikes.iter().enumerate() {
-            if let Ok(path) = factory.CreatePathGeometry() {
-                if let Ok(sink) = path.Open() {
-                    sink.BeginFigure(
-                        D2D_POINT_2F {
-                            x: face_cx + x1,
-                            y: center_y + y1,
-                        },
-                        D2D1_FIGURE_BEGIN_FILLED,
-                    );
-                    sink.AddLines(&[
-                        D2D_POINT_2F {
-                            x: face_cx + tx,
-                            y: center_y + ty,
-                        },
-                        D2D_POINT_2F {
-                            x: face_cx + x2,
-                            y: center_y + y2,
-                        },
-                    ]);
-                    sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-                    let _ = sink.Close();
-                    let b = if i % 2 == 0 {
-                        &hair_light_brush
-                    } else {
-                        &hair_mid_brush
-                    };
-                    rt.FillGeometry(&path, b, None);
+        if !self.is_cheer_mode {
+            // =================================================================
+            // FASE 1: ASTA DEVIL UNION MODE
+            // - Rambut Spiky Hitam + Tanduk Hitam + Aksesori Kepala Salib Merah
+            // - Mata Kapsul Vertikal Bersinar Merah (Illuminated Crimson Oval Eyes ● ●)
+            // - Tangan Bulat Bersinar Mengambil & Menarik Pedang Demon-Slayer
+            // =================================================================
+
+            // 1. Rambut Spiky Hitam Khas Devil Union di Bagian Atas
+            let black_spikes = [
+                (-20.0_f32, -4.5_f32, -24.0_f32, -12.5_f32, -13.0_f32, -9.5_f32),
+                (-14.0, -8.5, -15.0, -16.0, -5.0, -9.5),
+                (-6.0, -9.5, -2.5, -17.0, 3.0, -9.5),
+                (2.0, -9.5, 7.5, -17.0, 12.0, -8.5),
+                (9.0, -8.5, 16.5, -15.5, 18.0, -7.0),
+                (14.0, -7.0, 24.0, -11.5, 20.0, -3.5),
+            ];
+            for &(x1, y1, tx, ty, x2, y2) in &black_spikes {
+                if let Ok(path) = factory.CreatePathGeometry() {
+                    if let Ok(sink) = path.Open() {
+                        sink.BeginFigure(
+                            D2D_POINT_2F {
+                                x: face_cx + x1,
+                                y: center_y + y1,
+                            },
+                            D2D1_FIGURE_BEGIN_FILLED,
+                        );
+                        sink.AddLines(&[
+                            D2D_POINT_2F {
+                                x: face_cx + tx,
+                                y: center_y + ty,
+                            },
+                            D2D_POINT_2F {
+                                x: face_cx + x2,
+                                y: center_y + y2,
+                            },
+                        ]);
+                        sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+                        let _ = sink.Close();
+                        rt.FillGeometry(&path, &obs_hair_b, None);
+                    }
                 }
             }
-        }
 
-        // 2. TANDUK DEVIL UNION (Saat Mode Devil Union)
-        if !self.is_cheer_mode {
+            // 2. Tanduk Hitam Melengkung Devil Union di Kiri & Kanan Atas
             for side in [-1.0_f32, 1.0_f32] {
                 if let Ok(h_path) = factory.CreatePathGeometry() {
                     if let Ok(sink) = h_path.Open() {
-                        let hx = face_cx + side * 12.0;
-                        let hy = center_y - 10.0;
+                        let hx = face_cx + side * 14.5;
+                        let hy = center_y - 7.5;
                         sink.BeginFigure(D2D_POINT_2F { x: hx, y: hy }, D2D1_FIGURE_BEGIN_FILLED);
                         sink.AddBezier(&D2D1_BEZIER_SEGMENT {
                             point1: D2D_POINT_2F {
-                                x: hx + side * 7.0,
-                                y: hy - 5.0,
+                                x: hx + side * 6.5,
+                                y: hy - 4.5,
                             },
                             point2: D2D_POINT_2F {
                                 x: hx + side * 5.0,
-                                y: hy - 12.0,
+                                y: hy - 11.5,
                             },
                             point3: D2D_POINT_2F {
-                                x: hx + side * 1.2,
-                                y: hy - 15.5,
+                                x: hx + side * 1.0,
+                                y: hy - 14.5,
                             },
                         });
                         sink.AddBezier(&D2D1_BEZIER_SEGMENT {
                             point1: D2D_POINT_2F {
-                                x: hx + side * 2.0,
-                                y: hy - 9.5,
+                                x: hx + side * 1.5,
+                                y: hy - 9.0,
                             },
                             point2: D2D_POINT_2F {
-                                x: hx - side * 1.2,
-                                y: hy - 4.5,
+                                x: hx - side * 1.5,
+                                y: hy - 4.0,
                             },
                             point3: D2D_POINT_2F {
                                 x: hx - side * 4.0,
-                                y: hy,
+                                y: hy + 0.5,
                             },
                         });
                         sink.EndFigure(D2D1_FIGURE_END_CLOSED);
                         let _ = sink.Close();
-                        rt.FillGeometry(&h_path, &band_brush, None);
-                        rt.DrawGeometry(&h_path, &crimson_brush, 0.9, None);
+                        rt.FillGeometry(&h_path, &obs_horn_b, None);
+                        rt.DrawGeometry(&h_path, &crimson_crown_b, 0.9, None);
                     }
                 }
             }
-        }
 
-        // 3. MATA HIDUP (Bergeser Melirik Pedang saat Devil Union / Mata Hijau Cerah saat Normal Happy)
-        for side in [-1.0_f32, 1.0_f32] {
-            let ex = face_cx + side * eye_spacing;
-            let ey = center_y + 1.5;
-
-            if self.is_cheer_mode {
-                // Mata Hijau Khas Asta yang Berbinar Ceria
-                rt.FillEllipse(
-                    &D2D1_ELLIPSE {
-                        point: D2D_POINT_2F { x: ex, y: ey },
-                        radiusX: 5.4,
-                        radiusY: 4.3 * open_factor,
-                    },
-                    &sclera_brush,
-                );
-                let px = ex + self.look_x * 0.55;
-                let py = ey + self.look_y * 0.55;
-                rt.FillEllipse(
-                    &D2D1_ELLIPSE {
-                        point: D2D_POINT_2F { x: px, y: py },
-                        radiusX: 3.3,
-                        radiusY: 3.4 * open_factor,
-                    },
-                    &emerald_brush,
-                );
-                rt.FillEllipse(
-                    &D2D1_ELLIPSE {
-                        point: D2D_POINT_2F { x: px, y: py },
-                        radiusX: 1.3,
-                        radiusY: 1.4 * open_factor,
-                    },
-                    &band_brush,
-                );
-                // Catchlight putih bersih
-                rt.FillEllipse(
-                    &D2D1_ELLIPSE {
-                        point: D2D_POINT_2F {
-                            x: px - 1.1,
-                            y: py - 1.1 * open_factor,
-                        },
-                        radiusX: 1.1,
-                        radiusY: 1.1,
-                    },
-                    &sclera_brush,
-                );
-                // Alis ramah melengkung
-                rt.DrawLine(
-                    D2D_POINT_2F {
-                        x: ex - 4.8,
-                        y: ey - 4.8,
-                    },
-                    D2D_POINT_2F {
-                        x: ex + 4.8,
-                        y: ey - 4.0,
-                    },
-                    &band_brush,
-                    1.5,
-                    None,
-                );
-            } else {
-                // Mata Devil Union Tegas (Melirik ke arah pedang saat tangan mengambilnya!)
-                rt.FillEllipse(
-                    &D2D1_ELLIPSE {
-                        point: D2D_POINT_2F { x: ex, y: ey },
-                        radiusX: 5.8,
-                        radiusY: 3.7 * open_factor,
-                    },
-                    &sclera_brush,
-                );
-                let px = ex + self.look_x * 0.75;
-                let py = ey + self.look_y * 0.65;
-                rt.FillEllipse(
-                    &D2D1_ELLIPSE {
-                        point: D2D_POINT_2F { x: px, y: py },
-                        radiusX: 3.4,
-                        radiusY: 3.2 * open_factor,
-                    },
-                    &crimson_brush,
-                );
-                // Pupil vertikal tajam Devil Union
-                rt.FillEllipse(
-                    &D2D1_ELLIPSE {
-                        point: D2D_POINT_2F { x: px, y: py },
-                        radiusX: 0.9,
-                        radiusY: 2.7 * open_factor,
-                    },
-                    &band_brush,
-                );
-                rt.FillEllipse(
-                    &D2D1_ELLIPSE {
-                        point: D2D_POINT_2F {
-                            x: px - 1.0,
-                            y: py - 1.0 * open_factor,
-                        },
-                        radiusX: 0.85,
-                        radiusY: 0.85,
-                    },
-                    &sclera_brush,
-                );
-                // Alis serius menyudut ke tengah
-                rt.DrawLine(
-                    D2D_POINT_2F {
-                        x: ex - side * 4.6,
-                        y: ey - 2.4,
-                    },
-                    D2D_POINT_2F {
-                        x: ex + side * 5.6,
-                        y: ey - 4.8,
-                    },
-                    &band_brush,
-                    1.8,
-                    None,
-                );
-            }
-        }
-
-        // 4. MULUT SENYUM BAHAGIA SAAT MODE NORMAL & HAPPY (`is_cheer_mode == true`)
-        if self.is_cheer_mode {
-            // Mulut chibi tersenyum lebar bahagia (`◡` / terbuka ceria) di tengah bawah mata
-            if let Ok(mouth_path) = factory.CreatePathGeometry() {
-                if let Ok(sink) = mouth_path.Open() {
-                    let mx = face_cx;
-                    let my = center_y + 7.2;
+            // 3. Aksesori Kepala Salib Merah Devil Union (Bersinar Lembut di Dahi)
+            self.draw_soft_radial_glow(
+                rt,
+                D2D_POINT_2F {
+                    x: face_cx,
+                    y: center_y - 6.5,
+                },
+                18.0,
+                7.0,
+                0.95,
+                0.15,
+                0.28,
+                0.36 * alpha,
+            );
+            if let Ok(crown) = factory.CreatePathGeometry() {
+                if let Ok(sink) = crown.Open() {
+                    let cy_top = center_y - 7.5;
                     sink.BeginFigure(
                         D2D_POINT_2F {
-                            x: mx - 4.2,
-                            y: my - 0.5,
-                        },
-                        D2D1_FIGURE_BEGIN_FILLED,
-                    );
-                    sink.AddBezier(&D2D1_BEZIER_SEGMENT {
-                        point1: D2D_POINT_2F {
-                            x: mx - 2.2,
-                            y: my + 4.2,
-                        },
-                        point2: D2D_POINT_2F {
-                            x: mx + 2.2,
-                            y: my + 4.2,
-                        },
-                        point3: D2D_POINT_2F {
-                            x: mx + 4.2,
-                            y: my - 0.5,
-                        },
-                    });
-                    sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-                    let _ = sink.Close();
-                    rt.FillGeometry(&mouth_path, &smile_brush, None);
-                    rt.DrawGeometry(&mouth_path, &sclera_brush, 0.9, None);
-                }
-            }
-        }
-
-        // 5. PEDANG DEMON-SLAYER AKURAT MENGAMBANG & TANGAN MUNCUL PERLAHAN MERAIHNYA (Saat Mode Devil Union)
-        if !self.is_cheer_mode {
-            // Saat tangan semakin dekat (hand_grab_progress -> 1.0), pedang sedikit merendah menyambut tangan
-            let sword_bob = self.sword_float_phase.sin() * 2.4 * (1.0 - self.hand_grab_progress * 0.45);
-            let sx = face_cx + 33.0;
-            let sy = center_y + 1.0 + sword_bob * 0.6;
-
-            // Bilah Besar Demon-Slayer Greatsword (Bentuk Akurat dengan Punggung Tengah & Ujung Runcing)
-            if let Ok(sword_path) = factory.CreatePathGeometry() {
-                if let Ok(sink) = sword_path.Open() {
-                    sink.BeginFigure(
-                        D2D_POINT_2F {
-                            x: sx - 7.5,
-                            y: sy - 2.2,
+                            x: face_cx,
+                            y: cy_top - 4.5,
                         },
                         D2D1_FIGURE_BEGIN_FILLED,
                     );
                     sink.AddLines(&[
                         D2D_POINT_2F {
-                            x: sx + 10.5,
-                            y: sy - 6.2,
+                            x: face_cx + 4.5,
+                            y: cy_top - 1.2,
                         },
                         D2D_POINT_2F {
-                            x: sx + 16.5,
-                            y: sy,
+                            x: face_cx + 16.5,
+                            y: cy_top - 2.0,
                         },
                         D2D_POINT_2F {
-                            x: sx + 10.5,
-                            y: sy + 6.2,
+                            x: face_cx + 18.5,
+                            y: cy_top + 1.2,
                         },
                         D2D_POINT_2F {
-                            x: sx - 7.5,
-                            y: sy + 2.2,
+                            x: face_cx + 4.0,
+                            y: cy_top + 1.2,
+                        },
+                        D2D_POINT_2F {
+                            x: face_cx,
+                            y: cy_top + 5.5,
+                        },
+                        D2D_POINT_2F {
+                            x: face_cx - 4.0,
+                            y: cy_top + 1.2,
+                        },
+                        D2D_POINT_2F {
+                            x: face_cx - 18.5,
+                            y: cy_top + 1.2,
+                        },
+                        D2D_POINT_2F {
+                            x: face_cx - 16.5,
+                            y: cy_top - 2.0,
+                        },
+                        D2D_POINT_2F {
+                            x: face_cx - 4.5,
+                            y: cy_top - 1.2,
                         },
                     ]);
                     sink.EndFigure(D2D1_FIGURE_END_CLOSED);
                     let _ = sink.Close();
-
-                    rt.FillGeometry(&sword_path, &blade_brush, None);
-                    rt.DrawGeometry(&sword_path, &crimson_brush, 1.1, None);
+                    rt.FillGeometry(&crown, &crimson_crown_b, None);
                 }
             }
 
-            // Garis Anti-Magic Merah di Tengah Bilah Pedang (Fuller)
-            rt.DrawLine(
-                D2D_POINT_2F {
-                    x: sx - 5.5,
-                    y: sy,
-                },
-                D2D_POINT_2F {
-                    x: sx + 12.0,
-                    y: sy,
-                },
-                &crimson_brush,
-                1.2,
-                None,
+            // 4. MATA KAPSUL VERTIKAL BERSINAR MERAH DEVIL UNION (Model Foto 1, Warna Merah Asta!)
+            for side in [-1.0_f32, 1.0_f32] {
+                let ex = face_cx + self.look_x + side * eye_spacing;
+
+                // Neon Halo Merah Devil Union di sekeliling mata (Illuminated Effect!)
+                self.draw_soft_radial_glow(
+                    rt,
+                    D2D_POINT_2F { x: ex, y: ey },
+                    11.5,
+                    13.0,
+                    0.98,
+                    0.16,
+                    0.28,
+                    0.62 * alpha,
+                );
+
+                let rx = 3.9_f32;
+                let ry = 5.3_f32 * open_factor;
+
+                // Lapisan Luar Kapsul Merah Menyala
+                rt.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT {
+                        rect: D2D_RECT_F {
+                            left: ex - rx,
+                            top: ey - ry,
+                            right: ex + rx,
+                            bottom: ey + ry,
+                        },
+                        radiusX: rx,
+                        radiusY: ry,
+                    },
+                    &crimson_eye_b,
+                );
+
+                // Inti Terang Merah Muda/Putih Panas (Agar tampak menyala/illuminated)
+                let irx = 2.6_f32;
+                let iry = 3.8_f32 * open_factor;
+                rt.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT {
+                        rect: D2D_RECT_F {
+                            left: ex - irx,
+                            top: ey - iry,
+                            right: ex + irx,
+                            bottom: ey + iry,
+                        },
+                        radiusX: irx,
+                        radiusY: iry,
+                    },
+                    &crimson_core_b,
+                );
+
+                // Celah Pupil Vertikal Devil Union di Tengah Mata Kapsul
+                if open_factor > 0.3 {
+                    rt.FillEllipse(
+                        &D2D1_ELLIPSE {
+                            point: D2D_POINT_2F { x: ex, y: ey },
+                            radiusX: 0.85,
+                            radiusY: 3.1 * open_factor,
+                        },
+                        &obs_hair_b,
+                    );
+                }
+            }
+
+            // 5. PEDANG DEMON-SLAYER MENGAMBANG & DITARIK OLEH TANGAN KECIL BERSINAR
+            let float_bob =
+                self.sword_float_phase.sin() * 2.2 * (1.0 - self.grab_reach * 0.65);
+            let pull_offset_x = -7.5 * self.sword_pull;
+            let pull_offset_y = -0.8 * self.sword_pull;
+
+            let sx = center_x + 28.5 + pull_offset_x;
+            let sy = center_y + 1.5 + float_bob + pull_offset_y;
+
+            self.draw_soft_radial_glow(
+                rt,
+                D2D_POINT_2F { x: sx + 2.0, y: sy },
+                15.0,
+                9.5,
+                0.95,
+                0.15,
+                0.25,
+                (0.32 + 0.25 * self.sword_pull) * alpha,
             );
 
-            // Crossguard (Pelindung Gagang Pedang)
-            rt.DrawLine(
-                D2D_POINT_2F {
-                    x: sx - 7.8,
-                    y: sy - 4.2,
-                },
-                D2D_POINT_2F {
-                    x: sx - 7.8,
-                    y: sy + 4.2,
-                },
-                &crimson_brush,
-                2.0,
-                None,
-            );
+            if let Ok(sword_path) = factory.CreatePathGeometry() {
+                if let Ok(sink) = sword_path.Open() {
+                    sink.BeginFigure(
+                        D2D_POINT_2F {
+                            x: sx - 5.5,
+                            y: sy - 2.0,
+                        },
+                        D2D1_FIGURE_BEGIN_FILLED,
+                    );
+                    sink.AddLines(&[
+                        D2D_POINT_2F {
+                            x: sx + 9.5,
+                            y: sy - 5.4,
+                        },
+                        D2D_POINT_2F {
+                            x: sx + 15.0,
+                            y: sy,
+                        },
+                        D2D_POINT_2F {
+                            x: sx + 9.5,
+                            y: sy + 5.4,
+                        },
+                        D2D_POINT_2F {
+                            x: sx - 5.5,
+                            y: sy + 2.0,
+                        },
+                    ]);
+                    sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+                    let _ = sink.Close();
+                    rt.FillGeometry(&sword_path, &obs_horn_b, None);
+                    rt.DrawGeometry(&sword_path, &crimson_crown_b, 1.2, None);
+                }
+            }
 
-            // Gagang Pedang (Hilt) + Pommel tempat tangan Asta menggenggam
-            let hilt_x = sx - 13.5;
+            let hilt_x = sx - 10.5;
             rt.DrawLine(
                 D2D_POINT_2F { x: hilt_x, y: sy },
                 D2D_POINT_2F {
-                    x: sx - 8.0,
+                    x: sx + 10.0,
                     y: sy,
                 },
-                &crimson_brush,
-                2.4,
+                &crimson_crown_b,
+                1.5,
+                None,
+            );
+            rt.DrawLine(
+                D2D_POINT_2F {
+                    x: sx - 5.8,
+                    y: sy - 3.6,
+                },
+                D2D_POINT_2F {
+                    x: sx - 5.8,
+                    y: sy + 3.6,
+                },
+                &crimson_crown_b,
+                1.8,
                 None,
             );
 
-            // Tangan Asta yang Muncul Perlahan dari Bawah/Kiri dan Menggenggam Gagang Pedang!
-            let start_hand_x = face_cx + 16.0;
-            let start_hand_y = center_y + 9.5;
-            let target_hand_x = hilt_x + 2.2;
-            let target_hand_y = sy + 0.5;
+            // Tangan Bulat Kecil Bersinar Merah-Putih (Model Foto 2) Meraih & Menarik Pedang!
+            if self.grab_reach > 0.02 {
+                let hand_alpha = (self.grab_reach * 1.4).clamp(0.0, 1.0) * alpha;
+                let start_hx = center_x + 11.5;
+                let start_hy = center_y + 8.0;
+                let grip_hx = hilt_x + 1.5;
+                let grip_hy = sy + 0.5;
 
-            let cur_hand_x =
-                start_hand_x + (target_hand_x - start_hand_x) * self.hand_grab_progress;
-            let cur_hand_y =
-                start_hand_y + (target_hand_y - start_hand_y) * self.hand_grab_progress;
+                let hx = start_hx + (grip_hx - start_hx) * self.grab_reach;
+                let hy = start_hy + (grip_hy - start_hy) * self.grab_reach;
 
-            // Telapak tangan chibi
+                self.draw_soft_radial_glow(
+                    rt,
+                    D2D_POINT_2F { x: hx, y: hy },
+                    8.5,
+                    8.5,
+                    0.98,
+                    0.28,
+                    0.38,
+                    0.55 * hand_alpha,
+                );
+
+                rt.FillEllipse(
+                    &D2D1_ELLIPSE {
+                        point: D2D_POINT_2F { x: hx, y: hy },
+                        radiusX: 3.1,
+                        radiusY: 2.9,
+                    },
+                    &crimson_core_b,
+                );
+            }
+        } else {
+            // =================================================================
+            // FASE 2: ASTA NORMAL & HAPPY HEALING MODE
+            // - Rambut Spiky Abu-Abu Perak Khas Asta + Ikat Kepala Regu Banteng Hitam
+            // - Mata Bersinar Hijau Muda Khas Asta (Happy Arch `^ ^` & Kapsul `● ●`)
+            // - Tangan Bulat Kecil Bersinar di Kanan (`●`) Persis Gestur Foto 2!
+            // =================================================================
+
+            // 1. Rambut Spiky Abu-Abu Perak (Ash-Grey) Khas Asta di Atas Ikat Kepala
+            let ash_spikes = [
+                (-20.0_f32, -4.5_f32, -24.0_f32, -12.5_f32, -13.0_f32, -9.5_f32),
+                (-14.0, -8.5, -15.0, -16.0, -5.0, -9.5),
+                (-6.0, -9.5, -2.5, -17.0, 3.0, -9.5),
+                (2.0, -9.5, 7.5, -17.0, 12.0, -8.5),
+                (9.0, -8.5, 16.5, -15.5, 18.0, -7.0),
+                (14.0, -7.0, 24.0, -11.5, 20.0, -3.5),
+            ];
+            for (i, &(x1, y1, tx, ty, x2, y2)) in ash_spikes.iter().enumerate() {
+                if let Ok(path) = factory.CreatePathGeometry() {
+                    if let Ok(sink) = path.Open() {
+                        sink.BeginFigure(
+                            D2D_POINT_2F {
+                                x: face_cx + x1,
+                                y: center_y + y1,
+                            },
+                            D2D1_FIGURE_BEGIN_FILLED,
+                        );
+                        sink.AddLines(&[
+                            D2D_POINT_2F {
+                                x: face_cx + tx,
+                                y: center_y + ty,
+                            },
+                            D2D_POINT_2F {
+                                x: face_cx + x2,
+                                y: center_y + y2,
+                            },
+                        ]);
+                        sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+                        let _ = sink.Close();
+                        let b = if i % 2 == 0 { &ash_light_b } else { &ash_mid_b };
+                        rt.FillGeometry(&path, b, None);
+                    }
+                }
+            }
+
+            // 2. Ikat Kepala Regu Banteng Hitam (Black Bulls Headband)
+            rt.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: D2D_RECT_F {
+                        left: face_cx - 20.0,
+                        top: center_y - 9.8,
+                        right: face_cx + 20.0,
+                        bottom: center_y - 3.6,
+                    },
+                    radiusX: 3.0,
+                    radiusY: 3.0,
+                },
+                &obs_hair_b,
+            );
+
+            // Silang Merah di Sisi Kiri Ikat Kepala
+            let rx_cross = face_cx - 13.0;
+            let ry_cross = center_y - 6.7;
+            rt.DrawLine(
+                D2D_POINT_2F {
+                    x: rx_cross - 2.8,
+                    y: ry_cross,
+                },
+                D2D_POINT_2F {
+                    x: rx_cross + 2.8,
+                    y: ry_cross,
+                },
+                &crimson_crown_b,
+                1.5,
+                None,
+            );
+            rt.DrawLine(
+                D2D_POINT_2F {
+                    x: rx_cross,
+                    y: ry_cross - 2.5,
+                },
+                D2D_POINT_2F {
+                    x: rx_cross,
+                    y: ry_cross + 2.5,
+                },
+                &crimson_crown_b,
+                1.5,
+                None,
+            );
+
+            // Emblem Emas Black Bulls di Sisi Kanan Ikat Kepala
+            let gx = face_cx + 13.5;
+            let gy = center_y - 6.7;
             rt.FillEllipse(
                 &D2D1_ELLIPSE {
-                    point: D2D_POINT_2F {
-                        x: cur_hand_x,
-                        y: cur_hand_y,
-                    },
-                    radiusX: 3.3,
-                    radiusY: 2.9,
+                    point: D2D_POINT_2F { x: gx, y: gy },
+                    radiusX: 2.0,
+                    radiusY: 2.0,
                 },
-                &skin_brush,
+                &gold_b,
             );
-            rt.DrawEllipse(
-                &D2D1_ELLIPSE {
-                    point: D2D_POINT_2F {
-                        x: cur_hand_x,
-                        y: cur_hand_y,
+
+            // Poni Tengah Abu-Abu Kecil di Antara Mata
+            if let Ok(bang_path) = factory.CreatePathGeometry() {
+                if let Ok(sink) = bang_path.Open() {
+                    sink.BeginFigure(
+                        D2D_POINT_2F {
+                            x: face_cx - 2.5,
+                            y: center_y - 4.0,
+                        },
+                        D2D1_FIGURE_BEGIN_FILLED,
+                    );
+                    sink.AddLines(&[
+                        D2D_POINT_2F {
+                            x: face_cx,
+                            y: center_y + 1.5,
+                        },
+                        D2D_POINT_2F {
+                            x: face_cx + 2.5,
+                            y: center_y - 4.0,
+                        },
+                    ]);
+                    sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+                    let _ = sink.Close();
+                    rt.FillGeometry(&bang_path, &ash_light_b, None);
+                }
+            }
+
+            // 3. MATA BERSINAR HIJAU MUDA KHAS ASTA:
+            // Selama 4.8 detik pertama fase Normal/Happy (saat di-heal), tampilkan Happy Arch `^  ^`
+            // seperti Foto 2, lalu 2.7 detik berikutnya tampilkan mata kapsul hijau muda `●  ●`!
+            let is_happy_arch_subphase = self.mode_aura_timer < 4.8;
+            let bounce_y = (self.phase_time * 4.5).sin() * 0.7;
+            let happy_cy = ey + bounce_y;
+
+            for side in [-1.0_f32, 1.0_f32] {
+                let ex = face_cx + side * eye_spacing;
+
+                // Cahaya Iluminasi Hijau Muda (Emerald Neon Halo) di Sekeliling Mata!
+                self.draw_soft_radial_glow(
+                    rt,
+                    D2D_POINT_2F { x: ex, y: happy_cy },
+                    11.5,
+                    12.0,
+                    0.24,
+                    0.95,
+                    0.56,
+                    0.58 * alpha,
+                );
+
+                if is_happy_arch_subphase {
+                    // Bentuk Mata Lengkung Happy `^  ^` Bersinar Hijau Muda (Model Foto 2!)
+                    if let Ok(arch_path) = factory.CreatePathGeometry() {
+                        if let Ok(sink) = arch_path.Open() {
+                            sink.BeginFigure(
+                                D2D_POINT_2F {
+                                    x: ex - 4.4,
+                                    y: happy_cy + 2.2,
+                                },
+                                D2D1_FIGURE_BEGIN_HOLLOW,
+                            );
+                            sink.AddBezier(&D2D1_BEZIER_SEGMENT {
+                                point1: D2D_POINT_2F {
+                                    x: ex - 2.1,
+                                    y: happy_cy - 4.0,
+                                },
+                                point2: D2D_POINT_2F {
+                                    x: ex + 2.1,
+                                    y: happy_cy - 4.0,
+                                },
+                                point3: D2D_POINT_2F {
+                                    x: ex + 4.4,
+                                    y: happy_cy + 2.2,
+                                },
+                            });
+                            sink.EndFigure(D2D1_FIGURE_END_OPEN);
+                            let _ = sink.Close();
+
+                            // Lapisan 1: Outer Emerald Bloom
+                            rt.DrawGeometry(
+                                &arch_path,
+                                &green_glow_b,
+                                6.2,
+                                round_stroke.as_ref(),
+                            );
+                            // Lapisan 2: Ring Hijau Muda Cerah
+                            rt.DrawGeometry(
+                                &arch_path,
+                                &green_eye_b,
+                                3.6,
+                                round_stroke.as_ref(),
+                            );
+                            // Lapisan 3: Inti Putih-Hijau Menyala
+                            rt.DrawGeometry(
+                                &arch_path,
+                                &green_core_b,
+                                1.8,
+                                round_stroke.as_ref(),
+                            );
+                        }
+                    }
+                } else {
+                    // Bentuk Mata Kapsul Oval `●  ●` Bersinar Hijau Muda Khas Asta (Model Foto 1!)
+                    let rx = 3.9_f32;
+                    let ry = 5.2_f32 * open_factor;
+                    let lx = ex + self.look_x * 0.6;
+                    rt.FillRoundedRectangle(
+                        &D2D1_ROUNDED_RECT {
+                            rect: D2D_RECT_F {
+                                left: lx - rx,
+                                top: happy_cy - ry,
+                                right: lx + rx,
+                                bottom: happy_cy + ry,
+                            },
+                            radiusX: rx,
+                            radiusY: ry,
+                        },
+                        &green_eye_b,
+                    );
+                    let irx = 2.5_f32;
+                    let iry = 3.6_f32 * open_factor;
+                    rt.FillRoundedRectangle(
+                        &D2D1_ROUNDED_RECT {
+                            rect: D2D_RECT_F {
+                                left: lx - irx,
+                                top: happy_cy - iry,
+                                right: lx + irx,
+                                bottom: happy_cy + iry,
+                            },
+                            radiusX: irx,
+                            radiusY: iry,
+                        },
+                        &green_core_b,
+                    );
+                }
+            }
+
+            // 4. TANGAN BULAT KECIL BERSINAR DI SEBELAH KANAN (`^  ^ ●`) PERSIS GESTUR FOTO 2!
+            let hand_wave = (self.phase_time * 6.0).sin() * 1.4;
+            let hx = face_cx + 18.5;
+            let hy = happy_cy + 2.2 + hand_wave;
+
+            self.draw_soft_radial_glow(
+                rt,
+                D2D_POINT_2F { x: hx, y: hy },
+                8.5,
+                8.5,
+                0.24,
+                0.95,
+                0.56,
+                0.55 * alpha,
+            );
+            rt.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: D2D_RECT_F {
+                        left: hx - 3.0,
+                        top: hy - 3.2,
+                        right: hx + 3.0,
+                        bottom: hy + 3.2,
                     },
-                    radiusX: 3.3,
-                    radiusY: 2.9,
+                    radiusX: 2.6,
+                    radiusY: 2.6,
                 },
-                &band_brush,
-                0.8,
-                None,
+                &green_core_b,
             );
         }
     }
