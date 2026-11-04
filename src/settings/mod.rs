@@ -22,7 +22,7 @@ pub enum SettingsEvent {
 }
 
 /// Main settings structure
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     /// General settings
     pub start_with_windows: bool,
@@ -51,6 +51,28 @@ pub struct Settings {
     /// Custom key-value storage for extensibility
     #[serde(flatten)]
     pub custom: HashMap<String, String>,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            start_with_windows: false,
+            show_mascot: true,
+            minimal_notch: false,
+            notch_width: 156,
+            notch_height: 34,
+            corner_radius: 15,
+            pomodoro_work_minutes: 25,
+            pomodoro_short_break_minutes: 5,
+            pomodoro_long_break_minutes: 15,
+            water_goal_ml: 1500,
+            water_reminder_hours: 2,
+            show_lyrics: true,
+            lyrics_provider: "lrclib".to_string(),
+            shelf_max_items: 10,
+            custom: HashMap::new(),
+        }
+    }
 }
 
 impl Settings {

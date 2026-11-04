@@ -408,11 +408,11 @@ impl NotchRenderer {
             13.0
         };
 
-        // Base Notch Obsidian Pitch-Black (#040406)
+        // Borderless pure-black notch.
         let pitch_black = D2D1_COLOR_F {
-            r: 0.016,
-            g: 0.016,
-            b: 0.022,
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
             a: 1.0,
         };
         if let Ok(bezel_geom) = self.create_top_bezel_notch_geometry(pill_rect, radius, flare) {
