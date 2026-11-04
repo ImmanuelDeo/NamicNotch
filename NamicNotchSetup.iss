@@ -54,6 +54,7 @@ Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{group}\Namic Notch"; Filename: "{app}\nusa.exe"; WorkingDir: "{app}"; Comment: "A living dynamic notch for Windows"
 Name: "{group}\{cm:UninstallProgram,Namic Notch}"; Filename: "{uninstallexe}"; WorkingDir: "{app}"
 Name: "{userdesktop}\Namic Notch"; Filename: "{app}\nusa.exe"; WorkingDir: "{app}"; Comment: "A living dynamic notch for Windows"; Tasks: desktopicon
+Name: "{userstartup}\Namic Notch"; Filename: "{app}\nusa.exe"; WorkingDir: "{app}"; Comment: "A living dynamic notch for Windows"; Tasks: startup
 
 [Registry]
 ; Auto-start with Windows
