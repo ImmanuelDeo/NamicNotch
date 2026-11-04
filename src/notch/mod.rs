@@ -282,6 +282,32 @@ impl NotchApp {
         let pill_cy = (pill_rect.top + pill_rect.bottom) * 0.5;
         let cursor_offset = Some((local_logical_x - pill_cx, local_logical_y - pill_cy));
 
+        // Dragging track bar secara real-time
+        if self.controller.is_dragging_track_bar {
+            unsafe {
+                if (windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(0x01) as u16 & 0x8000) != 0 {
+                    let pill_w = pill_rect.right - pill_rect.left;
+                    let lx = local_logical_x - pill_rect.left;
+                    let content_l = 26.0;
+                    let content_w = pill_w - 52.0;
+                    let cx = lx - content_l;
+                    let right_limit = if self.controller.show_side_lyrics {
+                        content_w * 0.57
+                    } else {
+                        content_w - 4.0
+                    };
+                    let bar_l = 42.0;
+                    let bar_r = (right_limit - 46.0).max(bar_l + 30.0);
+                    let ratio = ((cx - bar_l) / (bar_r - bar_l)).clamp(0.0, 1.0);
+                    self.controller.media_progress = ratio;
+                    self.controller.media_elapsed_exact = ratio * self.controller.media_total_secs;
+                } else {
+                    self.controller.is_dragging_track_bar = false;
+                    states::NotchController::seek_system_media(self.controller.media_elapsed_exact);
+                }
+            }
+        }
+
         self.controller.update(dt, cursor_in_pill, cursor_offset);
 
         unsafe {
@@ -381,8 +407,9 @@ pub fn run_ui(
     event_rx: mpsc::Receiver<NotchEvent>,
     settings: Arc<RwLock<Settings>>,
 ) -> Result<()> {
-    let class_name = to_wide_string("NusaNotchCloneWindow\0");
-    let app_icon = crate::icon::create_antimagic_hicon();
+    let class_name = to_wide_string("NamicNotchWindow\0");
+    let app_icon = crate::icon::get_app_icon(false);
+    let app_icon_sm = crate::icon::get_app_icon(true);
 
     let wc = WNDCLASSEXW {
         cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
@@ -396,7 +423,7 @@ pub fn run_ui(
         hbrBackground: HBRUSH::default(),
         lpszMenuName: PCWSTR::null(),
         lpszClassName: PCWSTR(class_name.as_ptr()),
-        hIconSm: app_icon,
+        hIconSm: app_icon_sm,
     };
 
     unsafe {
@@ -412,7 +439,7 @@ pub fn run_ui(
         let hwnd = CreateWindowExW(
             ex_style,
             PCWSTR(class_name.as_ptr()),
-            PCWSTR(to_wide_string("Notch\0").as_ptr()),
+            PCWSTR(to_wide_string("Namic Notch\0").as_ptr()),
             WS_POPUP | WS_VISIBLE,
             0,
             0,
@@ -497,6 +524,16 @@ extern "system" fn notch_wnd_proc(
                 let x = (lparam.0 & 0xFFFF) as i16 as f32;
                 let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as f32;
                 app.on_lbutton_down(x, y);
+                return LRESULT(0);
+            }
+            WM_LBUTTONUP => {
+                if app.controller.is_dragging_track_bar {
+                    app.controller.is_dragging_track_bar = false;
+                    states::NotchController::seek_system_media(app.controller.media_elapsed_exact);
+                    unsafe {
+                        let _ = InvalidateRect(hwnd, None, false);
+                    }
+                }
                 return LRESULT(0);
             }
             WM_MOUSEWHEEL => {

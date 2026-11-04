@@ -1,6 +1,6 @@
 #![windows_subsystem = "windows"]
 
-//! Nusa Notch Clone - A living notch for Windows
+//! Namic Notch - A living notch for Windows
 //! 
 //! Clean native Win32/Direct2D implementation running UI on main thread.
 
@@ -24,7 +24,7 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 
 fn main() -> Result<()> {
     // 1. Single instance check
-    let _instance = SingleInstance::new("NusaNotchClone").ok();
+    let _instance = SingleInstance::new("NamicNotch_SingleInstance_Mutex").ok();
 
     // 2. Load settings
     let settings = Arc::new(RwLock::new(settings::Settings::load().unwrap_or_default()));

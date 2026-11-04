@@ -193,6 +193,10 @@ pub struct NotchController {
     pub show_side_lyrics: bool,
     pub timed_lyrics: Vec<(f32, String)>,
     pub active_lyric_idx: usize,
+    pub prev_lyric_idx: usize,
+    pub lyric_anim_progress: f32,
+    pub is_dragging_track_bar: bool,
+    pub playback_rate: f64,
     live_media_arc: Arc<Mutex<Option<LiveMediaSnapshot>>>,
 
     // --- Section 3: Pomodoro Timer (Focus 25m vs Break 5m) ---
@@ -261,6 +265,10 @@ impl NotchController {
                 (18.0, String::from("Klik ikon 💬 untuk tampil/sembunyikan lirik")),
             ],
             active_lyric_idx: 0,
+            prev_lyric_idx: 0,
+            lyric_anim_progress: 1.0,
+            is_dragging_track_bar: false,
+            playback_rate: 1.0,
             live_media_arc,
 
             pomo_remaining_secs: 25 * 60,
@@ -375,7 +383,8 @@ impl NotchController {
             let mut cached_lyrics: Vec<(f32, String)> = Vec::new();
 
             loop {
-                std::thread::sleep(std::time::Duration::from_millis(900));
+                // Polling cepat 250ms untuk responsivitas instan saat seek / play / pause
+                std::thread::sleep(std::time::Duration::from_millis(250));
 
                 let Ok(mgr_op) = GlobalSystemMediaTransportControlsSessionManager::RequestAsync() else {
                     continue;
@@ -433,40 +442,113 @@ impl NotchController {
         });
     }
 
-    fn fetch_timed_lrclib(title: &str, artist: &str, total_secs: f32) -> Vec<(f32, String)> {
-        let query = format!(
-            "https://lrclib.net/api/search?q={}%20{}",
-            title.replace(' ', "%20"),
-            artist.replace(' ', "%20")
+    fn clean_music_title_and_artist(raw_title: &str, raw_artist: &str) -> (String, String) {
+        let mut title = raw_title.trim().to_string();
+        let mut artist = raw_artist.trim().to_string();
+
+        if (artist.is_empty() || artist.contains("YouTube") || artist.contains("Browser") || artist.contains("Media"))
+            && title.contains(" - ")
+        {
+            let parts: Vec<&str> = title.splitn(2, " - ").collect();
+            if parts.len() == 2 {
+                artist = parts[0].trim().to_string();
+                title = parts[1].trim().to_string();
+            }
+        }
+
+        // Hapus noise umum seperti (Official Video), [MV], (Lyric Video), dsb
+        let mut cleaned = String::new();
+        let mut in_paren = false;
+        let mut buf = String::new();
+        for c in title.chars() {
+            if c == '(' || c == '[' {
+                in_paren = true;
+                buf.clear();
+            } else if c == ')' || c == ']' {
+                in_paren = false;
+                let lower = buf.to_lowercase();
+                let is_noise = lower.contains("official")
+                    || lower.contains("video")
+                    || lower.contains("audio")
+                    || lower.contains("lyric")
+                    || lower.contains("mv")
+                    || lower.contains("remaster")
+                    || lower.contains("feat")
+                    || lower.contains("ft.")
+                    || lower.contains("hd")
+                    || lower.contains("4k")
+                    || lower.contains("full");
+                if !is_noise && !buf.is_empty() {
+                    cleaned.push('(');
+                    cleaned.push_str(&buf);
+                    cleaned.push(')');
+                }
+                buf.clear();
+            } else if in_paren {
+                buf.push(c);
+            } else {
+                cleaned.push(c);
+            }
+        }
+
+        let mut final_title = cleaned.replace("  ", " ").trim().to_string();
+        if final_title.is_empty() {
+            final_title = raw_title.trim().to_string();
+        }
+        (final_title, artist)
+    }
+
+    fn fetch_timed_lrclib(raw_title: &str, raw_artist: &str, total_secs: f32) -> Vec<(f32, String)> {
+        let (title, artist) = Self::clean_music_title_and_artist(raw_title, raw_artist);
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(3))
+            .user_agent("NamicNotch/1.0")
+            .build()
+            .ok();
+
+        let Some(client) = client else { return Vec::new(); };
+
+        // 1. Coba /api/get dengan parameter track_name dan artist_name
+        if !artist.is_empty() && !title.is_empty() {
+            let get_url = format!(
+                "https://lrclib.net/api/get?track_name={}&artist_name={}",
+                urlencoding::encode(&title),
+                urlencoding::encode(&artist)
+            );
+            if let Ok(resp) = client.get(&get_url).send() {
+                if let Ok(json) = resp.json::<serde_json::Value>() {
+                    if let Some(synced) = json.get("syncedLyrics").and_then(|v| v.as_str()) {
+                        let parsed = Self::parse_lrc_lines(synced);
+                        if !parsed.is_empty() {
+                            return parsed;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Fallback ke /api/search?q=...
+        let search_query = if artist.is_empty() || artist.contains("YouTube") {
+            title.clone()
+        } else {
+            format!("{} {}", artist, title)
+        };
+        let search_url = format!(
+            "https://lrclib.net/api/search?q={}",
+            urlencoding::encode(&search_query)
         );
-        if let Ok(resp) = reqwest::blocking::get(&query) {
+        if let Ok(resp) = client.get(&search_url).send() {
             if let Ok(json) = resp.json::<serde_json::Value>() {
                 if let Some(arr) = json.as_array() {
-                    if let Some(first) = arr.first() {
-                        if let Some(synced) = first.get("syncedLyrics").and_then(|v| v.as_str()) {
-                            let mut timed = Vec::new();
-                            for line in synced.lines() {
-                                if let (Some(open), Some(close)) = (line.find('['), line.find(']')) {
-                                    if close > open + 1 {
-                                        let tag = &line[open + 1..close];
-                                        let text = line[close + 1..].trim().to_string();
-                                        if !text.is_empty() {
-                                            if let Some(colon) = tag.find(':') {
-                                                let mins: f32 =
-                                                    tag[..colon].parse().unwrap_or(0.0);
-                                                let secs: f32 =
-                                                    tag[colon + 1..].parse().unwrap_or(0.0);
-                                                timed.push((mins * 60.0 + secs, text));
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            if !timed.is_empty() {
-                                return timed;
+                    for item in arr.iter().take(4) {
+                        if let Some(synced) = item.get("syncedLyrics").and_then(|v| v.as_str()) {
+                            let parsed = Self::parse_lrc_lines(synced);
+                            if !parsed.is_empty() {
+                                return parsed;
                             }
                         }
-
+                    }
+                    if let Some(first) = arr.first() {
                         if let Some(plain) = first.get("plainLyrics").and_then(|v| v.as_str()) {
                             let raw_lines: Vec<String> = plain
                                 .lines()
@@ -486,11 +568,40 @@ impl NotchController {
                 }
             }
         }
+
         vec![
             (0.0, format!("♪ {}", title)),
-            (4.0, format!("Artist: {}", if artist.is_empty() { "Unknown" } else { artist })),
-            (8.0, String::from("Streaming aktif di Nusa Notch")),
+            (4.0, format!("Artist: {}", if artist.is_empty() { "Unknown" } else { &artist })),
+            (8.0, String::from("Streaming aktif di Namic Notch")),
         ]
+    }
+
+    fn parse_lrc_lines(synced: &str) -> Vec<(f32, String)> {
+        let mut timed = Vec::new();
+        for line in synced.lines() {
+            let line = line.trim();
+            if line.starts_with('[') {
+                if let Some(close) = line.find(']') {
+                    let tag = &line[1..close];
+                    let text = line[close + 1..].trim();
+                    if let Some(colon) = tag.find(':') {
+                        let mins_str = tag[..colon].trim();
+                        let secs_str = tag[colon + 1..].trim();
+                        if let (Ok(mins), Ok(secs)) = (mins_str.parse::<f32>(), secs_str.parse::<f32>()) {
+                            let timestamp = mins * 60.0 + secs;
+                            let display_text = if text.is_empty() {
+                                "♪ · · ·".to_string()
+                            } else {
+                                text.to_string()
+                            };
+                            timed.push((timestamp, display_text));
+                        }
+                    }
+                }
+            }
+        }
+        timed.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        timed
     }
 
     fn read_windows_power() -> (u8, bool) {
@@ -663,16 +774,13 @@ impl NotchController {
                 self.quote_offset =
                     (self.quote_offset + MOTIVATIONAL_QUOTES.len() - 1) % MOTIVATIONAL_QUOTES.len();
             }
-        } else if self.state == NotchState::Music && !self.timed_lyrics.is_empty() {
-            if delta < 0 {
-                self.active_lyric_idx = (self.active_lyric_idx + 1) % self.timed_lyrics.len();
-            } else if delta > 0 {
-                self.active_lyric_idx = if self.active_lyric_idx == 0 {
-                    self.timed_lyrics.len() - 1
-                } else {
-                    self.active_lyric_idx - 1
-                };
-            }
+        } else if self.state == NotchState::Music {
+            // Scroll mouse di music panel: Seek maju (+5s) atau mundur (-5s) secara instan!
+            let step_secs = if delta > 0 { 5.0 } else { -5.0 };
+            let new_secs = (self.media_elapsed_exact + step_secs).clamp(0.0, self.media_total_secs);
+            self.media_elapsed_exact = new_secs;
+            self.media_progress = (new_secs / self.media_total_secs.max(1.0)).clamp(0.0, 1.0);
+            Self::seek_system_media(new_secs);
         }
     }
 
@@ -683,13 +791,12 @@ impl NotchController {
             self.stagedock_flash_timer = (self.stagedock_flash_timer - dt).max(0.0);
         }
 
-        // PERBAIKAN TIMELINE MUSIK LOOPING DI DETIK KE-2:
-        // Hanya sinkronkan `media_elapsed_exact` ketika judul lagu berganti ATAU ketika nilai mentah
-        // `raw_gsmtc_pos` dari Windows benar-benar berubah (misalnya karena user melakukan seek)!
+        // Animasi transisi lirik mengalun halus (ease-out lerp)
+        self.lyric_anim_progress = (self.lyric_anim_progress + dt * 4.5).min(1.0);
+
         if let Ok(mut guard) = self.live_media_arc.try_lock() {
             if let Some(snap) = guard.take() {
                 let title_changed = self.media_title != snap.title;
-                let gsmtc_pos_changed = (snap.raw_gsmtc_pos - self.last_raw_gsmtc_pos).abs() > 0.5;
 
                 self.media_title = snap.title;
                 self.media_artist = snap.artist;
@@ -702,24 +809,33 @@ impl NotchController {
                 if title_changed {
                     self.last_raw_gsmtc_pos = snap.raw_gsmtc_pos;
                     self.media_elapsed_exact = snap.raw_gsmtc_pos;
-                } else if gsmtc_pos_changed && snap.raw_gsmtc_pos > 0.1 {
-                    // Hanya update jika aplikasi pemutar musik benar-benar mengirim posisi baru (seek)
-                    self.last_raw_gsmtc_pos = snap.raw_gsmtc_pos;
-                    self.media_elapsed_exact = snap.raw_gsmtc_pos;
+                } else if !self.is_dragging_track_bar {
+                    let diff = (snap.raw_gsmtc_pos - self.media_elapsed_exact).abs();
+                    if diff > 1.8 {
+                        // User seek di player eksternal (Spotify/YouTube/Browser)
+                        self.last_raw_gsmtc_pos = snap.raw_gsmtc_pos;
+                        self.media_elapsed_exact = snap.raw_gsmtc_pos;
+                    } else if diff > 0.35 && snap.raw_gsmtc_pos > 0.05 {
+                        // Koreksi halus drift waktu agar 100% presisi dan sinkron dengan audio
+                        self.media_elapsed_exact = self.media_elapsed_exact * 0.70 + snap.raw_gsmtc_pos * 0.30;
+                    }
                 }
 
                 if !snap.timed_lyrics.is_empty() && (title_changed || self.timed_lyrics.len() <= 4)
                 {
                     self.timed_lyrics = snap.timed_lyrics;
+                    self.active_lyric_idx = 0;
+                    self.prev_lyric_idx = 0;
+                    self.lyric_anim_progress = 1.0;
                 }
             }
         }
 
         // Majukan timeline secara mulus setiap frame selama musik sedang diputar
-        if self.media_playing && self.media_total_secs > 1.0 {
-            self.media_elapsed_exact += dt;
+        if self.media_playing && !self.is_dragging_track_bar && self.media_total_secs > 1.0 {
+            self.media_elapsed_exact += dt * self.playback_rate as f32;
             if self.media_elapsed_exact > self.media_total_secs {
-                self.media_elapsed_exact = 0.0;
+                self.media_elapsed_exact = self.media_total_secs;
             }
             self.media_progress =
                 (self.media_elapsed_exact / self.media_total_secs).clamp(0.0, 1.0);
@@ -727,13 +843,17 @@ impl NotchController {
             if !self.timed_lyrics.is_empty() {
                 let mut found_idx = 0;
                 for (i, (ts, _)) in self.timed_lyrics.iter().enumerate() {
-                    if *ts <= self.media_elapsed_exact + 0.30 {
+                    if *ts <= self.media_elapsed_exact + 0.15 {
                         found_idx = i;
                     } else {
                         break;
                     }
                 }
-                self.active_lyric_idx = found_idx;
+                if found_idx != self.active_lyric_idx {
+                    self.prev_lyric_idx = self.active_lyric_idx;
+                    self.active_lyric_idx = found_idx;
+                    self.lyric_anim_progress = 0.0;
+                }
             }
         }
 
@@ -822,6 +942,31 @@ impl NotchController {
         if self.chibi_liebe.is_visible() {
             self.chibi_liebe.update(dt);
         }
+    }
+
+    pub fn seek_system_media(seek_secs: f32) {
+        std::thread::spawn(move || {
+            if let Ok(op) = GlobalSystemMediaTransportControlsSessionManager::RequestAsync() {
+                if let Ok(manager) = op.get() {
+                    if let Ok(session) = manager.GetCurrentSession() {
+                        let requested_pos = (seek_secs.max(0.0) as f64 * 10_000_000.0) as i64;
+                        let _ = session.TryChangePlaybackPositionAsync(requested_pos);
+                    }
+                }
+            }
+        });
+    }
+
+    pub fn change_system_playback_rate(rate: f64) {
+        std::thread::spawn(move || {
+            if let Ok(op) = GlobalSystemMediaTransportControlsSessionManager::RequestAsync() {
+                if let Ok(manager) = op.get() {
+                    if let Ok(session) = manager.GetCurrentSession() {
+                        let _ = session.TryChangePlaybackRateAsync(rate);
+                    }
+                }
+            }
+        });
     }
 
     fn send_system_media_command(cmd: &'static str) {
@@ -944,21 +1089,46 @@ impl NotchController {
             }
             NotchState::Music => {
                 let right_limit = if self.show_side_lyrics {
-                    content_w * 0.56
+                    content_w * 0.57
                 } else {
-                    content_w - 6.0
+                    content_w - 4.0
                 };
 
-                let bar_l = 36.0;
-                let bar_r = (right_limit - 38.0).max(bar_l + 30.0);
-                if (50.0..=72.0).contains(&cy) && cx >= bar_l && cx <= bar_r {
-                    let ratio = ((cx - bar_l) / (bar_r - bar_l)).clamp(0.0, 1.0);
-                    self.media_progress = ratio;
-                    self.media_elapsed_exact = ratio * self.media_total_secs;
-                    return true;
+                let bar_l = 42.0;
+                let bar_r = (right_limit - 46.0).max(bar_l + 30.0);
+
+                // 1. Klik pada Track Bar (Seek / Fast Forward / Rewind)
+                if (48.0..=72.0).contains(&cy) {
+                    // Klik label waktu kiri: Rewind 5s (diperlambat / mundur)
+                    if cx < bar_l {
+                        let new_secs = (self.media_elapsed_exact - 5.0).max(0.0);
+                        self.media_elapsed_exact = new_secs;
+                        self.media_progress = (new_secs / self.media_total_secs.max(1.0)).clamp(0.0, 1.0);
+                        Self::seek_system_media(new_secs);
+                        return true;
+                    }
+                    // Klik label waktu kanan: Fast Forward 5s (dipercepat / maju)
+                    if cx > bar_r && cx <= right_limit {
+                        let new_secs = (self.media_elapsed_exact + 5.0).min(self.media_total_secs);
+                        self.media_elapsed_exact = new_secs;
+                        self.media_progress = (new_secs / self.media_total_secs.max(1.0)).clamp(0.0, 1.0);
+                        Self::seek_system_media(new_secs);
+                        return true;
+                    }
+                    // Klik langsung pada bar progress: Lompat ke detik tersebut dan mulai drag
+                    if cx >= bar_l - 4.0 && cx <= bar_r + 4.0 {
+                        let ratio = ((cx - bar_l) / (bar_r - bar_l)).clamp(0.0, 1.0);
+                        self.media_progress = ratio;
+                        self.media_elapsed_exact = ratio * self.media_total_secs;
+                        let seek_secs = self.media_elapsed_exact;
+                        Self::seek_system_media(seek_secs);
+                        self.is_dragging_track_bar = true;
+                        return true;
+                    }
                 }
 
-                if cy >= 73.0 && cx <= right_limit {
+                // 2. Baris tombol kontrol bawah (Lyrics toggle, Prev, Play/Pause, Next, Playback Speed)
+                if cy >= 74.0 && cx <= right_limit {
                     let mid = right_limit * 0.52;
                     if cx < mid - 46.0 {
                         self.show_side_lyrics = !self.show_side_lyrics;
@@ -972,16 +1142,34 @@ impl NotchController {
                         Self::send_system_media_command("toggle");
                         self.media_playing = !self.media_playing;
                         return true;
-                    } else if cx > mid + 16.0 && cx <= mid + 48.0 {
+                    } else if cx > mid + 16.0 && cx <= mid + 46.0 {
                         Self::send_system_media_command("next");
                         self.media_elapsed_exact = 0.0;
                         self.media_progress = 0.0;
                         return true;
+                    } else if cx > mid + 46.0 && cx <= right_limit {
+                        // Tombol Playback Speed: cycle 1.0x -> 1.25x -> 1.5x -> 2.0x -> 0.75x -> 1.0x
+                        self.playback_rate = match (self.playback_rate * 100.0).round() as i32 {
+                            100 => 1.25,
+                            125 => 1.50,
+                            150 => 2.00,
+                            200 => 0.75,
+                            _ => 1.00,
+                        };
+                        Self::change_system_playback_rate(self.playback_rate);
+                        return true;
                     }
                 }
 
+                // 3. Klik pada Side Lyrics: klik untuk lompat ke bait tersebut (Karaoke seeking!)
                 if self.show_side_lyrics && cx > right_limit && !self.timed_lyrics.is_empty() {
-                    self.active_lyric_idx = (self.active_lyric_idx + 1) % self.timed_lyrics.len();
+                    let next_idx = (self.active_lyric_idx + 1) % self.timed_lyrics.len();
+                    if let Some((ts, _)) = self.timed_lyrics.get(next_idx) {
+                        self.active_lyric_idx = next_idx;
+                        self.media_elapsed_exact = *ts;
+                        self.media_progress = (*ts / self.media_total_secs.max(1.0)).clamp(0.0, 1.0);
+                        Self::seek_system_media(*ts);
+                    }
                     return true;
                 }
             }

@@ -1004,6 +1004,24 @@ impl NotchRenderer {
             muted,
         );
 
+        if !ctrl.show_side_lyrics && !ctrl.timed_lyrics.is_empty() {
+            let total_lines = ctrl.timed_lyrics.len().max(1);
+            let cur_idx = ctrl.active_lyric_idx % total_lines;
+            if let Some((_, text)) = ctrl.timed_lyrics.get(cur_idx) {
+                self.draw_text_left(
+                    &format!("♪ {}", text),
+                    &self.fmt_caption,
+                    D2D_RECT_F {
+                        left: art_rect.right + 10.0,
+                        top: area.top + 44.0,
+                        right: player_right - 4.0,
+                        bottom: area.top + 58.0,
+                    },
+                    AntiMagicNeutralPalette::ACCENT_CYAN,
+                );
+            }
+        }
+
         let elapsed_s = ctrl.media_elapsed_exact.max(0.0) as u32;
         let total_s = ctrl.media_total_secs.max(1.0) as u32;
         let rem_s = total_s.saturating_sub(elapsed_s);
@@ -1080,6 +1098,25 @@ impl NotchRenderer {
                 &fb,
             );
         }
+        // Glowing cyan thumb for track bar
+        if let Ok(gb) = self.rt.CreateSolidColorBrush(
+            &D2D1_COLOR_F {
+                r: 0.0,
+                g: 0.96,
+                b: 1.0,
+                a: 0.35 * alpha,
+            },
+            None,
+        ) {
+            self.rt.FillEllipse(
+                &D2D1_ELLIPSE {
+                    point: D2D_POINT_2F { x: dot_x, y: bar_y },
+                    radiusX: 6.0,
+                    radiusY: 6.0,
+                },
+                &gb,
+            );
+        }
         if let Ok(wb) = self.rt.CreateSolidColorBrush(&white, None) {
             self.rt.FillEllipse(
                 &D2D1_ELLIPSE {
@@ -1144,6 +1181,46 @@ impl NotchRenderer {
             white,
         );
 
+        // Tombol Speed (1.0x, 1.25x, 1.5x, 2.0x, 0.75x)
+        let speed_str = format!("{:.2}x", ctrl.playback_rate)
+            .replace(".00", "")
+            .replace("0x", "x");
+        let speed_label = if speed_str == "1x" {
+            "1.0x".to_string()
+        } else {
+            speed_str
+        };
+        let speed_rect = D2D_RECT_F {
+            left: mid_x + 48.0,
+            top: ctrl_y - 8.0,
+            right: mid_x + 82.0,
+            bottom: ctrl_y + 10.0,
+        };
+        if let Ok(sb) = self.rt.CreateSolidColorBrush(
+            &D2D1_COLOR_F {
+                r: 0.14,
+                g: 0.20,
+                b: 0.30,
+                a: alpha,
+            },
+            None,
+        ) {
+            self.rt.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: speed_rect,
+                    radiusX: 4.5,
+                    radiusY: 4.5,
+                },
+                &sb,
+            );
+        }
+        self.draw_text_centered(
+            &speed_label,
+            &self.fmt_caption,
+            speed_rect,
+            AntiMagicNeutralPalette::ACCENT_CYAN,
+        );
+
         if ctrl.show_side_lyrics {
             let lyr_left = player_right + 10.0;
             if let Ok(div_b) = self.rt.CreateSolidColorBrush(
@@ -1191,38 +1268,89 @@ impl NotchRenderer {
                 .map(|(_, s)| s.as_str())
                 .unwrap_or("");
 
+            // Smooth ease-out vertical gliding offset
+            let ease = 1.0 - (1.0 - ctrl.lyric_anim_progress).powi(3);
+            let glide_y = (1.0 - ease) * 8.0;
+
+            // Baris lirik sebelumnya (fading up)
             self.draw_text_left(
                 prev_line,
                 &self.fmt_caption,
                 D2D_RECT_F {
-                    left: lyr_left,
-                    top: area.top + 6.0,
+                    left: lyr_left + 6.0,
+                    top: area.top + 6.0 - glide_y,
                     right: area.right,
-                    bottom: area.top + 26.0,
+                    bottom: area.top + 26.0 - glide_y,
                 },
-                muted,
+                D2D1_COLOR_F {
+                    r: 0.50,
+                    g: 0.55,
+                    b: 0.62,
+                    a: alpha * 0.55,
+                },
             );
+
+            // Indikator aktif bercahaya di samping kiri baris saat ini
+            let cur_top = area.top + 28.0 - glide_y;
+            let cur_bottom = area.top + 72.0 - glide_y;
+            if let Ok(ind_b) = self.rt.CreateSolidColorBrush(
+                &D2D1_COLOR_F {
+                    r: 0.0,
+                    g: 0.96,
+                    b: 1.0,
+                    a: alpha * (0.6 + 0.4 * ease),
+                },
+                None,
+            ) {
+                self.rt.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT {
+                        rect: D2D_RECT_F {
+                            left: lyr_left,
+                            top: cur_top + 4.0,
+                            right: lyr_left + 3.0,
+                            bottom: cur_top + 22.0,
+                        },
+                        radiusX: 1.5,
+                        radiusY: 1.5,
+                    },
+                    &ind_b,
+                );
+            }
+
+            // Baris lirik saat ini (terang menyala putih-cyan)
             self.draw_text_left(
                 cur_line,
                 &self.fmt_body,
                 D2D_RECT_F {
-                    left: lyr_left,
-                    top: area.top + 28.0,
+                    left: lyr_left + 8.0,
+                    top: cur_top,
                     right: area.right,
-                    bottom: area.top + 72.0,
+                    bottom: cur_bottom,
                 },
-                white,
+                D2D1_COLOR_F {
+                    r: 0.95,
+                    g: 1.0,
+                    b: 1.0,
+                    a: alpha * (0.85 + 0.15 * ease),
+                },
             );
+
+            // Baris lirik berikutnya (menunggu di bawah)
             self.draw_text_left(
                 next_line,
                 &self.fmt_caption,
                 D2D_RECT_F {
-                    left: lyr_left,
-                    top: area.top + 74.0,
+                    left: lyr_left + 6.0,
+                    top: area.top + 74.0 - glide_y,
                     right: area.right,
-                    bottom: area.top + 96.0,
+                    bottom: area.top + 96.0 - glide_y,
                 },
-                muted,
+                D2D1_COLOR_F {
+                    r: 0.58,
+                    g: 0.63,
+                    b: 0.72,
+                    a: alpha * 0.65,
+                },
             );
         }
     }

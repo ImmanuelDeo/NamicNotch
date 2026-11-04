@@ -6,8 +6,8 @@ IDI_ICON1 ICON "icon.ico"
 
 // Version info
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 0,1,0,0
- PRODUCTVERSION 0,1,0,0
+ FILEVERSION 1,0,0,0
+ PRODUCTVERSION 1,0,0,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -22,14 +22,14 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "CompanyName", "Nusa Notch Clone"
-            VALUE "FileDescription", "A living notch for Windows"
-            VALUE "FileVersion", "0.1.0.0"
-            VALUE "InternalName", "nusa-clone"
-            VALUE "LegalCopyright", "MIT OR Apache-2.0"
-            VALUE "OriginalFilename", "nusa-clone.exe"
-            VALUE "ProductName", "Nusa Notch Clone"
-            VALUE "ProductVersion", "0.1.0.0"
+            VALUE "CompanyName", "Namic Notch Project"
+            VALUE "FileDescription", "Namic Notch - A living notch for Windows"
+            VALUE "FileVersion", "1.0.0.0"
+            VALUE "InternalName", "namic-notch"
+            VALUE "LegalCopyright", "Copyright (c) 2026 Namic Notch Project"
+            VALUE "OriginalFilename", "nusa.exe"
+            VALUE "ProductName", "Namic Notch"
+            VALUE "ProductVersion", "1.0.0.0"
         END
     END
     BLOCK "VarFileInfo"

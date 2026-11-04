@@ -1,26 +1,26 @@
-; Nusa Notch Clone - Inno Setup Installer Script
-; Compile with: iscc NusaNotchSetup.iss
+; Namic Notch - Inno Setup Installer Script
+; Compile with: iscc NamicNotchSetup.iss / iscc NusaNotchSetup.iss
 ; Requires Inno Setup 6.2+
 
 [Setup]
 AppId={{A8F3C2E1-7B4D-4F9A-8C3E-2F1D5E7B9A6C}
-AppName=Nusa Notch Clone
+AppName=Namic Notch
 AppVersion=1.0.0
-AppPublisher=Nusa Notch Clone Project
-AppPublisherURL=https://github.com/yourusername/nusa-clone
-AppSupportURL=https://github.com/yourusername/nusa-clone/issues
-AppUpdatesURL=https://github.com/yourusername/nusa-clone/releases
-DefaultDirName={localappdata}\Programs\NusaNotch
-DefaultGroupName=Nusa Notch Clone
+AppPublisher=Namic Notch Project
+AppPublisherURL=https://github.com/yourusername/namic-notch
+AppSupportURL=https://github.com/yourusername/namic-notch/issues
+AppUpdatesURL=https://github.com/yourusername/namic-notch/releases
+DefaultDirName={localappdata}\Programs\NamicNotch
+DefaultGroupName=Namic Notch
 AllowNoIcons=yes
 OutputDir=..
-OutputBaseFilename=NusaNotchSetup_v1.0.0
-SetupIconFile=src\notch\resources\nusa.ico
+OutputBaseFilename=NamicNotchSetup_v1.0.0
+SetupIconFile=resources\icon.ico
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
-ArchitecturesInstallIn64BitMode=x64
-ArchitecturesAllowed=x64
+ArchitecturesInstallIn64BitMode=x64compatible
+ArchitecturesAllowed=x64compatible
 PrivilegesRequired=lowest
 UsePreviousAppDir=no
 UsePreviousGroup=no
@@ -33,8 +33,8 @@ DisableFinishedPage=no
 ShowLanguageDialog=auto
 LicenseFile=LICENSE.txt
 InfoBeforeFile=README.txt
-; WizardImageFile=src\notch\resources\wizard.bmp
-; WizardSmallImageFile=src\notch\resources\wizard_small.bmp
+; WizardImageFile=resources\wizard.bmp
+; WizardSmallImageFile=resources\wizard_small.bmp
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -51,18 +51,18 @@ Source: "LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Nusa Notch Clone"; Filename: "{app}\nusa.exe"; WorkingDir: "{app}"; Comment: "A living notch for Windows"
-Name: "{group}\{cm:UninstallProgram,Nusa Notch Clone}"; Filename: "{uninstallexe}"; WorkingDir: "{app}"
-Name: "{userdesktop}\Nusa Notch Clone"; Filename: "{app}\nusa.exe"; WorkingDir: "{app}"; Comment: "A living notch for Windows"; Tasks: desktopicon
+Name: "{group}\Namic Notch"; Filename: "{app}\nusa.exe"; WorkingDir: "{app}"; Comment: "A living dynamic notch for Windows"
+Name: "{group}\{cm:UninstallProgram,Namic Notch}"; Filename: "{uninstallexe}"; WorkingDir: "{app}"
+Name: "{userdesktop}\Namic Notch"; Filename: "{app}\nusa.exe"; WorkingDir: "{app}"; Comment: "A living dynamic notch for Windows"; Tasks: desktopicon
 
 [Registry]
 ; Auto-start with Windows
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "NusaNotchClone"; ValueData: "{app}\nusa.exe"; Flags: uninsdeletevalue; Tasks: startup
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "NamicNotch"; ValueData: "{app}\nusa.exe"; Flags: uninsdeletevalue; Tasks: startup
 ; App Paths for "nusa" command in Run dialog
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\nusa.exe"; ValueType: string; ValueName: ""; ValueData: "{app}\nusa.exe"; Flags: uninsdeletekey
 
 [Run]
-Filename: "{app}\nusa.exe"; Description: "{cm:LaunchProgram,Nusa Notch Clone}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\nusa.exe"; Description: "{cm:LaunchProgram,Namic Notch}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"

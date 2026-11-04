@@ -36,7 +36,7 @@ pub const ID_ABOUT: u32 = 1004;
 pub const ID_EXIT: u32 = 1005;
 
 pub fn create_tray_icon(hwnd: HWND) -> Result<NOTIFYICONDATAW> {
-    let icon = crate::icon::create_antimagic_hicon();
+    let icon = crate::icon::get_app_icon(true);
     
     let mut nid = NOTIFYICONDATAW::default();
     nid.cbSize = std::mem::size_of::<NOTIFYICONDATAW>() as u32;
@@ -46,7 +46,7 @@ pub fn create_tray_icon(hwnd: HWND) -> Result<NOTIFYICONDATAW> {
     nid.uCallbackMessage = TRAY_MESSAGE;
     nid.hIcon = icon;
     
-    let tip = to_wide_string("Nusa Notch Clone\0");
+    let tip = to_wide_string("Namic Notch\0");
     let tip_len = tip.len().min(127);
     nid.szTip[..tip_len].copy_from_slice(&tip[..tip_len]);
     
@@ -110,8 +110,8 @@ pub fn handle_tray_command(cmd: u32, hwnd: HWND, settings: &Arc<RwLock<Settings>
         }
         ID_ABOUT => {
             unsafe {
-                let text = to_wide_string("Nusa Notch Clone v0.1.0\nA living notch for Windows\nReverse engineered & built in native Rust.\0");
-                let title = to_wide_string("About Nusa Notch\0");
+                let text = to_wide_string("Namic Notch v1.0.0\nA living dynamic notch for Windows\nNative Rust + Direct2D & DirectWrite.\0");
+                let title = to_wide_string("About Namic Notch\0");
                 MessageBoxW(
                     hwnd,
                     PCWSTR(text.as_ptr()),
@@ -188,7 +188,7 @@ fn create_context_menu(settings: &Arc<RwLock<Settings>>) -> Result<HMENU> {
             PCWSTR(text.as_ptr()),
         )?;
         
-        let text = to_wide_string("Nusa Mascot\0");
+        let text = to_wide_string("Asta Mascot\0");
         AppendMenuW(
             menu,
             MF_STRING | if settings.show_mascot { MF_CHECKED } else { MF_UNCHECKED },
@@ -206,7 +206,7 @@ fn create_context_menu(settings: &Arc<RwLock<Settings>>) -> Result<HMENU> {
         
         AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null())?;
         
-        let text = to_wide_string("About Nusa Notch Clone\0");
+        let text = to_wide_string("About Namic Notch\0");
         AppendMenuW(menu, MF_STRING, ID_ABOUT as usize, PCWSTR(text.as_ptr()))?;
         
         let text = to_wide_string("Exit\0");
@@ -232,7 +232,7 @@ fn enable_start_with_windows() -> Result<()> {
             &mut key,
         ).ok()?;
         
-        let value_name = to_wide_string("NusaNotchClone\0");
+        let value_name = to_wide_string("NamicNotch\0");
         let bytes = std::slice::from_raw_parts(path_wide.as_ptr() as *const u8, path_wide.len() * 2);
         RegSetValueExW(
             key,
@@ -241,6 +241,10 @@ fn enable_start_with_windows() -> Result<()> {
             REG_SZ,
             Some(bytes),
         ).ok()?;
+        
+        // Bersihkan entri lama jika ada
+        let old_val = to_wide_string("NusaNotchClone\0");
+        let _ = RegDeleteValueW(key, PCWSTR(old_val.as_ptr()));
         
         RegCloseKey(key).ok()?;
     }
@@ -259,8 +263,10 @@ fn disable_start_with_windows() -> Result<()> {
             &mut key,
         ).ok()?;
         
-        let value_name = to_wide_string("NusaNotchClone\0");
-        RegDeleteValueW(key, PCWSTR(value_name.as_ptr())).ok()?;
+        let value_name = to_wide_string("NamicNotch\0");
+        let _ = RegDeleteValueW(key, PCWSTR(value_name.as_ptr()));
+        let old_val = to_wide_string("NusaNotchClone\0");
+        let _ = RegDeleteValueW(key, PCWSTR(old_val.as_ptr()));
         
         RegCloseKey(key).ok()?;
     }
