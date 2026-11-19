@@ -235,9 +235,11 @@ extern "system" fn keyboard_hook_proc(
                     post(NotchEvent::HotkeyMedia);
                 }
             } else if vk_code == VK_CAPITAL.0 as u32 {
-                // GetKeyState reflects the post-toggle latch state.
-                let on = unsafe { GetKeyState(VK_CAPITAL.0 as i32) as u16 & 1 } != 0;
-                post(NotchEvent::HotkeyCapsLock(on));
+                // WH_KEYBOARD_LL runs BEFORE Windows processes the key, so the
+                // latch bit still holds the PRE-toggle state. Invert it to get
+                // the state the keypress is about to produce.
+                let was_on = unsafe { GetKeyState(VK_CAPITAL.0 as i32) as u16 & 1 } != 0;
+                post(NotchEvent::HotkeyCapsLock(next_caps_state(was_on)));
             }
         }
     }
@@ -264,9 +266,22 @@ fn install_event_tx(tx: mpsc::Sender<NotchEvent>) {
     });
 }
 
+/// CapsLock latch bit read inside WH_KEYBOARD_LL is the PRE-toggle state;
+/// the keypress flips it. Pure helper so the inversion is unit-testable.
+fn next_caps_state(was_on: bool) -> bool {
+    !was_on
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn capslock_overlay_shows_post_toggle_state() {
+        // Regression: notch used to show OFF when the user turned CapsLock ON.
+        assert!(next_caps_state(false), "pressing Caps while OFF must report ON");
+        assert!(!next_caps_state(true), "pressing Caps while ON must report OFF");
+    }
 
     #[test]
     fn classifies_volume_keys() {
