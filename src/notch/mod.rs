@@ -48,6 +48,19 @@ pub enum NotchEvent {
     HotkeyCapsLock(bool),
     /// Media transport key pressed (play/pause/next/prev/stop).
     HotkeyMedia,
+    /// Clipboard contents changed (WM_CLIPBOARDUPDATE).
+    ClipboardChanged,
+    /// Ctrl+Alt+S: capture screen + OCR.
+    OcrRequested,
+    /// OCR worker finished.
+    OcrDone(std::result::Result<String, String>),
+    /// Ctrl+Alt+V: open the clipboard history tab.
+    ShowClips,
+    /// Character typed into the quick-note input.
+    NoteChar(char),
+    NoteBackspace,
+    NoteCommit,
+    NoteCancel,
 }
 
 pub struct NotchApp {
@@ -65,6 +78,9 @@ pub struct NotchApp {
     pub cursor_in_pill: bool,
     pub last_cursor_logical_x: f32,
     pub last_cursor_logical_y: f32,
+    /// Self-post channel: lets the wndproc queue events processed on tick.
+    pub self_tx: mpsc::Sender<NotchEvent>,
+    pub self_rx: mpsc::Receiver<NotchEvent>,
 }
 
 impl NotchApp {
@@ -72,6 +88,8 @@ impl NotchApp {
         hwnd: HWND,
         settings: Arc<RwLock<Settings>>,
         event_rx: mpsc::Receiver<NotchEvent>,
+        self_tx: mpsc::Sender<NotchEvent>,
+        self_rx: mpsc::Receiver<NotchEvent>,
     ) -> Result<Self> {
         let dpi = unsafe { GetDpiForWindow(hwnd) };
         let dpi_scale = if dpi == 0 { 1.0 } else { dpi as f32 / 96.0 };
@@ -136,6 +154,8 @@ impl NotchApp {
             cursor_in_pill: false,
             last_cursor_logical_x: 0.0,
             last_cursor_logical_y: 0.0,
+            self_tx,
+            self_rx,
         })
     }
 
@@ -161,7 +181,14 @@ impl NotchApp {
         let dt = now.duration_since(self.last_tick).as_secs_f32();
         self.last_tick = now;
 
+        let mut pending: Vec<NotchEvent> = Vec::new();
         while let Ok(ev) = self.event_rx.try_recv() {
+            pending.push(ev);
+        }
+        while let Ok(ev) = self.self_rx.try_recv() {
+            pending.push(ev);
+        }
+        for ev in pending {
             match ev {
                 NotchEvent::SetState(s) => self.controller.transition_to(s),
                 NotchEvent::Show => unsafe {
@@ -244,8 +271,77 @@ impl NotchApp {
                     // panel reflects the change on the next poll.
                     NotchController::poke_system_media();
                 }
+                NotchEvent::ClipboardChanged => {
+                    if self.settings.read().map(|s| s.enable_clipboard_history).unwrap_or(true) {
+                        if let Some(text) = crate::clipboard::win::read_clipboard_text() {
+                            let seq = crate::clipboard::win::clipboard_seq();
+                            if seq != self.controller.clip_store.last_own_seq
+                                && self.controller.clip_store.push_clip(&text, chrono::Local::now().timestamp())
+                            {
+                                let _ = self.controller.clip_store.save();
+                            }
+                        }
+                    }
+                }
+                NotchEvent::OcrRequested => {
+                    if !self.controller.ocr_busy {
+                        self.controller.ocr_busy = true;
+                        self.controller.flash_message("Capturing screen…");
+                        let tx = self.self_tx.clone();
+                        let save_png = self.settings.read().map(|s| s.ocr_save_png).unwrap_or(true);
+                        std::thread::spawn(move || {
+                            let outcome = crate::capture::capture_and_ocr(save_png)
+                                .map(|o| o.text)
+                                .map_err(|e| e.to_string());
+                            let _ = tx.blocking_send(NotchEvent::OcrDone(outcome));
+                        });
+                    }
+                }
+                NotchEvent::OcrDone(result) => {
+                    self.controller.ocr_busy = false;
+                    match result {
+                        Ok(text) if !text.trim().is_empty() => {
+                            self.controller.ocr_text = text.clone();
+                            self.controller.ocr_scroll = 0;
+                            if let Ok(seq) = crate::clipboard::win::write_clipboard_text(&text) {
+                                self.controller.clip_store.last_own_seq = seq;
+                                self.controller.clip_store.push_clip(&text, chrono::Local::now().timestamp());
+                                let _ = self.controller.clip_store.save();
+                            }
+                            self.controller.flash_message("OCR text copied ✓");
+                            self.controller.is_hovered = true;
+                            self.controller.transition_to(NotchState::Clips);
+                        }
+                        Ok(_) => self.controller.flash_message("No text found on screen"),
+                        Err(e) => self.controller.flash_message(&format!("OCR failed: {}", e)),
+                    }
+                }
+                NotchEvent::ShowClips => {
+                    self.controller.is_hovered = true;
+                    self.controller.transition_to(NotchState::Clips);
+                }
+                NotchEvent::NoteChar(c) => {
+                    if self.controller.note_input_active && self.controller.note_input.chars().count() < 200 {
+                        self.controller.note_input.push(c);
+                    }
+                }
+                NotchEvent::NoteBackspace => {
+                    self.controller.note_input.pop();
+                }
+                NotchEvent::NoteCommit => {
+                    self.controller.commit_note();
+                }
+                NotchEvent::NoteCancel => {
+                    self.controller.note_input.clear();
+                    self.controller.note_input_active = false;
+                }
             }
         }
+
+        crate::hooks::NOTE_INPUT_ACTIVE.store(
+            self.controller.note_input_active,
+            std::sync::atomic::Ordering::Relaxed,
+        );
 
         let mut pt = POINT::default();
         unsafe {
@@ -369,16 +465,17 @@ impl NotchApp {
                 }
             }
 
-            // 2. Klik Bar Navigasi 6-Slot di Atas (Hub, Music, Control, Focus, Shelf, Stages)
+            // 2. Klik Bar Navigasi 7-Slot di Atas (Hub, Music, Control, Focus, Shelf, Clips, Stages)
                         if (0.0..=26.0).contains(&ly) && lx >= 28.0 && lx <= pill_w - 28.0 {
                             let tabs_w = (pill_w - 56.0).max(1.0);
-                            let slot = (((lx - 28.0) / (tabs_w / 6.0)).floor() as usize).min(5);
+                            let slot = (((lx - 28.0) / (tabs_w / 7.0)).floor() as usize).min(6);
                             match slot {
                                 0 => self.controller.transition_to(NotchState::Hub),
                                 1 => self.controller.transition_to(NotchState::Music),
                                 2 => self.controller.transition_to(NotchState::Control),
                                 3 => self.controller.transition_to(NotchState::Pomo),
                                 4 => self.controller.transition_to(NotchState::Shelf),
+                                5 => self.controller.transition_to(NotchState::Clips),
                                 _ => {
                                     self.controller.trigger_stagedock();
                                 }
@@ -409,11 +506,16 @@ impl NotchApp {
     }
 }
 
+pub const HOTKEY_ID_OCR: i32 = 0xB001;
+pub const HOTKEY_ID_CLIPS: i32 = 0xB002;
+
 pub fn run_ui(
     hinstance: HINSTANCE,
     event_rx: mpsc::Receiver<NotchEvent>,
     settings: Arc<RwLock<Settings>>,
 ) -> Result<()> {
+    // Self-post channel so the wndproc / OCR worker can queue UI events.
+    let (self_tx, self_rx) = mpsc::channel::<NotchEvent>(64);
     let class_name = to_wide_string("NamicNotchWindow\0");
     let app_icon = crate::icon::get_app_icon(false);
     let app_icon_sm = crate::icon::get_app_icon(true);
@@ -461,7 +563,19 @@ pub fn run_ui(
         let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 255, LWA_ALPHA);
         DragAcceptFiles(hwnd, true);
 
-        let app = Box::new(NotchApp::new(hwnd, settings.clone(), event_rx)?);
+        // Clipboard change notifications + global hotkeys (Ctrl+Alt+S / Ctrl+Alt+V).
+        let _ = windows::Win32::System::DataExchange::AddClipboardFormatListener(hwnd);
+        let mods = windows::Win32::UI::Input::KeyboardAndMouse::MOD_CONTROL
+            | windows::Win32::UI::Input::KeyboardAndMouse::MOD_ALT
+            | windows::Win32::UI::Input::KeyboardAndMouse::MOD_NOREPEAT;
+        let _ = windows::Win32::UI::Input::KeyboardAndMouse::RegisterHotKey(
+            hwnd, HOTKEY_ID_OCR, mods, 0x53, // S
+        );
+        let _ = windows::Win32::UI::Input::KeyboardAndMouse::RegisterHotKey(
+            hwnd, HOTKEY_ID_CLIPS, mods, 0x56, // V
+        );
+
+        let app = Box::new(NotchApp::new(hwnd, settings.clone(), event_rx, self_tx.clone(), self_rx)?);
         let win_x = app.win_x;
         let win_y = app.win_y;
         let win_w = app.win_w;
@@ -511,6 +625,20 @@ extern "system" fn notch_wnd_proc(
         match msg {
             WM_ERASEBKGND => return LRESULT(1),
             WM_MOUSEACTIVATE => return LRESULT(MA_NOACTIVATE as isize),
+            WM_CLIPBOARDUPDATE => {
+                let _ = app.self_tx.try_send(NotchEvent::ClipboardChanged);
+                return LRESULT(0);
+            }
+            WM_HOTKEY => {
+                let id = wparam.0 as i32;
+                if id == HOTKEY_ID_OCR {
+                    let _ = app.self_tx.try_send(NotchEvent::OcrRequested);
+                } else if id == HOTKEY_ID_CLIPS {
+                    let _ = app.self_tx.try_send(NotchEvent::ShowClips);
+                }
+                return LRESULT(0);
+            }
+
             WM_TIMER => {
                 if wparam.0 == TIMER_ID_ANIMATION {
                     let _ = app.on_tick();
@@ -606,6 +734,9 @@ extern "system" fn notch_wnd_proc(
             }
             WM_DESTROY => {
                 unsafe {
+                    let _ = windows::Win32::System::DataExchange::RemoveClipboardFormatListener(hwnd);
+                    let _ = windows::Win32::UI::Input::KeyboardAndMouse::UnregisterHotKey(hwnd, HOTKEY_ID_OCR);
+                    let _ = windows::Win32::UI::Input::KeyboardAndMouse::UnregisterHotKey(hwnd, HOTKEY_ID_CLIPS);
                     PostQuitMessage(0);
                 }
                 return LRESULT(0);

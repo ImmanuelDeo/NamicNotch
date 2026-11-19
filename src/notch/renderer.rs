@@ -460,8 +460,31 @@ impl NotchRenderer {
                 NotchState::Control => self.draw_control_panel(ctrl, content_rect, alpha),
                 NotchState::Pomo => self.draw_pomo_panel(ctrl, content_rect, alpha),
                 NotchState::Shelf => self.draw_shelf_panel(ctrl, content_rect, alpha),
+                NotchState::Clips => self.draw_clips_panel(ctrl, content_rect, alpha),
                 _ => {}
             }
+        }
+
+        if ctrl.clip_flash_timer > 0.0 && ctrl.height.value > 55.0 {
+            let fa = (ctrl.clip_flash_timer / 1.6).clamp(0.0, 1.0);
+            let flash_rect = D2D_RECT_F {
+                left: pill_rect.left + 30.0,
+                top: pill_rect.bottom - 26.0,
+                right: pill_rect.right - 30.0,
+                bottom: pill_rect.bottom - 8.0,
+            };
+            if let Ok(bb) = self.rt.CreateSolidColorBrush(
+                &D2D1_COLOR_F { r: 0.05, g: 0.07, b: 0.11, a: 0.92 * fa },
+                None,
+            ) {
+                self.rt.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT { rect: flash_rect, radiusX: 8.0, radiusY: 8.0 },
+                    &bb,
+                );
+            }
+            let mut tc = AntiMagicNeutralPalette::ACCENT_CYAN;
+            tc.a *= fa;
+            self.draw_text_centered(&ctrl.clip_flash_text, &self.fmt_caption, flash_rect, tc);
         }
 
         ctrl.chibi_liebe
@@ -626,13 +649,14 @@ impl NotchRenderer {
         pill_rect: D2D_RECT_F,
         alpha: f32,
     ) -> D2D_RECT_F {
-        let tabs = ["Hub", "Music", "Control", "Focus", "Shelf", "Stages"];
+        let tabs = ["Hub", "Music", "Control", "Focus", "Shelf", "Clips", "Stages"];
         let active_idx = match ctrl.state {
             NotchState::Hub => 0,
             NotchState::Music => 1,
             NotchState::Control => 2,
             NotchState::Pomo => 3,
             NotchState::Shelf => 4,
+            NotchState::Clips => 5,
             _ => 0,
         };
 
@@ -710,17 +734,17 @@ impl NotchRenderer {
 
         let tabs_left = pill_rect.left + 28.0;
                 let tabs_right = pill_rect.right - 28.0;
-                let slot_w = (tabs_right - tabs_left) / 6.0;
+                let slot_w = (tabs_right - tabs_left) / 7.0;
 
         for (i, label) in tabs.iter().enumerate() {
             let sl = tabs_left + slot_w * i as f32;
             let sr = sl + slot_w;
             let cx = (sl + sr) * 0.5;
-            let is_active = i == active_idx || (i == 5 && ctrl.stagedock_flash_timer > 0.0);
+            let is_active = i == active_idx || (i == 6 && ctrl.stagedock_flash_timer > 0.0);
 
             let text_col = if is_active {
                 white
-            } else if i == 5 {
+            } else if i == 6 {
                 AntiMagicNeutralPalette::ACCENT_CYAN
             } else {
                 muted
@@ -761,8 +785,8 @@ impl NotchRenderer {
         }
 
         let dot_y = pill_rect.bottom - 4.5;
-        let total_dots = 5;
-        let dots_w = 44.0;
+        let total_dots = 6;
+        let dots_w = 54.0;
         let dot_start_x = (pill_rect.left + pill_rect.right - dots_w) * 0.5;
         for d in 0..total_dots {
             let dx = dot_start_x + d as f32 * 9.5;
@@ -843,6 +867,24 @@ impl NotchRenderer {
                 bottom: area.top + 60.0,
             },
             muted,
+        );
+
+        let sys_line = format!("RAM {}% · C: {}GB free", ctrl.ram_used_pct, ctrl.disk_free_gb);
+        let sys_col = if ctrl.ram_used_pct >= 90 || ctrl.disk_free_gb < 10 {
+            D2D1_COLOR_F { r: 1.0, g: 0.45, b: 0.35, a: alpha }
+        } else {
+            muted
+        };
+        self.draw_text_left(
+            &sys_line,
+            &self.fmt_caption,
+            D2D_RECT_F {
+                left: area.left + 2.0,
+                top: area.top + 60.0,
+                right: area.left + 120.0,
+                bottom: area.top + 78.0,
+            },
+            sys_col,
         );
 
         self.draw_nusa_ring_battery(
@@ -1779,4 +1821,146 @@ impl NotchRenderer {
             }
         }
     }
+
+    unsafe fn draw_clips_panel(&self, ctrl: &NotchController, area: D2D_RECT_F, alpha: f32) {
+        let white = D2D1_COLOR_F { r: 1.0, g: 1.0, b: 1.0, a: alpha };
+        let muted = D2D1_COLOR_F { r: 0.56, g: 0.60, b: 0.68, a: alpha };
+        let accent = AntiMagicNeutralPalette::ACCENT_BLUE;
+
+        // Top button row: History | Notes | Clear
+        let btn_y = area.top;
+        let btn_h = 20.0;
+        let buttons: [(&str, f32, f32, bool); 3] = [
+            ("History", area.left, area.left + 74.0, !ctrl.clips_view_notes),
+            ("Notes", area.left + 80.0, area.left + 154.0, ctrl.clips_view_notes),
+            ("Clear", area.right - 64.0, area.right, false),
+        ];
+        for (label, l, r, active) in buttons {
+            let rect = D2D_RECT_F { left: l, top: btn_y, right: r, bottom: btn_y + btn_h };
+            let bg = if active {
+                D2D1_COLOR_F { r: accent.r, g: accent.g, b: accent.b, a: 0.30 * alpha }
+            } else {
+                D2D1_COLOR_F { r: 0.12, g: 0.15, b: 0.21, a: 0.85 * alpha }
+            };
+            if let Ok(bb) = self.rt.CreateSolidColorBrush(&bg, None) {
+                self.rt.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT { rect, radiusX: 6.0, radiusY: 6.0 },
+                    &bb,
+                );
+            }
+            self.draw_text_centered(label, &self.fmt_caption, rect, if active { white } else { muted });
+        }
+
+        let mut row_top = area.top + 26.0;
+
+        // Note input row (notes view)
+        if ctrl.clips_view_notes {
+            let input_rect = D2D_RECT_F {
+                left: area.left,
+                top: area.top + 24.0,
+                right: area.right,
+                bottom: area.top + 44.0,
+            };
+            let border = if ctrl.note_input_active { accent } else { muted };
+            if let Ok(bb) = self.rt.CreateSolidColorBrush(
+                &D2D1_COLOR_F { r: 0.08, g: 0.10, b: 0.15, a: 0.9 * alpha },
+                None,
+            ) {
+                self.rt.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT { rect: input_rect, radiusX: 6.0, radiusY: 6.0 },
+                    &bb,
+                );
+            }
+            let hint = if ctrl.note_input.is_empty() && !ctrl.note_input_active {
+                "+ Type a note (click here, Enter saves)"
+            } else {
+                &ctrl.note_input
+            };
+            let mut shown = hint.to_string();
+            if ctrl.note_input_active {
+                shown.push('|');
+            }
+            self.draw_text_left(
+                &shown,
+                &self.fmt_caption,
+                D2D_RECT_F { left: input_rect.left + 8.0, ..input_rect },
+                if ctrl.note_input.is_empty() && !ctrl.note_input_active { muted } else { white },
+            );
+            let _ = border;
+            row_top = area.top + 48.0;
+        }
+
+        // OCR busy banner replaces rows while capturing
+        if ctrl.ocr_busy {
+            self.draw_text_centered(
+                "🔍 Reading screen text…",
+                &self.fmt_body,
+                D2D_RECT_F { left: area.left, top: row_top + 10.0, right: area.right, bottom: area.bottom },
+                AntiMagicNeutralPalette::ACCENT_CYAN,
+            );
+            return;
+        }
+
+        let rows = ctrl.clips_rows();
+        if rows.is_empty() {
+            let msg = if ctrl.clips_view_notes {
+                "No notes yet — type above"
+            } else {
+                "Copy anything — it lands here"
+            };
+            self.draw_text_centered(
+                msg,
+                &self.fmt_body,
+                D2D_RECT_F { left: area.left, top: row_top + 12.0, right: area.right, bottom: area.bottom },
+                muted,
+            );
+            return;
+        }
+
+        let max_rows = (((area.bottom - row_top) / 26.0).floor() as usize).max(1);
+        for (i, text) in rows.iter().skip(ctrl.clips_scroll).take(max_rows).enumerate() {
+            let ry = row_top + i as f32 * 26.0;
+            let row_rect = D2D_RECT_F {
+                left: area.left,
+                top: ry,
+                right: area.right,
+                bottom: ry + 24.0,
+            };
+            if let Ok(bb) = self.rt.CreateSolidColorBrush(
+                &D2D1_COLOR_F { r: 0.10, g: 0.13, b: 0.19, a: 0.80 * alpha },
+                None,
+            ) {
+                self.rt.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT { rect: row_rect, radiusX: 7.0, radiusY: 7.0 },
+                    &bb,
+                );
+            }
+            let icon = if ctrl.clips_view_notes { "📝" } else { "📋" };
+            self.draw_text_left(
+                &format!("{} {}", icon, text),
+                &self.fmt_caption,
+                D2D_RECT_F { left: row_rect.left + 8.0, right: row_rect.right - 26.0, ..row_rect },
+                white,
+            );
+            if ctrl.clips_view_notes {
+                self.draw_text_centered(
+                    "✕",
+                    &self.fmt_caption,
+                    D2D_RECT_F { left: row_rect.right - 22.0, right: row_rect.right - 4.0, ..row_rect },
+                    muted,
+                );
+            }
+        }
+
+        // scroll hint
+        if rows.len() > max_rows {
+            self.draw_text_right(
+                &format!("{}/{} ↕", ctrl.clips_scroll + max_rows, rows.len()),
+                &self.fmt_caption,
+                D2D_RECT_F { left: area.right - 80.0, top: area.top, right: area.right - 70.0, bottom: area.top + 20.0 },
+                muted,
+            );
+        }
+    }
+
 }

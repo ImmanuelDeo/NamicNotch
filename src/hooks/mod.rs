@@ -13,6 +13,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
     UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT, WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
 };
 use crate::notch::NotchEvent;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Set by the UI while the quick-note input is focused. The hook then routes
+/// printable keys to the note instead of letting them fall through.
+pub static NOTE_INPUT_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 /// Which overlay a media/volume key should surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -184,6 +189,42 @@ extern "system" fn keyboard_hook_proc(
         let is_key_down = matches!(message, WM_KEYDOWN | WM_SYSKEYDOWN);
 
         if is_key_down && !is_key_up {
+            if NOTE_INPUT_ACTIVE.load(Ordering::Relaxed) {
+                // Feed the quick-note editor. VK codes 0x30-0x5A cover 0-9/A-Z;
+                // shift state selects the shifted glyph.
+                let shifted = unsafe {
+                    (GetKeyState(0x10) as u16 & 0x8000) != 0 // VK_SHIFT
+                };
+                let caps = unsafe { (GetKeyState(VK_CAPITAL.0 as i32) as u16 & 1) != 0 };
+                let ch: Option<char> = match vk_code {
+                    0x0D => { post(NotchEvent::NoteCommit); None }
+                    0x1B => { post(NotchEvent::NoteCancel); None }
+                    0x08 => { post(NotchEvent::NoteBackspace); None }
+                    0x20 => Some(' '),
+                    0x30..=0x39 => {
+                        const SHIFTED: &[u8] = b")!@#$%^&*(";
+                        let d = (vk_code - 0x30) as usize;
+                        Some(if shifted { SHIFTED[d] as char } else { (b'0' + d as u8) as char })
+                    }
+                    0x41..=0x5A => {
+                        let base = b'a' + (vk_code - 0x41) as u8;
+                        let upper = shifted ^ caps;
+                        Some(if upper { base.to_ascii_uppercase() as char } else { base as char })
+                    }
+                    0xBC => Some(if shifted { '<' } else { ',' }),
+                    0xBE => Some(if shifted { '>' } else { '.' }),
+                    0xBD => Some(if shifted { '_' } else { '-' }),
+                    0xBF => Some(if shifted { '?' } else { '/' }),
+                    0xBA => Some(if shifted { ':' } else { ';' }),
+                    0xDE => Some(if shifted { '"' } else { '\'' }),
+                    _ => None,
+                };
+                if let Some(c) = ch {
+                    post(NotchEvent::NoteChar(c));
+                }
+                // Swallow nothing: keys still reach the foreground app too, but
+                // the note editor is only active while the notch is hovered.
+            }
             if let Some(kind) = classify_media_key(vk_code) {
                 // Windows applies the volume change during key-down, so reading the
                 // endpoint here yields the level the user just set.

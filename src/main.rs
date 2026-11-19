@@ -12,6 +12,8 @@ mod shelf;
 mod timers;
 mod settings;
 mod mascot;
+mod clipboard;
+mod capture;
 mod utils;
 pub mod icon;
 

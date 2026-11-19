@@ -47,6 +47,12 @@ pub struct Settings {
 
     /// Dynamic overlay: media/volume/caps peek on hardware key press
     pub enable_hotkey_overlay: bool,
+
+    /// Clipboard history capture (Ctrl+Alt+V opens the Clips tab)
+    pub enable_clipboard_history: bool,
+
+    /// Save a PNG copy of each OCR screenshot to Pictures\NamicNotch
+    pub ocr_save_png: bool,
     
     /// Shelf
     pub shelf_max_items: usize,
@@ -73,6 +79,8 @@ impl Default for Settings {
             show_lyrics: true,
             lyrics_provider: "lrclib".to_string(),
             enable_hotkey_overlay: true,
+            enable_clipboard_history: true,
+            ocr_save_png: true,
             shelf_max_items: 10,
             custom: HashMap::new(),
         }
@@ -139,6 +147,8 @@ impl Settings {
             "show_lyrics" => self.show_lyrics = value.parse().unwrap_or(true),
             "lyrics_provider" => self.lyrics_provider = value.to_string(),
             "enable_hotkey_overlay" => self.enable_hotkey_overlay = value.parse().unwrap_or(true),
+            "enable_clipboard_history" => self.enable_clipboard_history = value.parse().unwrap_or(true),
+            "ocr_save_png" => self.ocr_save_png = value.parse().unwrap_or(true),
             "shelf_max_items" => self.shelf_max_items = value.parse().unwrap_or(10),
             _ => { self.custom.insert(key.to_string(), value.to_string()); }
         }
@@ -176,6 +186,8 @@ impl Settings {
             "show_lyrics" => Some(self.show_lyrics.to_string()),
             "lyrics_provider" => Some(self.lyrics_provider.clone()),
             "enable_hotkey_overlay" => Some(self.enable_hotkey_overlay.to_string()),
+            "enable_clipboard_history" => Some(self.enable_clipboard_history.to_string()),
+            "ocr_save_png" => Some(self.ocr_save_png.to_string()),
             "shelf_max_items" => Some(self.shelf_max_items.to_string()),
             _ => self.custom.get(key).cloned(),
         }
@@ -217,6 +229,8 @@ impl std::fmt::Display for Settings {
         writeln!(f, "show_lyrics={}", self.show_lyrics)?;
         writeln!(f, "lyrics_provider={}", self.lyrics_provider)?;
         writeln!(f, "enable_hotkey_overlay={}", self.enable_hotkey_overlay)?;
+        writeln!(f, "enable_clipboard_history={}", self.enable_clipboard_history)?;
+        writeln!(f, "ocr_save_png={}", self.ocr_save_png)?;
         writeln!(f, "")?;
         
         writeln!(f, "[Shelf]")?;

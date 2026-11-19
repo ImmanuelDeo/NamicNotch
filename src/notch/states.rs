@@ -37,6 +37,7 @@ pub enum NotchState {
     Control, // Tab 2: Clean Volume & Brightness Sliders
     Pomo,    // Tab 3: Pomodoro Timer (Focus 25m / Break 5m)
     Shelf,   // Tab 4: Dashed Dropzone File Shelf
+    Clips,   // Tab 5: Clipboard history + quick notes
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -209,6 +210,26 @@ pub struct NotchController {
     // --- Section 4: File Shelf ---
     pub shelf_files: Vec<(String, String, String)>,
 
+    // --- Section 5: Clipboard history + quick notes ---
+    pub clip_store: crate::clipboard::ClipStore,
+    pub clips_view_notes: bool,
+    pub clips_scroll: usize,
+    pub note_input: String,
+    pub note_input_active: bool,
+    pub clip_flash_timer: f32,
+    pub clip_flash_text: String,
+
+    // --- OCR / screenshot state ---
+    pub ocr_busy: bool,
+    pub ocr_text: String,
+    pub ocr_scroll: usize,
+    pub last_ocr_png: Option<String>,
+
+    // --- System monitor (Hub panel footer) ---
+    pub ram_used_pct: u8,
+    pub disk_free_gb: u32,
+    sysmon_timer: f32,
+
     // --- Maskot ---
     pub devil_eyes: DevilUnionEyes,
     pub chibi_liebe: ChibiLiebe,
@@ -278,6 +299,23 @@ impl NotchController {
             pomo_accum: 0.0,
 
             shelf_files: Vec::new(),
+
+            clip_store: crate::clipboard::ClipStore::load(),
+            clips_view_notes: false,
+            clips_scroll: 0,
+            note_input: String::new(),
+            note_input_active: false,
+            clip_flash_timer: 0.0,
+            clip_flash_text: String::new(),
+
+            ocr_busy: false,
+            ocr_text: String::new(),
+            ocr_scroll: 0,
+            last_ocr_png: None,
+
+            ram_used_pct: 0,
+            disk_free_gb: 0,
+            sysmon_timer: 99.0,
 
             devil_eyes: DevilUnionEyes::new(),
             chibi_liebe: ChibiLiebe::new(),
@@ -636,13 +674,14 @@ impl NotchController {
             }
         }
 
-    pub fn ordered_tabs() -> [NotchState; 5] {
+    pub fn ordered_tabs() -> [NotchState; 6] {
         [
             NotchState::Hub,
             NotchState::Music,
             NotchState::Control,
             NotchState::Pomo,
             NotchState::Shelf,
+            NotchState::Clips,
         ]
     }
 
@@ -673,6 +712,7 @@ impl NotchController {
             NotchState::Control => (380.0, 138.0, 20.0),
             NotchState::Pomo => (380.0, 140.0, 20.0),
             NotchState::Shelf => (380.0, 140.0, 20.0),
+            NotchState::Clips => (400.0, 150.0, 20.0),
         }
     }
 
@@ -687,6 +727,9 @@ impl NotchController {
             self.last_expanded_tab = next_state;
         }
 
+        if next_state != NotchState::Clips {
+            self.note_input_active = false;
+        }
         self.state = next_state;
         self.chibi_liebe.sync_with_state(next_state);
 
@@ -763,6 +806,18 @@ impl NotchController {
                 let next = (self.brightness_level as i16 + step).clamp(0, 100) as u8;
                 self.brightness_level = next;
                 Self::apply_system_brightness(next);
+            }
+            return;
+        }
+
+        if self.state == NotchState::Clips {
+            let rows = self.clips_rows().len();
+            if rows > 3 {
+                if delta < 0 {
+                    self.clips_scroll = (self.clips_scroll + 1).min(rows - 3);
+                } else {
+                    self.clips_scroll = self.clips_scroll.saturating_sub(1);
+                }
             }
             return;
         }
@@ -865,6 +920,18 @@ impl NotchController {
                 self.closed_quiet_timer = -6.5;
                 self.transition_to(NotchState::Idle);
             }
+        }
+
+        if self.clip_flash_timer > 0.0 {
+            self.clip_flash_timer = (self.clip_flash_timer - dt).max(0.0);
+        }
+
+        self.sysmon_timer += dt;
+        if self.sysmon_timer >= 5.0 {
+            self.sysmon_timer = 0.0;
+            let (ram, disk) = Self::read_system_stats();
+            self.ram_used_pct = ram;
+            self.disk_free_gb = disk;
         }
 
         self.power_poll_timer += dt;
@@ -1044,6 +1111,92 @@ impl NotchController {
         }
     }
 
+    /// RAM load % and free GB on the system drive, via Win32 (no WMI cost).
+    pub fn read_system_stats() -> (u8, u32) {
+        use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+        unsafe {
+            let mut ms = MEMORYSTATUSEX {
+                dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
+                ..Default::default()
+            };
+            let ram = if GlobalMemoryStatusEx(&mut ms).is_ok() {
+                ms.dwMemoryLoad.min(100) as u8
+            } else {
+                0
+            };
+            let mut free_bytes: u64 = 0;
+            let root: Vec<u16> = "C:\\0".encode_utf16().collect();
+            let disk = if windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
+                windows::core::PCWSTR(root.as_ptr()),
+                None,
+                None,
+                Some(&mut free_bytes),
+            )
+            .is_ok()
+            {
+                (free_bytes / (1024 * 1024 * 1024)) as u32
+            } else {
+                0
+            };
+            (ram, disk)
+        }
+    }
+
+    /// Re-copy a history entry to the system clipboard.
+    pub fn copy_clip_entry(&mut self, idx: usize) -> bool {
+        if let Some(entry) = self.clip_store.promote(idx) {
+            match crate::clipboard::win::write_clipboard_text(&entry.text) {
+                Ok(seq) => {
+                    self.clip_store.last_own_seq = seq;
+                    let _ = self.clip_store.save();
+                    self.clips_scroll = 0;
+                    self.flash_message("Copied to clipboard");
+                    true
+                }
+                Err(_) => {
+                    self.flash_message("Clipboard busy — try again");
+                    false
+                }
+            }
+        } else {
+            false
+        }
+    }
+
+    pub fn flash_message(&mut self, msg: &str) {
+        self.clip_flash_text = msg.to_string();
+        self.clip_flash_timer = 1.6;
+    }
+
+    pub fn commit_note(&mut self) -> bool {
+        let text = std::mem::take(&mut self.note_input);
+        self.note_input_active = false;
+        if self.clip_store.add_note(&text) {
+            let _ = self.clip_store.save();
+            self.flash_message("Note saved");
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Visible clipboard rows for the Clips panel (history or notes view).
+    pub fn clips_rows(&self) -> Vec<String> {
+        if self.clips_view_notes {
+            self.clip_store
+                .notes
+                .iter()
+                .map(|n| crate::clipboard::preview_of(n, 46))
+                .collect()
+        } else {
+            self.clip_store
+                .history
+                .iter()
+                .map(|e| e.preview(46))
+                .collect()
+        }
+    }
+
     pub fn handle_overlay_click(&mut self, lx: f32, pill_w: f32) -> bool {
         if let Some(ref mut ov) = self.active_overlay {
             let bar_l = 58.0;
@@ -1214,6 +1367,60 @@ impl NotchController {
                     } else if (196.0..=278.0).contains(&cx) {
                         self.pomo_running = false;
                         self.pomo_remaining_secs = self.pomo_total_secs;
+                        return true;
+                    }
+                }
+            }
+            NotchState::Clips => {
+                // Top row buttons: [History] [Notes] [Clear]
+                if (0.0..=22.0).contains(&cy) {
+                    if cx < 80.0 {
+                        self.clips_view_notes = false;
+                        self.clips_scroll = 0;
+                        return true;
+                    } else if cx < 160.0 {
+                        self.clips_view_notes = true;
+                        self.clips_scroll = 0;
+                        return true;
+                    } else if cx >= content_w - 70.0 {
+                        if self.clips_view_notes {
+                            // clear notes one by one is destructive; clear history only
+                        } else {
+                            self.clip_store.clear_history();
+                            let _ = self.clip_store.save();
+                            self.clips_scroll = 0;
+                            self.flash_message("History cleared");
+                        }
+                        return true;
+                    }
+                }
+                // Note input row (notes view only)
+                if self.clips_view_notes && (24.0..=44.0).contains(&cy) {
+                    self.note_input_active = !self.note_input_active;
+                    return true;
+                }
+                // Rows
+                let row_top = if self.clips_view_notes { 48.0 } else { 26.0 };
+                if cy >= row_top {
+                    let row = ((cy - row_top) / 26.0).floor() as usize;
+                    let idx = self.clips_scroll + row;
+                    let rows = self.clips_rows().len();
+                    if idx < rows {
+                        if self.clips_view_notes {
+                            // click note: copy to clipboard; right-edge ✕ removes
+                            if cx >= content_w - 24.0 {
+                                self.clip_store.remove_note(idx);
+                                let _ = self.clip_store.save();
+                            } else if let Some(note) = self.clip_store.notes.get(idx).cloned() {
+                                if let Ok(seq) = crate::clipboard::win::write_clipboard_text(&note) {
+                                    self.clip_store.last_own_seq = seq;
+                                    let _ = self.clip_store.save();
+                                    self.flash_message("Note copied");
+                                }
+                            }
+                        } else {
+                            self.copy_clip_entry(idx);
+                        }
                         return true;
                     }
                 }

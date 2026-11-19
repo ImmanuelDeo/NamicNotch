@@ -33,6 +33,9 @@ pub const ID_START_WITH_WINDOWS: u32 = 1001;
 pub const ID_SHOW_MASCOT: u32 = 1002;
 pub const ID_MINIMAL_NOTCH: u32 = 1003;
 pub const ID_HOTKEY_OVERLAY: u32 = 1006;
+pub const ID_CLIPBOARD_HISTORY: u32 = 1007;
+pub const ID_OCR_CAPTURE: u32 = 1008;
+pub const ID_SHOW_CLIPS: u32 = 1009;
 pub const ID_ABOUT: u32 = 1004;
 pub const ID_EXIT: u32 = 1005;
 
@@ -113,6 +116,34 @@ pub fn handle_tray_command(cmd: u32, hwnd: HWND, settings: &Arc<RwLock<Settings>
             let mut s = settings.write().unwrap();
             s.enable_hotkey_overlay = !s.enable_hotkey_overlay;
             let _ = s.save();
+            Ok(false)
+        }
+        ID_CLIPBOARD_HISTORY => {
+            let mut s = settings.write().unwrap();
+            s.enable_clipboard_history = !s.enable_clipboard_history;
+            let _ = s.save();
+            Ok(false)
+        }
+        ID_OCR_CAPTURE => {
+            unsafe {
+                let _ = windows::Win32::UI::WindowsAndMessaging::PostMessageW(
+                    hwnd,
+                    windows::Win32::UI::WindowsAndMessaging::WM_HOTKEY,
+                    windows::Win32::Foundation::WPARAM(crate::notch::HOTKEY_ID_OCR as usize),
+                    windows::Win32::Foundation::LPARAM(0),
+                );
+            }
+            Ok(false)
+        }
+        ID_SHOW_CLIPS => {
+            unsafe {
+                let _ = windows::Win32::UI::WindowsAndMessaging::PostMessageW(
+                    hwnd,
+                    windows::Win32::UI::WindowsAndMessaging::WM_HOTKEY,
+                    windows::Win32::Foundation::WPARAM(crate::notch::HOTKEY_ID_CLIPS as usize),
+                    windows::Win32::Foundation::LPARAM(0),
+                );
+            }
             Ok(false)
         }
         ID_ABOUT => {
@@ -218,6 +249,22 @@ fn create_context_menu(settings: &Arc<RwLock<Settings>>) -> Result<HMENU> {
             ID_HOTKEY_OVERLAY as usize,
             PCWSTR(text.as_ptr()),
         )?;
+
+        let text = to_wide_string("Clipboard History\0");
+        AppendMenuW(
+            menu,
+            MF_STRING | if settings.enable_clipboard_history { MF_CHECKED } else { MF_UNCHECKED },
+            ID_CLIPBOARD_HISTORY as usize,
+            PCWSTR(text.as_ptr()),
+        )?;
+
+        AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null())?;
+
+        let text = to_wide_string("Capture Text (Ctrl+Alt+S)\0");
+        AppendMenuW(menu, MF_STRING, ID_OCR_CAPTURE as usize, PCWSTR(text.as_ptr()))?;
+
+        let text = to_wide_string("Clipboard & Notes (Ctrl+Alt+V)\0");
+        AppendMenuW(menu, MF_STRING, ID_SHOW_CLIPS as usize, PCWSTR(text.as_ptr()))?;
 
         AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null())?;
         
