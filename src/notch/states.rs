@@ -15,13 +15,8 @@ use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED,
 };
 use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
-use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_LWIN, VK_TAB,
-};
 use windows::Win32::UI::Shell::ShellExecuteW;
-use windows::Win32::UI::WindowsAndMessaging::{
-    FindWindowW, SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOWNORMAL,
-};
+use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
 use crate::mascot::chibi_liebe::ChibiLiebe;
 use crate::mascot::eyes::DevilUnionEyes;
@@ -169,7 +164,6 @@ pub struct NotchController {
 
     pub active_overlay: Option<OverlayKind>,
     pub overlay_timer: f32,
-    pub stagedock_flash_timer: f32,
 
     // --- Control State ---
     pub volume_level: u8,
@@ -260,7 +254,6 @@ impl NotchController {
 
             active_overlay: None,
             overlay_timer: 0.0,
-            stagedock_flash_timer: 0.0,
 
             volume_level: 72,
             brightness_level: 80,
@@ -335,84 +328,6 @@ impl NotchController {
         self.pomo_accum = 0.0;
         self.pomo_total_secs = if is_break { 5 * 60 } else { 25 * 60 };
         self.pomo_remaining_secs = self.pomo_total_secs;
-    }
-
-    pub fn trigger_stagedock(&mut self) {
-        self.stagedock_flash_timer = 0.45;
-        std::thread::spawn(|| {
-            let candidates = ["StageDock\0", "StageDockV2\0", "Stage Manager\0"];
-            for title in candidates {
-                let wide: Vec<u16> = title.encode_utf16().collect();
-                unsafe {
-                    if let Ok(hwnd) = FindWindowW(PCWSTR::null(), PCWSTR(wide.as_ptr())) {
-                        if !hwnd.0.is_null() {
-                            let _ = ShowWindow(hwnd, SW_RESTORE);
-                            let _ = SetForegroundWindow(hwnd);
-                            return;
-                        }
-                    }
-                }
-            }
-
-            let exe_paths = [
-                r"D:\StageDockV2\StageDock.exe",
-                r"D:\StageDockV2\stagedock.exe",
-                r"D:\StageDockV2\target\release\stagedock.exe",
-                r"D:\StageDockV2\target\release\StageDock.exe",
-            ];
-            for path in exe_paths {
-                if std::path::Path::new(path).exists() {
-                    let _ = std::process::Command::new(path)
-                        .creation_flags(CREATE_NO_WINDOW)
-                        .spawn();
-                    return;
-                }
-            }
-
-            unsafe {
-                let inputs = [
-                    INPUT {
-                        r#type: INPUT_KEYBOARD,
-                        Anonymous: INPUT_0 {
-                            ki: KEYBDINPUT {
-                                wVk: VK_LWIN,
-                                ..Default::default()
-                            },
-                        },
-                    },
-                    INPUT {
-                        r#type: INPUT_KEYBOARD,
-                        Anonymous: INPUT_0 {
-                            ki: KEYBDINPUT {
-                                wVk: VK_TAB,
-                                ..Default::default()
-                            },
-                        },
-                    },
-                    INPUT {
-                        r#type: INPUT_KEYBOARD,
-                        Anonymous: INPUT_0 {
-                            ki: KEYBDINPUT {
-                                wVk: VK_TAB,
-                                dwFlags: KEYEVENTF_KEYUP,
-                                ..Default::default()
-                            },
-                        },
-                    },
-                    INPUT {
-                        r#type: INPUT_KEYBOARD,
-                        Anonymous: INPUT_0 {
-                            ki: KEYBDINPUT {
-                                wVk: VK_LWIN,
-                                dwFlags: KEYEVENTF_KEYUP,
-                                ..Default::default()
-                            },
-                        },
-                    },
-                ];
-                let _ = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
-            }
-        });
     }
 
     fn spawn_gsmtc_media_poller(shared: Arc<Mutex<Option<LiveMediaSnapshot>>>) {
@@ -842,9 +757,6 @@ impl NotchController {
     pub fn update(&mut self, dt: f32, cursor_in_pill: bool, cursor_offset: Option<(f32, f32)>) {
         let dt = dt.clamp(0.001, 0.05);
         self.anim_time += dt;
-        if self.stagedock_flash_timer > 0.0 {
-            self.stagedock_flash_timer = (self.stagedock_flash_timer - dt).max(0.0);
-        }
 
         // Animasi transisi lirik mengalun halus (ease-out lerp)
         self.lyric_anim_progress = (self.lyric_anim_progress + dt * 4.5).min(1.0);

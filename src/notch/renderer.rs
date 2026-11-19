@@ -649,7 +649,7 @@ impl NotchRenderer {
         pill_rect: D2D_RECT_F,
         alpha: f32,
     ) -> D2D_RECT_F {
-        let tabs = ["Hub", "Music", "Control", "Focus", "Shelf", "Clips", "Stages"];
+        let tabs = ["Hub", "Music", "Control", "Focus", "Shelf", "Clips"];
         let active_idx = match ctrl.state {
             NotchState::Hub => 0,
             NotchState::Music => 1,
@@ -734,18 +734,16 @@ impl NotchRenderer {
 
         let tabs_left = pill_rect.left + 28.0;
                 let tabs_right = pill_rect.right - 28.0;
-                let slot_w = (tabs_right - tabs_left) / 7.0;
+                let slot_w = (tabs_right - tabs_left) / 6.0;
 
         for (i, label) in tabs.iter().enumerate() {
             let sl = tabs_left + slot_w * i as f32;
             let sr = sl + slot_w;
             let cx = (sl + sr) * 0.5;
-            let is_active = i == active_idx || (i == 6 && ctrl.stagedock_flash_timer > 0.0);
+            let is_active = i == active_idx;
 
             let text_col = if is_active {
                 white
-            } else if i == 6 {
-                AntiMagicNeutralPalette::ACCENT_CYAN
             } else {
                 muted
             };

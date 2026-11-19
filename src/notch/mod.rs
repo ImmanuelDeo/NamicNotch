@@ -413,7 +413,19 @@ impl NotchApp {
 
         self.controller.update(dt, cursor_in_pill, cursor_offset);
 
+        // Re-assert topmost: other topmost bars (menu-bar replacements, docks)
+        // can insert themselves above us and swallow every click on the notch.
+        // HWND_TOPMOST + SWP_NOACTIVATE is a cheap no-op when already on top.
         unsafe {
+            let _ = SetWindowPos(
+                self.hwnd,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+            );
             let _ = InvalidateRect(self.hwnd, None, false);
         }
 
@@ -421,6 +433,19 @@ impl NotchApp {
     }
 
     pub fn on_lbutton_down(&mut self, phys_x: f32, phys_y: f32) {
+        // Clicks only reach us when we are the topmost window under the cursor;
+        // re-assert immediately so the next click is never eaten by a rival bar.
+        unsafe {
+            let _ = SetWindowPos(
+                self.hwnd,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+            );
+        }
         let x = phys_x / self.dpi_scale;
         let y = phys_y / self.dpi_scale;
 
@@ -465,20 +490,17 @@ impl NotchApp {
                 }
             }
 
-            // 2. Klik Bar Navigasi 7-Slot di Atas (Hub, Music, Control, Focus, Shelf, Clips, Stages)
+            // 2. Klik Bar Navigasi 6-Slot di Atas (Hub, Music, Control, Focus, Shelf, Clips)
                         if (0.0..=26.0).contains(&ly) && lx >= 28.0 && lx <= pill_w - 28.0 {
                             let tabs_w = (pill_w - 56.0).max(1.0);
-                            let slot = (((lx - 28.0) / (tabs_w / 7.0)).floor() as usize).min(6);
+                            let slot = (((lx - 28.0) / (tabs_w / 6.0)).floor() as usize).min(5);
                             match slot {
                                 0 => self.controller.transition_to(NotchState::Hub),
                                 1 => self.controller.transition_to(NotchState::Music),
                                 2 => self.controller.transition_to(NotchState::Control),
                                 3 => self.controller.transition_to(NotchState::Pomo),
                                 4 => self.controller.transition_to(NotchState::Shelf),
-                                5 => self.controller.transition_to(NotchState::Clips),
-                                _ => {
-                                    self.controller.trigger_stagedock();
-                                }
+                                _ => self.controller.transition_to(NotchState::Clips),
                             }
                             unsafe {
                                 let _ = InvalidateRect(self.hwnd, None, false);
