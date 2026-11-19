@@ -444,8 +444,9 @@ impl NotchApp {
                     } else {
                         content_w - 4.0
                     };
-                    let bar_l = 42.0;
-                    let bar_r = (right_limit - 46.0).max(bar_l + 30.0);
+                    // Selaras draw_music_panel: track full-width player column.
+                    let bar_l = 10.0;
+                    let bar_r = (right_limit - 10.0).max(bar_l + 30.0);
                     let ratio = ((cx - bar_l) / (bar_r - bar_l)).clamp(0.0, 1.0);
                     self.controller.media_progress = ratio;
                     self.controller.media_elapsed_exact = ratio * self.controller.media_total_secs;

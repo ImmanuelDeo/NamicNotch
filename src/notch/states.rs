@@ -1320,36 +1320,36 @@ impl NotchController {
                 }
             }
             NotchState::Music => {
+                // Layout selaras draw_music_panel (cy relatif area.top):
+                // bar_y = content_h - 64, kontrol cy = content_h - 24.
                 let right_limit = if self.show_side_lyrics {
                     content_w * 0.57
                 } else {
                     content_w - 4.0
                 };
 
-                let bar_l = 42.0;
-                let bar_r = (right_limit - 46.0).max(bar_l + 30.0);
+                let bar_y = content_h - 64.0;
+                let track_l = 10.0;
+                let track_r = (right_limit - 10.0).max(track_l + 30.0);
 
-                // 1. Klik pada Track Bar (Seek / Fast Forward / Rewind)
-                if (48.0..=72.0).contains(&cy) {
-                    // Klik label waktu kiri: Rewind 5s (diperlambat / mundur)
-                    if cx < bar_l {
+                // 1. Track bar + label waktu (rewind/ff 5s di ujung)
+                if (bar_y - 8.0..=bar_y + 24.0).contains(&cy) && cx <= right_limit {
+                    if cx < track_l && cy > bar_y {
                         let new_secs = (self.media_elapsed_exact - 5.0).max(0.0);
                         self.media_elapsed_exact = new_secs;
                         self.media_progress = (new_secs / self.media_total_secs.max(1.0)).clamp(0.0, 1.0);
                         Self::seek_system_media(new_secs);
                         return true;
                     }
-                    // Klik label waktu kanan: Fast Forward 5s (dipercepat / maju)
-                    if cx > bar_r && cx <= right_limit {
+                    if cx > track_r && cy > bar_y {
                         let new_secs = (self.media_elapsed_exact + 5.0).min(self.media_total_secs);
                         self.media_elapsed_exact = new_secs;
                         self.media_progress = (new_secs / self.media_total_secs.max(1.0)).clamp(0.0, 1.0);
                         Self::seek_system_media(new_secs);
                         return true;
                     }
-                    // Klik langsung pada bar progress: Lompat ke detik tersebut dan mulai drag
-                    if cx >= bar_l - 4.0 && cx <= bar_r + 4.0 {
-                        let ratio = ((cx - bar_l) / (bar_r - bar_l)).clamp(0.0, 1.0);
+                    if cx >= track_l - 4.0 && cx <= track_r + 4.0 && cy <= bar_y + 6.0 {
+                        let ratio = ((cx - track_l) / (track_r - track_l)).clamp(0.0, 1.0);
                         self.media_progress = ratio;
                         self.media_elapsed_exact = ratio * self.media_total_secs;
                         let seek_secs = self.media_elapsed_exact;
@@ -1359,28 +1359,28 @@ impl NotchController {
                     }
                 }
 
-                // 2. Baris tombol kontrol bawah (Lyrics toggle, Prev, Play/Pause, Next, Playback Speed)
-                if cy >= 74.0 && cx <= right_limit {
-                    let mid = right_limit * 0.52;
-                    if cx < mid - 46.0 {
+                // 2. Baris kontrol: 💬 | ⏮ | ▶ bulat | ⏭ | speed pill
+                let ctrl_cy = content_h - 24.0;
+                if (ctrl_cy - 16.0..=ctrl_cy + 16.0).contains(&cy) && cx <= right_limit {
+                    let mid = right_limit * 0.5;
+                    if cx < mid - 58.0 {
                         self.show_side_lyrics = !self.show_side_lyrics;
                         return true;
-                    } else if cx >= mid - 44.0 && cx < mid - 14.0 {
+                    } else if cx >= mid - 54.0 && cx < mid - 20.0 {
                         Self::send_system_media_command("prev");
                         self.media_elapsed_exact = 0.0;
                         self.media_progress = 0.0;
                         return true;
-                    } else if cx >= mid - 14.0 && cx <= mid + 16.0 {
+                    } else if cx >= mid - 20.0 && cx <= mid + 20.0 {
                         Self::send_system_media_command("toggle");
                         self.media_playing = !self.media_playing;
                         return true;
-                    } else if cx > mid + 16.0 && cx <= mid + 46.0 {
+                    } else if cx > mid + 20.0 && cx <= mid + 56.0 {
                         Self::send_system_media_command("next");
                         self.media_elapsed_exact = 0.0;
                         self.media_progress = 0.0;
                         return true;
-                    } else if cx > mid + 46.0 && cx <= right_limit {
-                        // Tombol Playback Speed: cycle 1.0x -> 1.25x -> 1.5x -> 2.0x -> 0.75x -> 1.0x
+                    } else if cx > mid + 56.0 && cx <= mid + 100.0 {
                         self.playback_rate = match (self.playback_rate * 100.0).round() as i32 {
                             100 => 1.25,
                             125 => 1.50,
@@ -1393,7 +1393,7 @@ impl NotchController {
                     }
                 }
 
-                // 3. Klik pada Side Lyrics: klik untuk lompat ke bait tersebut (Karaoke seeking!)
+                // 3. Side lyrics: klik = lompat ke bait berikutnya (karaoke seek)
                 if self.show_side_lyrics && cx > right_limit && !self.timed_lyrics.is_empty() {
                     let next_idx = (self.active_lyric_idx + 1) % self.timed_lyrics.len();
                     if let Some((ts, _)) = self.timed_lyrics.get(next_idx) {
