@@ -78,6 +78,8 @@ pub struct NotchApp {
     pub cursor_in_pill: bool,
     pub last_cursor_logical_x: f32,
     pub last_cursor_logical_y: f32,
+    /// True while the notch is hidden because a fullscreen app owns the screen.
+    pub fs_hidden: bool,
     /// Self-post channel: lets the wndproc queue events processed on tick.
     pub self_tx: mpsc::Sender<NotchEvent>,
     pub self_rx: mpsc::Receiver<NotchEvent>,
@@ -154,6 +156,7 @@ impl NotchApp {
             cursor_in_pill: false,
             last_cursor_logical_x: 0.0,
             last_cursor_logical_y: 0.0,
+            fs_hidden: false,
             self_tx,
             self_rx,
         })
@@ -191,9 +194,13 @@ impl NotchApp {
         for ev in pending {
             match ev {
                 NotchEvent::SetState(s) => self.controller.transition_to(s),
-                NotchEvent::Show => unsafe {
-                    let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
-                },
+                NotchEvent::Show => {
+                    if !self.fs_hidden {
+                        unsafe {
+                            let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
+                        }
+                    }
+                }
                 NotchEvent::Hide => unsafe {
                     let _ = ShowWindow(self.hwnd, SW_HIDE);
                 },
@@ -342,6 +349,44 @@ impl NotchApp {
             self.controller.note_input_active,
             std::sync::atomic::Ordering::Relaxed,
         );
+
+        // Fullscreen auto-hide: a game/presentation owns the screen -> get out
+        // of the way entirely (no mini capsule: even a 6px pill steals focus
+        // hints and pixels from exclusive-fullscreen rendering). Reappear the
+        // moment the desktop is back.
+        if self.controller.fullscreen_active && !self.fs_hidden {
+            self.fs_hidden = true;
+            self.controller.is_hovered = false;
+            self.controller.note_input_active = false;
+            self.controller.active_overlay = None;
+            self.controller.transition_to(NotchState::Pet);
+            unsafe {
+                let _ = ShowWindow(self.hwnd, SW_HIDE);
+            }
+        } else if !self.controller.fullscreen_active && self.fs_hidden {
+            self.fs_hidden = false;
+            self.controller.is_hovered = false;
+            self.controller.transition_to(NotchState::Pet);
+            unsafe {
+                let _ = ShowWindow(self.hwnd, SW_SHOWNOACTIVATE);
+                let _ = SetWindowPos(
+                    self.hwnd,
+                    HWND_TOPMOST,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+                );
+                let _ = InvalidateRect(self.hwnd, None, false);
+            }
+        }
+        if self.fs_hidden {
+            // Skip cursor math, click-through toggling and rendering while hidden;
+            // controller.update still runs so the 2 Hz fullscreen poll keeps ticking.
+            self.controller.update(dt, false, None);
+            return Ok(());
+        }
 
         let mut pt = POINT::default();
         unsafe {

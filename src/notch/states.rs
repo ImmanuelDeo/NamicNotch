@@ -23,6 +23,13 @@ use crate::mascot::eyes::DevilUnionEyes;
 
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+/// True when the shell notification state means a fullscreen app / game /
+/// presentation owns the screen and the notch should hide itself.
+/// QUNS values: 2=Busy (fullscreen app), 3=D3D fullscreen, 4=Presentation mode.
+pub fn is_fullscreen_quns(quns: i32) -> bool {
+    matches!(quns, 2 | 3 | 4)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotchState {
     Pet,     // Closed mascot: Asta Devil Union (Pedang + Petir Merah) / Cheer Mode (Healing Hijau)
@@ -224,6 +231,10 @@ pub struct NotchController {
     pub disk_free_gb: u32,
     sysmon_timer: f32,
 
+    // --- Fullscreen auto-hide ---
+    pub fullscreen_active: bool,
+    fullscreen_poll_timer: f32,
+
     // --- Maskot ---
     pub devil_eyes: DevilUnionEyes,
     pub chibi_liebe: ChibiLiebe,
@@ -309,6 +320,9 @@ impl NotchController {
             ram_used_pct: 0,
             disk_free_gb: 0,
             sysmon_timer: 99.0,
+
+            fullscreen_active: false,
+            fullscreen_poll_timer: 99.0,
 
             devil_eyes: DevilUnionEyes::new(),
             chibi_liebe: ChibiLiebe::new(),
@@ -838,6 +852,12 @@ impl NotchController {
             self.clip_flash_timer = (self.clip_flash_timer - dt).max(0.0);
         }
 
+        self.fullscreen_poll_timer += dt;
+        if self.fullscreen_poll_timer >= 0.5 {
+            self.fullscreen_poll_timer = 0.0;
+            self.fullscreen_active = Self::detect_fullscreen();
+        }
+
         self.sysmon_timer += dt;
         if self.sysmon_timer >= 5.0 {
             self.sysmon_timer = 0.0;
@@ -1020,6 +1040,18 @@ impl NotchController {
                 PCWSTR::null(),
                 SW_SHOWNORMAL,
             );
+        }
+    }
+
+    /// Ask the shell whether a fullscreen app owns the screen. Cheap COM call,
+    /// polled at 2 Hz; covers exclusive D3D, borderless fullscreen and
+    /// presentation mode without enumerating windows.
+    pub fn detect_fullscreen() -> bool {
+        unsafe {
+            match windows::Win32::UI::Shell::SHQueryUserNotificationState() {
+                Ok(state) => is_fullscreen_quns(state.0),
+                Err(_) => false,
+            }
         }
     }
 
@@ -1356,5 +1388,20 @@ impl NotchController {
             _ => {}
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn fullscreen_quns_classification() {
+        use super::is_fullscreen_quns;
+        assert!(is_fullscreen_quns(2)); // busy / fullscreen app
+        assert!(is_fullscreen_quns(3)); // D3D fullscreen
+        assert!(is_fullscreen_quns(4)); // presentation mode
+        assert!(!is_fullscreen_quns(1)); // user not present
+        assert!(!is_fullscreen_quns(5)); // normal desktop
+        assert!(!is_fullscreen_quns(6)); // quiet time
+        assert!(!is_fullscreen_quns(7)); // UWP app
     }
 }
