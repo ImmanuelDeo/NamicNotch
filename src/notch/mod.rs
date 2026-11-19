@@ -46,6 +46,8 @@ pub enum NotchEvent {
     HotkeyVolume(u8),
     HotkeyBrightness(u8),
     HotkeyCapsLock(bool),
+    /// Media transport key pressed (play/pause/next/prev/stop).
+    HotkeyMedia,
 }
 
 pub struct NotchApp {
@@ -236,6 +238,11 @@ impl NotchApp {
                 NotchEvent::HotkeyCapsLock(on) => {
                     self.controller
                         .trigger_overlay(crate::notch::states::OverlayKind::CapsLock(on));
+                }
+                NotchEvent::HotkeyMedia => {
+                    // No dedicated media overlay: nudge the transport so the music
+                    // panel reflects the change on the next poll.
+                    NotchController::poke_system_media();
                 }
             }
         }

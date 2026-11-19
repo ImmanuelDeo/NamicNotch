@@ -32,6 +32,7 @@ pub const TRAY_ID: u32 = 1;
 pub const ID_START_WITH_WINDOWS: u32 = 1001;
 pub const ID_SHOW_MASCOT: u32 = 1002;
 pub const ID_MINIMAL_NOTCH: u32 = 1003;
+pub const ID_HOTKEY_OVERLAY: u32 = 1006;
 pub const ID_ABOUT: u32 = 1004;
 pub const ID_EXIT: u32 = 1005;
 
@@ -105,6 +106,12 @@ pub fn handle_tray_command(cmd: u32, hwnd: HWND, settings: &Arc<RwLock<Settings>
         ID_MINIMAL_NOTCH => {
             let mut s = settings.write().unwrap();
             s.minimal_notch = !s.minimal_notch;
+            let _ = s.save();
+            Ok(false)
+        }
+        ID_HOTKEY_OVERLAY => {
+            let mut s = settings.write().unwrap();
+            s.enable_hotkey_overlay = !s.enable_hotkey_overlay;
             let _ = s.save();
             Ok(false)
         }
@@ -203,7 +210,15 @@ fn create_context_menu(settings: &Arc<RwLock<Settings>>) -> Result<HMENU> {
             ID_MINIMAL_NOTCH as usize,
             PCWSTR(text.as_ptr()),
         )?;
-        
+
+        let text = to_wide_string("Hotkey Overlay\0");
+        AppendMenuW(
+            menu,
+            MF_STRING | if settings.enable_hotkey_overlay { MF_CHECKED } else { MF_UNCHECKED },
+            ID_HOTKEY_OVERLAY as usize,
+            PCWSTR(text.as_ptr()),
+        )?;
+
         AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null())?;
         
         let text = to_wide_string("About Namic Notch\0");

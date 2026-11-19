@@ -992,6 +992,12 @@ impl NotchController {
         });
     }
 
+    /// Toggle play/pause on the active media session. Used by the global media-key
+    /// hook so hardware transport keys behave the same as the panel button.
+    pub fn poke_system_media() {
+        Self::send_system_media_command("toggle");
+    }
+
     pub fn apply_system_volume(level: u8) {
         let scalar = (level.min(100) as f32 / 100.0).clamp(0.0, 1.0);
         std::thread::spawn(move || unsafe {
