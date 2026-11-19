@@ -1424,22 +1424,37 @@ impl NotchController {
                 }
             }
             NotchState::Pomo => {
-                // Baris Atas (cy: 10..44): [Focus 25m] (cx: 102..192) dan [Break 5m] (cx: 198..288)
-                if (10.0..=44.0).contains(&cy) {
-                    if (100.0..=194.0).contains(&cx) {
+                // Geometri selaras draw_pomo_panel (relatif area):
+                // kolom kanan mulai div_x+14 = content_w*0.42+20; blok center vertikal.
+                let right_l = content_w * 0.42 + 20.0;
+                let right_r = content_w - 8.0;
+                let right_w = right_r - right_l;
+                let gap = 10.0;
+                let pill_w = (right_w - gap) * 0.5;
+                let pill_h = 30.0;
+                let btn_h = 40.0;
+                let block_h = pill_h + 12.0 + btn_h;
+                let mid_y = content_h * 0.5;
+                let block_top = mid_y - block_h * 0.5;
+
+                // Pill mode (baris atas blok kanan)
+                if (block_top..=block_top + pill_h).contains(&cy) && cx >= right_l {
+                    if cx <= right_l + pill_w {
                         self.set_pomo_mode(false);
                         return true;
-                    } else if (196.0..=292.0).contains(&cx) {
+                    } else if cx >= right_l + pill_w + gap {
                         self.set_pomo_mode(true);
                         return true;
                     }
                 }
-                // Baris Bawah (cy: 50..92): [Start / Pause] (cx: 102..192) dan [Reset] (cx: 198..274)
-                if (50.0..=92.0).contains(&cy) {
-                    if (100.0..=194.0).contains(&cx) {
+                // Start/Pause + Reset (baris bawah blok kanan)
+                let btn_top = block_top + pill_h + 12.0;
+                let start_w = (right_w - gap) * 0.58;
+                if (btn_top..=btn_top + btn_h).contains(&cy) && cx >= right_l {
+                    if cx <= right_l + start_w {
                         self.pomo_running = !self.pomo_running;
                         return true;
-                    } else if (196.0..=278.0).contains(&cx) {
+                    } else if cx >= right_l + start_w + gap {
                         self.pomo_running = false;
                         self.pomo_remaining_secs = self.pomo_total_secs;
                         return true;
