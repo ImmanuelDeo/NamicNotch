@@ -12,6 +12,8 @@ mod shelf;
 mod timers;
 mod settings;
 mod mascot;
+mod clipboard;
+mod capture;
 mod utils;
 pub mod icon;
 
@@ -59,7 +61,13 @@ fn main() -> Result<()> {
         let _ = shelf.run().await;
     });
 
-    let hooks = hooks::HookManager::new(hooks::HookConfig::default(), notch_tx.clone())?;
+    let overlay_enabled = settings.read().unwrap().enable_hotkey_overlay;
+    let hook_config = hooks::HookConfig {
+        enable_media_keys: overlay_enabled,
+        enable_volume_keys: overlay_enabled,
+        ..hooks::HookConfig::default()
+    };
+    let hooks = hooks::HookManager::new(hook_config, notch_tx.clone())?;
     std::thread::spawn(move || {
         let _ = hooks.run();
     });

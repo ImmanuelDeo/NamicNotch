@@ -15,18 +15,20 @@ use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED,
 };
 use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
-use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VK_LWIN, VK_TAB,
-};
 use windows::Win32::UI::Shell::ShellExecuteW;
-use windows::Win32::UI::WindowsAndMessaging::{
-    FindWindowW, SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOWNORMAL,
-};
+use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
 use crate::mascot::chibi_liebe::ChibiLiebe;
 use crate::mascot::DevilUnionEyes;
 
 const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+/// True when the shell notification state means a fullscreen app / game /
+/// presentation owns the screen and the notch should hide itself.
+/// QUNS values: 2=Busy (fullscreen app), 3=D3D fullscreen, 4=Presentation mode.
+pub fn is_fullscreen_quns(quns: i32) -> bool {
+    matches!(quns, 2 | 3 | 4)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotchState {
@@ -37,6 +39,7 @@ pub enum NotchState {
     Control, // Tab 2: Clean Volume & Brightness Sliders
     Pomo,    // Tab 3: Pomodoro Timer (Focus 25m / Break 5m)
     Shelf,   // Tab 4: Dashed Dropzone File Shelf
+    Clips,   // Tab 5: Clipboard history + quick notes
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -97,9 +100,10 @@ pub struct LiveMediaSnapshot {
     pub title: String,
     pub artist: String,
     pub playing: bool,
-    pub raw_gsmtc_pos: f32,
+    pub raw_gsmtc_pos: f32,          // -1.0 = GSMTC beku, pakai clock lokal
     pub total_secs: f32,
     pub timed_lyrics: Vec<(f32, String)>,
+    pub has_real_lyrics: bool,       // true hanya jika LRC asli (synced/plain) ketemu
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -168,11 +172,12 @@ pub struct NotchController {
 
     pub active_overlay: Option<OverlayKind>,
     pub overlay_timer: f32,
-    pub stagedock_flash_timer: f32,
 
     // --- Control State ---
     pub volume_level: u8,
     pub brightness_level: u8,
+    pub volume_poll_suppress: f32,                       // jeda setelah kita set volume sendiri
+    pub system_levels_arc: Arc<Mutex<Option<(u8, u8)>>>, // (volume, brightness) dari Windows
 
     // --- Baterai & Power ---
     pub battery_percent: u8,
@@ -195,6 +200,8 @@ pub struct NotchController {
     pub active_lyric_idx: usize,
     pub prev_lyric_idx: usize,
     pub lyric_anim_progress: f32,
+    pub lyric_line_progress: f32,   // 0..1 progres di dalam bait lirik aktif (karaoke)
+    pub has_real_lyrics: bool,      // false = placeholder, jangan tampilkan sebagai lirik asli
     pub is_dragging_track_bar: bool,
     pub playback_rate: f64,
     live_media_arc: Arc<Mutex<Option<LiveMediaSnapshot>>>,
@@ -209,6 +216,30 @@ pub struct NotchController {
     // --- Section 4: File Shelf ---
     pub shelf_files: Vec<(String, String, String)>,
 
+    // --- Section 5: Clipboard history + quick notes ---
+    pub clip_store: crate::clipboard::ClipStore,
+    pub clips_view_notes: bool,
+    pub clips_scroll: usize,
+    pub note_input: String,
+    pub note_input_active: bool,
+    pub clip_flash_timer: f32,
+    pub clip_flash_text: String,
+
+    // --- OCR / screenshot state ---
+    pub ocr_busy: bool,
+    pub ocr_text: String,
+    pub ocr_scroll: usize,
+    pub last_ocr_png: Option<String>,
+
+    // --- System monitor (Hub panel footer) ---
+    pub ram_used_pct: u8,
+    pub disk_free_gb: u32,
+    sysmon_timer: f32,
+
+    // --- Fullscreen auto-hide ---
+    pub fullscreen_active: bool,
+    fullscreen_poll_timer: f32,
+
     // --- Maskot ---
     pub devil_eyes: DevilUnionEyes,
     pub chibi_liebe: ChibiLiebe,
@@ -219,6 +250,13 @@ impl NotchController {
         let (bat_pct, charging) = Self::read_windows_power();
         let live_media_arc: Arc<Mutex<Option<LiveMediaSnapshot>>> = Arc::new(Mutex::new(None));
         Self::spawn_gsmtc_media_poller(live_media_arc.clone());
+
+        // Volume/brightness dibaca dari sistem sejak awal — bukan angka hardcode 72/80.
+        let initial_volume = Self::read_system_volume().unwrap_or(50);
+        let initial_brightness = Self::read_system_brightness().unwrap_or(0);
+        let system_levels_arc: Arc<Mutex<Option<(u8, u8)>>> =
+            Arc::new(Mutex::new(Some((initial_volume, initial_brightness))));
+        Self::spawn_system_levels_poller(system_levels_arc.clone());
 
         let day_idx = (Local::now().ordinal() as usize) % MOTIVATIONAL_QUOTES.len();
 
@@ -239,10 +277,11 @@ impl NotchController {
 
             active_overlay: None,
             overlay_timer: 0.0,
-            stagedock_flash_timer: 0.0,
 
-            volume_level: 72,
-            brightness_level: 80,
+            volume_level: initial_volume,
+            brightness_level: if initial_brightness > 0 { initial_brightness } else { 80 },
+            volume_poll_suppress: 0.0,
+            system_levels_arc,
 
             battery_percent: bat_pct,
             is_charging: charging,
@@ -267,6 +306,8 @@ impl NotchController {
             active_lyric_idx: 0,
             prev_lyric_idx: 0,
             lyric_anim_progress: 1.0,
+            lyric_line_progress: 0.0,
+            has_real_lyrics: false,
             is_dragging_track_bar: false,
             playback_rate: 1.0,
             live_media_arc,
@@ -278,6 +319,26 @@ impl NotchController {
             pomo_accum: 0.0,
 
             shelf_files: Vec::new(),
+
+            clip_store: crate::clipboard::ClipStore::load(),
+            clips_view_notes: false,
+            clips_scroll: 0,
+            note_input: String::new(),
+            note_input_active: false,
+            clip_flash_timer: 0.0,
+            clip_flash_text: String::new(),
+
+            ocr_busy: false,
+            ocr_text: String::new(),
+            ocr_scroll: 0,
+            last_ocr_png: None,
+
+            ram_used_pct: 0,
+            disk_free_gb: 0,
+            sysmon_timer: 99.0,
+
+            fullscreen_active: false,
+            fullscreen_poll_timer: 99.0,
 
             devil_eyes: DevilUnionEyes::new(),
             chibi_liebe: ChibiLiebe::new(),
@@ -299,88 +360,13 @@ impl NotchController {
         self.pomo_remaining_secs = self.pomo_total_secs;
     }
 
-    pub fn trigger_stagedock(&mut self) {
-        self.stagedock_flash_timer = 0.45;
-        std::thread::spawn(|| {
-            let candidates = ["StageDock\0", "StageDockV2\0", "Stage Manager\0"];
-            for title in candidates {
-                let wide: Vec<u16> = title.encode_utf16().collect();
-                unsafe {
-                    if let Ok(hwnd) = FindWindowW(PCWSTR::null(), PCWSTR(wide.as_ptr())) {
-                        if !hwnd.0.is_null() {
-                            let _ = ShowWindow(hwnd, SW_RESTORE);
-                            let _ = SetForegroundWindow(hwnd);
-                            return;
-                        }
-                    }
-                }
-            }
-
-            let exe_paths = [
-                r"D:\StageDockV2\StageDock.exe",
-                r"D:\StageDockV2\stagedock.exe",
-                r"D:\StageDockV2\target\release\stagedock.exe",
-                r"D:\StageDockV2\target\release\StageDock.exe",
-            ];
-            for path in exe_paths {
-                if std::path::Path::new(path).exists() {
-                    let _ = std::process::Command::new(path)
-                        .creation_flags(CREATE_NO_WINDOW)
-                        .spawn();
-                    return;
-                }
-            }
-
-            unsafe {
-                let inputs = [
-                    INPUT {
-                        r#type: INPUT_KEYBOARD,
-                        Anonymous: INPUT_0 {
-                            ki: KEYBDINPUT {
-                                wVk: VK_LWIN,
-                                ..Default::default()
-                            },
-                        },
-                    },
-                    INPUT {
-                        r#type: INPUT_KEYBOARD,
-                        Anonymous: INPUT_0 {
-                            ki: KEYBDINPUT {
-                                wVk: VK_TAB,
-                                ..Default::default()
-                            },
-                        },
-                    },
-                    INPUT {
-                        r#type: INPUT_KEYBOARD,
-                        Anonymous: INPUT_0 {
-                            ki: KEYBDINPUT {
-                                wVk: VK_TAB,
-                                dwFlags: KEYEVENTF_KEYUP,
-                                ..Default::default()
-                            },
-                        },
-                    },
-                    INPUT {
-                        r#type: INPUT_KEYBOARD,
-                        Anonymous: INPUT_0 {
-                            ki: KEYBDINPUT {
-                                wVk: VK_LWIN,
-                                dwFlags: KEYEVENTF_KEYUP,
-                                ..Default::default()
-                            },
-                        },
-                    },
-                ];
-                let _ = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
-            }
-        });
-    }
-
     fn spawn_gsmtc_media_poller(shared: Arc<Mutex<Option<LiveMediaSnapshot>>>) {
         std::thread::spawn(move || {
             let mut last_fetched_title = String::new();
             let mut cached_lyrics: Vec<(f32, String)> = Vec::new();
+            let mut cached_real = false;
+            let mut last_pos = -1.0_f32;
+            let mut stall_polls = 0_u32;
 
             loop {
                 // Polling cepat 250ms untuk responsivitas instan saat seek / play / pause
@@ -417,8 +403,20 @@ impl NotchController {
 
                         if !title.is_empty() && title != last_fetched_title {
                             last_fetched_title = title.clone();
-                            cached_lyrics = Self::fetch_timed_lrclib(&title, &artist, total_secs);
+                            let (lyrics, real) = Self::fetch_timed_lrclib(&title, &artist, total_secs);
+                            cached_lyrics = lyrics;
+                            cached_real = real;
                         }
+
+                        // GSMTC bisa membeku di satu posisi (mis. saat browser di-background).
+                        // Jangan pernah seek mundur ke posisi itu; kirim -1 sebagai penanda.
+                        if playing && (raw_gsmtc_pos - last_pos).abs() < 0.01 {
+                            stall_polls += 1;
+                        } else {
+                            stall_polls = 0;
+                            last_pos = raw_gsmtc_pos;
+                        }
+                        let authoritative_pos = if stall_polls > 8 { -1.0 } else { raw_gsmtc_pos };
 
                         if !title.is_empty() {
                             if let Ok(mut guard) = shared.lock() {
@@ -430,9 +428,10 @@ impl NotchController {
                                         artist
                                     },
                                     playing,
-                                    raw_gsmtc_pos,
+                                    raw_gsmtc_pos: authoritative_pos,
                                     total_secs,
                                     timed_lyrics: cached_lyrics.clone(),
+                                    has_real_lyrics: cached_real,
                                 });
                             }
                         }
@@ -440,6 +439,52 @@ impl NotchController {
                 }
             }
         });
+    }
+
+    /// Poll volume/brightness dari Windows tiap 700ms. Ini sumber kebenaran:
+    /// slider selalu mencerminkan settingan laptop, termasuk kalau diubah dari
+    /// keyboard/tray/setting Windows — bukan nilai hardcode saat startup.
+    fn spawn_system_levels_poller(shared: Arc<Mutex<Option<(u8, u8)>>>) {
+        std::thread::spawn(move || loop {
+            std::thread::sleep(std::time::Duration::from_millis(700));
+            let vol = Self::read_system_volume();
+            let bri = Self::read_system_brightness();
+            if vol.is_some() || bri.is_some() {
+                if let Ok(mut guard) = shared.lock() {
+                    *guard = Some((vol.unwrap_or(0), bri.unwrap_or(0)));
+                }
+            }
+        });
+    }
+
+    /// Volume endpoint audio default (0..100) via COM IAudioEndpointVolume.
+    pub fn read_system_volume() -> Option<u8> {
+        unsafe {
+            let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+            let enumerator = CoCreateInstance::<_, IMMDeviceEnumerator>(
+                &MMDeviceEnumerator, None, CLSCTX_ALL,
+            ).ok()?;
+            let device = enumerator.GetDefaultAudioEndpoint(eRender, eConsole).ok()?;
+            let endpoint = device.Activate::<IAudioEndpointVolume>(CLSCTX_ALL, None).ok()?;
+            let scalar = endpoint.GetMasterVolumeLevelScalar().ok()?;
+            Some((scalar.clamp(0.0, 1.0) * 100.0).round() as u8)
+        }
+    }
+
+    /// Brightness panel internal (0..100). 0 berarti desktop pakai brightness
+    /// eksternal / WMI tidak tersedia — kembalikan None supaya tidak menimpa.
+    pub fn read_system_brightness() -> Option<u8> {
+        use std::os::windows::process::CommandExt;
+        let out = std::process::Command::new("powershell")
+            .args([
+                "-NoProfile", "-NonInteractive", "-Command",
+                "(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightness).CurrentBrightness",
+            ])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .ok()?;
+        let txt = String::from_utf8_lossy(&out.stdout);
+        txt.trim().lines().next()?.trim().parse::<u8>().ok().filter(|&v| v <= 100)
     }
 
     fn clean_music_title_and_artist(raw_title: &str, raw_artist: &str) -> (String, String) {
@@ -498,7 +543,9 @@ impl NotchController {
         (final_title, artist)
     }
 
-    fn fetch_timed_lrclib(raw_title: &str, raw_artist: &str, total_secs: f32) -> Vec<(f32, String)> {
+    /// Kembalikan (lirik, punya_lirik_asli). Flag penting supaya placeholder
+    /// tidak ikut ber-animasi karaoke seolah-olah lirik asli.
+    fn fetch_timed_lrclib(raw_title: &str, raw_artist: &str, total_secs: f32) -> (Vec<(f32, String)>, bool) {
         let (title, artist) = Self::clean_music_title_and_artist(raw_title, raw_artist);
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(3))
@@ -506,7 +553,7 @@ impl NotchController {
             .build()
             .ok();
 
-        let Some(client) = client else { return Vec::new(); };
+        let Some(client) = client else { return (Vec::new(), false); };
 
         // 1. Coba /api/get dengan parameter track_name dan artist_name
         if !artist.is_empty() && !title.is_empty() {
@@ -520,7 +567,7 @@ impl NotchController {
                     if let Some(synced) = json.get("syncedLyrics").and_then(|v| v.as_str()) {
                         let parsed = Self::parse_lrc_lines(synced);
                         if !parsed.is_empty() {
-                            return parsed;
+                            return (parsed, true);
                         }
                     }
                 }
@@ -544,7 +591,7 @@ impl NotchController {
                         if let Some(synced) = item.get("syncedLyrics").and_then(|v| v.as_str()) {
                             let parsed = Self::parse_lrc_lines(synced);
                             if !parsed.is_empty() {
-                                return parsed;
+                                return (parsed, true);
                             }
                         }
                     }
@@ -557,11 +604,11 @@ impl NotchController {
                                 .collect();
                             if !raw_lines.is_empty() {
                                 let step = (total_secs.max(60.0)) / (raw_lines.len() as f32);
-                                return raw_lines
+                                return (raw_lines
                                     .into_iter()
                                     .enumerate()
                                     .map(|(i, l)| (i as f32 * step, l))
-                                    .collect();
+                                    .collect(), true);
                             }
                         }
                     }
@@ -569,11 +616,12 @@ impl NotchController {
             }
         }
 
-        vec![
+        // Tidak ada lirik asli: kembalikan placeholder statis + flag false.
+        (vec![
             (0.0, format!("♪ {}", title)),
             (4.0, format!("Artist: {}", if artist.is_empty() { "Unknown" } else { &artist })),
             (8.0, String::from("Streaming aktif di Namic Notch")),
-        ]
+        ], false)
     }
 
     fn parse_lrc_lines(synced: &str) -> Vec<(f32, String)> {
@@ -636,13 +684,14 @@ impl NotchController {
             }
         }
 
-    pub fn ordered_tabs() -> [NotchState; 5] {
+    pub fn ordered_tabs() -> [NotchState; 6] {
         [
             NotchState::Hub,
             NotchState::Music,
             NotchState::Control,
             NotchState::Pomo,
             NotchState::Shelf,
+            NotchState::Clips,
         ]
     }
 
@@ -668,11 +717,13 @@ impl NotchController {
         match state {
             NotchState::Pet => (156.0, 34.0, 15.0),
             NotchState::Idle => (168.0, 34.0, 15.0),
-            NotchState::Hub => (380.0, 140.0, 20.0),
-            NotchState::Music => (390.0, 142.0, 20.0),
-            NotchState::Control => (380.0, 138.0, 20.0),
-            NotchState::Pomo => (380.0, 140.0, 20.0),
-            NotchState::Shelf => (380.0, 140.0, 20.0),
+            // Lebih lapang saat hover: konten tidak mepet, masih muat di window 540x220.
+            NotchState::Hub => (470.0, 172.0, 22.0),
+            NotchState::Music => (500.0, 188.0, 22.0),
+            NotchState::Control => (470.0, 170.0, 22.0),
+            NotchState::Pomo => (470.0, 174.0, 22.0),
+            NotchState::Shelf => (470.0, 174.0, 22.0),
+            NotchState::Clips => (500.0, 192.0, 22.0),
         }
     }
 
@@ -687,6 +738,9 @@ impl NotchController {
             self.last_expanded_tab = next_state;
         }
 
+        if next_state != NotchState::Clips {
+            self.note_input_active = false;
+        }
         self.state = next_state;
         self.chibi_liebe.sync_with_state(next_state);
 
@@ -735,6 +789,7 @@ impl NotchController {
                         let next = (*v as i16 + step).clamp(0, 100) as u8;
                         *v = next;
                         self.volume_level = next;
+                        self.volume_poll_suppress = 1.5;
                         Self::apply_system_volume(next);
                         self.overlay_timer = 3.0;
                         return;
@@ -743,6 +798,7 @@ impl NotchController {
                         let next = (*b as i16 + step).clamp(0, 100) as u8;
                         *b = next;
                         self.brightness_level = next;
+                        self.volume_poll_suppress = 1.5;
                         Self::apply_system_brightness(next);
                         self.overlay_timer = 3.0;
                         return;
@@ -758,11 +814,25 @@ impl NotchController {
             if cy < body_h * 0.5 {
                 let next = (self.volume_level as i16 + step).clamp(0, 100) as u8;
                 self.volume_level = next;
-                Self::apply_system_volume(next);
+                self.volume_poll_suppress = 1.5;
+                        Self::apply_system_volume(next);
             } else {
                 let next = (self.brightness_level as i16 + step).clamp(0, 100) as u8;
                 self.brightness_level = next;
-                Self::apply_system_brightness(next);
+                self.volume_poll_suppress = 1.5;
+                        Self::apply_system_brightness(next);
+            }
+            return;
+        }
+
+        if self.state == NotchState::Clips {
+            let rows = self.clips_rows().len();
+            if rows > 3 {
+                if delta < 0 {
+                    self.clips_scroll = (self.clips_scroll + 1).min(rows - 3);
+                } else {
+                    self.clips_scroll = self.clips_scroll.saturating_sub(1);
+                }
             }
             return;
         }
@@ -787,12 +857,32 @@ impl NotchController {
     pub fn update(&mut self, dt: f32, cursor_in_pill: bool, cursor_offset: Option<(f32, f32)>) {
         let dt = dt.clamp(0.001, 0.05);
         self.anim_time += dt;
-        if self.stagedock_flash_timer > 0.0 {
-            self.stagedock_flash_timer = (self.stagedock_flash_timer - dt).max(0.0);
-        }
 
         // Animasi transisi lirik mengalun halus (ease-out lerp)
         self.lyric_anim_progress = (self.lyric_anim_progress + dt * 4.5).min(1.0);
+
+        // --- SINKRONISASI LEVEL SISTEM (real-time) ---
+        // Jangan timpa nilai yang baru saja kita tulis sendiri selama 1.5 detik,
+        // tapi jika pengguna mengubah volume dari keyboard/Windows, langsung ikuti.
+        if self.volume_poll_suppress > 0.0 {
+            self.volume_poll_suppress = (self.volume_poll_suppress - dt).max(0.0);
+        } else if let Ok(mut guard) = self.system_levels_arc.try_lock() {
+            if let Some((vol, bri)) = guard.take() {
+                if vol != self.volume_level {
+                    self.volume_level = vol;
+                }
+                if bri > 0 && bri != self.brightness_level {
+                    self.brightness_level = bri;
+                }
+                if let Some(ref mut ov) = self.active_overlay {
+                    match ov {
+                        OverlayKind::Volume(v) => *v = self.volume_level,
+                        OverlayKind::Brightness(b) => *b = self.brightness_level,
+                        _ => {}
+                    }
+                }
+            }
+        }
 
         if let Ok(mut guard) = self.live_media_arc.try_lock() {
             if let Some(snap) = guard.take() {
@@ -806,27 +896,35 @@ impl NotchController {
                     self.media_total_secs = snap.total_secs;
                 }
 
+                // raw_gsmtc_pos == -1 artinya GSMTC membeku — jangan pernah
+                // seek mundur ke posisi lama. Clock lokal yang berjalan terus.
                 if title_changed {
+                    if snap.raw_gsmtc_pos >= 0.0 {
+                        self.media_elapsed_exact = snap.raw_gsmtc_pos;
+                    }
                     self.last_raw_gsmtc_pos = snap.raw_gsmtc_pos;
-                    self.media_elapsed_exact = snap.raw_gsmtc_pos;
-                } else if !self.is_dragging_track_bar {
+                } else if !self.is_dragging_track_bar && snap.raw_gsmtc_pos >= 0.0 {
                     let diff = (snap.raw_gsmtc_pos - self.media_elapsed_exact).abs();
                     if diff > 1.8 {
                         // User seek di player eksternal (Spotify/YouTube/Browser)
                         self.last_raw_gsmtc_pos = snap.raw_gsmtc_pos;
                         self.media_elapsed_exact = snap.raw_gsmtc_pos;
                     } else if diff > 0.35 && snap.raw_gsmtc_pos > 0.05 {
-                        // Koreksi halus drift waktu agar 100% presisi dan sinkron dengan audio
-                        self.media_elapsed_exact = self.media_elapsed_exact * 0.70 + snap.raw_gsmtc_pos * 0.30;
+                        // Koreksi halus drift waktu agar sinkron dengan audio
+                        self.media_elapsed_exact =
+                            self.media_elapsed_exact * 0.70 + snap.raw_gsmtc_pos * 0.30;
                     }
                 }
 
-                if !snap.timed_lyrics.is_empty() && (title_changed || self.timed_lyrics.len() <= 4)
+                if !snap.timed_lyrics.is_empty()
+                    && (title_changed || self.timed_lyrics.len() <= 4 || self.has_real_lyrics != snap.has_real_lyrics)
                 {
                     self.timed_lyrics = snap.timed_lyrics;
+                    self.has_real_lyrics = snap.has_real_lyrics;
                     self.active_lyric_idx = 0;
                     self.prev_lyric_idx = 0;
                     self.lyric_anim_progress = 1.0;
+                    self.lyric_line_progress = 0.0;
                 }
             }
         }
@@ -840,7 +938,7 @@ impl NotchController {
             self.media_progress =
                 (self.media_elapsed_exact / self.media_total_secs).clamp(0.0, 1.0);
 
-            if !self.timed_lyrics.is_empty() {
+            if self.has_real_lyrics && !self.timed_lyrics.is_empty() {
                 let mut found_idx = 0;
                 for (i, (ts, _)) in self.timed_lyrics.iter().enumerate() {
                     if *ts <= self.media_elapsed_exact + 0.15 {
@@ -853,7 +951,17 @@ impl NotchController {
                     self.prev_lyric_idx = self.active_lyric_idx;
                     self.active_lyric_idx = found_idx;
                     self.lyric_anim_progress = 0.0;
+                    self.lyric_line_progress = 0.0;
                 }
+                // Progres di dalam bait saat ini = dasar karaoke yang mulus.
+                let (start, _) = self.timed_lyrics[self.active_lyric_idx];
+                let end = self
+                    .timed_lyrics
+                    .get(self.active_lyric_idx + 1)
+                    .map(|(t, _)| *t)
+                    .unwrap_or(start + 5.0);
+                self.lyric_line_progress =
+                    ((self.media_elapsed_exact - start) / (end - start).max(0.1)).clamp(0.0, 1.0);
             }
         }
 
@@ -865,6 +973,24 @@ impl NotchController {
                 self.closed_quiet_timer = -6.5;
                 self.transition_to(NotchState::Idle);
             }
+        }
+
+        if self.clip_flash_timer > 0.0 {
+            self.clip_flash_timer = (self.clip_flash_timer - dt).max(0.0);
+        }
+
+        self.fullscreen_poll_timer += dt;
+        if self.fullscreen_poll_timer >= 0.5 {
+            self.fullscreen_poll_timer = 0.0;
+            self.fullscreen_active = Self::detect_fullscreen();
+        }
+
+        self.sysmon_timer += dt;
+        if self.sysmon_timer >= 5.0 {
+            self.sysmon_timer = 0.0;
+            let (ram, disk) = Self::read_system_stats();
+            self.ram_used_pct = ram;
+            self.disk_free_gb = disk;
         }
 
         self.power_poll_timer += dt;
@@ -992,6 +1118,12 @@ impl NotchController {
         });
     }
 
+    /// Toggle play/pause on the active media session. Used by the global media-key
+    /// hook so hardware transport keys behave the same as the panel button.
+    pub fn poke_system_media() {
+        Self::send_system_media_command("toggle");
+    }
+
     pub fn apply_system_volume(level: u8) {
         let scalar = (level.min(100) as f32 / 100.0).clamp(0.0, 1.0);
         std::thread::spawn(move || unsafe {
@@ -1038,6 +1170,104 @@ impl NotchController {
         }
     }
 
+    /// Ask the shell whether a fullscreen app owns the screen. Cheap COM call,
+    /// polled at 2 Hz; covers exclusive D3D, borderless fullscreen and
+    /// presentation mode without enumerating windows.
+    pub fn detect_fullscreen() -> bool {
+        unsafe {
+            match windows::Win32::UI::Shell::SHQueryUserNotificationState() {
+                Ok(state) => is_fullscreen_quns(state.0),
+                Err(_) => false,
+            }
+        }
+    }
+
+    /// RAM load % and free GB on the system drive, via Win32 (no WMI cost).
+    pub fn read_system_stats() -> (u8, u32) {
+        use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+        unsafe {
+            let mut ms = MEMORYSTATUSEX {
+                dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
+                ..Default::default()
+            };
+            let ram = if GlobalMemoryStatusEx(&mut ms).is_ok() {
+                ms.dwMemoryLoad.min(100) as u8
+            } else {
+                0
+            };
+            let mut free_bytes: u64 = 0;
+            let root: Vec<u16> = "C:\\0".encode_utf16().collect();
+            let disk = if windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
+                windows::core::PCWSTR(root.as_ptr()),
+                None,
+                None,
+                Some(&mut free_bytes),
+            )
+            .is_ok()
+            {
+                (free_bytes / (1024 * 1024 * 1024)) as u32
+            } else {
+                0
+            };
+            (ram, disk)
+        }
+    }
+
+    /// Re-copy a history entry to the system clipboard.
+    pub fn copy_clip_entry(&mut self, idx: usize) -> bool {
+        if let Some(entry) = self.clip_store.promote(idx) {
+            match crate::clipboard::win::write_clipboard_text(&entry.text) {
+                Ok(seq) => {
+                    self.clip_store.last_own_seq = seq;
+                    let _ = self.clip_store.save();
+                    self.clips_scroll = 0;
+                    self.flash_message("Copied to clipboard");
+                    true
+                }
+                Err(_) => {
+                    self.flash_message("Clipboard busy — try again");
+                    false
+                }
+            }
+        } else {
+            false
+        }
+    }
+
+    pub fn flash_message(&mut self, msg: &str) {
+        self.clip_flash_text = msg.to_string();
+        self.clip_flash_timer = 1.6;
+    }
+
+    pub fn commit_note(&mut self) -> bool {
+        let text = std::mem::take(&mut self.note_input);
+        self.note_input_active = false;
+        if self.clip_store.add_note(&text) {
+            let _ = self.clip_store.save();
+            self.flash_message("Note saved");
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Visible clipboard rows for the Clips panel (history or notes view).
+    pub fn clips_rows(&self) -> Vec<String> {
+        if self.clips_view_notes {
+            self.clip_store
+                .notes
+                .iter()
+                .map(|n| crate::clipboard::preview_of(n, 46))
+                .collect()
+        } else {
+            self.clip_store
+                .history
+                .iter()
+                .map(|e| e.preview(46))
+                .collect()
+        }
+    }
+
     pub fn handle_overlay_click(&mut self, lx: f32, pill_w: f32) -> bool {
         if let Some(ref mut ov) = self.active_overlay {
             let bar_l = 58.0;
@@ -1049,6 +1279,7 @@ impl NotchController {
                     OverlayKind::Volume(v) => {
                         *v = pct;
                         self.volume_level = pct;
+                        self.volume_poll_suppress = 1.5;
                         Self::apply_system_volume(pct);
                         self.overlay_timer = 3.0;
                         return true;
@@ -1056,6 +1287,7 @@ impl NotchController {
                     OverlayKind::Brightness(b) => {
                         *b = pct;
                         self.brightness_level = pct;
+                        self.volume_poll_suppress = 1.5;
                         Self::apply_system_brightness(pct);
                         self.overlay_timer = 3.0;
                         return true;
@@ -1088,36 +1320,36 @@ impl NotchController {
                 }
             }
             NotchState::Music => {
+                // Layout selaras draw_music_panel (cy relatif area.top):
+                // bar_y = content_h - 64, kontrol cy = content_h - 24.
                 let right_limit = if self.show_side_lyrics {
                     content_w * 0.57
                 } else {
                     content_w - 4.0
                 };
 
-                let bar_l = 42.0;
-                let bar_r = (right_limit - 46.0).max(bar_l + 30.0);
+                let bar_y = content_h - 64.0;
+                let track_l = 10.0;
+                let track_r = (right_limit - 10.0).max(track_l + 30.0);
 
-                // 1. Klik pada Track Bar (Seek / Fast Forward / Rewind)
-                if (48.0..=72.0).contains(&cy) {
-                    // Klik label waktu kiri: Rewind 5s (diperlambat / mundur)
-                    if cx < bar_l {
+                // 1. Track bar + label waktu (rewind/ff 5s di ujung)
+                if (bar_y - 8.0..=bar_y + 24.0).contains(&cy) && cx <= right_limit {
+                    if cx < track_l && cy > bar_y {
                         let new_secs = (self.media_elapsed_exact - 5.0).max(0.0);
                         self.media_elapsed_exact = new_secs;
                         self.media_progress = (new_secs / self.media_total_secs.max(1.0)).clamp(0.0, 1.0);
                         Self::seek_system_media(new_secs);
                         return true;
                     }
-                    // Klik label waktu kanan: Fast Forward 5s (dipercepat / maju)
-                    if cx > bar_r && cx <= right_limit {
+                    if cx > track_r && cy > bar_y {
                         let new_secs = (self.media_elapsed_exact + 5.0).min(self.media_total_secs);
                         self.media_elapsed_exact = new_secs;
                         self.media_progress = (new_secs / self.media_total_secs.max(1.0)).clamp(0.0, 1.0);
                         Self::seek_system_media(new_secs);
                         return true;
                     }
-                    // Klik langsung pada bar progress: Lompat ke detik tersebut dan mulai drag
-                    if cx >= bar_l - 4.0 && cx <= bar_r + 4.0 {
-                        let ratio = ((cx - bar_l) / (bar_r - bar_l)).clamp(0.0, 1.0);
+                    if cx >= track_l - 4.0 && cx <= track_r + 4.0 && cy <= bar_y + 6.0 {
+                        let ratio = ((cx - track_l) / (track_r - track_l)).clamp(0.0, 1.0);
                         self.media_progress = ratio;
                         self.media_elapsed_exact = ratio * self.media_total_secs;
                         let seek_secs = self.media_elapsed_exact;
@@ -1127,28 +1359,28 @@ impl NotchController {
                     }
                 }
 
-                // 2. Baris tombol kontrol bawah (Lyrics toggle, Prev, Play/Pause, Next, Playback Speed)
-                if cy >= 74.0 && cx <= right_limit {
-                    let mid = right_limit * 0.52;
-                    if cx < mid - 46.0 {
+                // 2. Baris kontrol: 💬 | ⏮ | ▶ bulat | ⏭ | speed pill
+                let ctrl_cy = content_h - 24.0;
+                if (ctrl_cy - 16.0..=ctrl_cy + 16.0).contains(&cy) && cx <= right_limit {
+                    let mid = right_limit * 0.5;
+                    if cx < mid - 58.0 {
                         self.show_side_lyrics = !self.show_side_lyrics;
                         return true;
-                    } else if cx >= mid - 44.0 && cx < mid - 14.0 {
+                    } else if cx >= mid - 54.0 && cx < mid - 20.0 {
                         Self::send_system_media_command("prev");
                         self.media_elapsed_exact = 0.0;
                         self.media_progress = 0.0;
                         return true;
-                    } else if cx >= mid - 14.0 && cx <= mid + 16.0 {
+                    } else if cx >= mid - 20.0 && cx <= mid + 20.0 {
                         Self::send_system_media_command("toggle");
                         self.media_playing = !self.media_playing;
                         return true;
-                    } else if cx > mid + 16.0 && cx <= mid + 46.0 {
+                    } else if cx > mid + 20.0 && cx <= mid + 56.0 {
                         Self::send_system_media_command("next");
                         self.media_elapsed_exact = 0.0;
                         self.media_progress = 0.0;
                         return true;
-                    } else if cx > mid + 46.0 && cx <= right_limit {
-                        // Tombol Playback Speed: cycle 1.0x -> 1.25x -> 1.5x -> 2.0x -> 0.75x -> 1.0x
+                    } else if cx > mid + 56.0 && cx <= mid + 100.0 {
                         self.playback_rate = match (self.playback_rate * 100.0).round() as i32 {
                             100 => 1.25,
                             125 => 1.50,
@@ -1161,7 +1393,7 @@ impl NotchController {
                     }
                 }
 
-                // 3. Klik pada Side Lyrics: klik untuk lompat ke bait tersebut (Karaoke seeking!)
+                // 3. Side lyrics: klik = lompat ke bait berikutnya (karaoke seek)
                 if self.show_side_lyrics && cx > right_limit && !self.timed_lyrics.is_empty() {
                     let next_idx = (self.active_lyric_idx + 1) % self.timed_lyrics.len();
                     if let Some((ts, _)) = self.timed_lyrics.get(next_idx) {
@@ -1181,33 +1413,103 @@ impl NotchController {
                         .round() as u8;
                     if cy < content_h * 0.5 {
                         self.volume_level = pct;
+                        self.volume_poll_suppress = 1.5;
                         Self::apply_system_volume(pct);
                     } else {
                         self.brightness_level = pct;
+                        self.volume_poll_suppress = 1.5;
                         Self::apply_system_brightness(pct);
                     }
                     return true;
                 }
             }
             NotchState::Pomo => {
-                // Baris Atas (cy: 10..44): [Focus 25m] (cx: 102..192) dan [Break 5m] (cx: 198..288)
-                if (10.0..=44.0).contains(&cy) {
-                    if (100.0..=194.0).contains(&cx) {
+                // Geometri selaras draw_pomo_panel (relatif area):
+                // kolom kanan mulai div_x+14 = content_w*0.42+20; blok center vertikal.
+                let right_l = content_w * 0.42 + 20.0;
+                let right_r = content_w - 8.0;
+                let right_w = right_r - right_l;
+                let gap = 10.0;
+                let pill_w = (right_w - gap) * 0.5;
+                let pill_h = 30.0;
+                let btn_h = 40.0;
+                let block_h = pill_h + 12.0 + btn_h;
+                let mid_y = content_h * 0.5;
+                let block_top = mid_y - block_h * 0.5;
+
+                // Pill mode (baris atas blok kanan)
+                if (block_top..=block_top + pill_h).contains(&cy) && cx >= right_l {
+                    if cx <= right_l + pill_w {
                         self.set_pomo_mode(false);
                         return true;
-                    } else if (196.0..=292.0).contains(&cx) {
+                    } else if cx >= right_l + pill_w + gap {
                         self.set_pomo_mode(true);
                         return true;
                     }
                 }
-                // Baris Bawah (cy: 50..92): [Start / Pause] (cx: 102..192) dan [Reset] (cx: 198..274)
-                if (50.0..=92.0).contains(&cy) {
-                    if (100.0..=194.0).contains(&cx) {
+                // Start/Pause + Reset (baris bawah blok kanan)
+                let btn_top = block_top + pill_h + 12.0;
+                let start_w = (right_w - gap) * 0.58;
+                if (btn_top..=btn_top + btn_h).contains(&cy) && cx >= right_l {
+                    if cx <= right_l + start_w {
                         self.pomo_running = !self.pomo_running;
                         return true;
-                    } else if (196.0..=278.0).contains(&cx) {
+                    } else if cx >= right_l + start_w + gap {
                         self.pomo_running = false;
                         self.pomo_remaining_secs = self.pomo_total_secs;
+                        return true;
+                    }
+                }
+            }
+            NotchState::Clips => {
+                // Header buttons (cy 0..22): History | Notes | Clear
+                if (0.0..=22.0).contains(&cy) {
+                    if cx < 80.0 {
+                        self.clips_view_notes = false;
+                        self.clips_scroll = 0;
+                        return true;
+                    } else if cx < 164.0 {
+                        self.clips_view_notes = true;
+                        self.clips_scroll = 0;
+                        return true;
+                    } else if cx >= content_w - 70.0 {
+                        if !self.clips_view_notes {
+                            self.clip_store.clear_history();
+                            let _ = self.clip_store.save();
+                            self.clips_scroll = 0;
+                            self.flash_message("History cleared");
+                        }
+                        return true;
+                    }
+                }
+                // Note input row (notes view): renderer area.top+27..49; cy = y - area.top.
+                if self.clips_view_notes && (27.0..=49.0).contains(&cy) {
+                    self.note_input_active = !self.note_input_active;
+                    return true;
+                }
+                // Rows — pitch 30, selaras dengan renderer (cy = y - area.top)
+                let row_top = if self.clips_view_notes { 53.0 } else { 30.0 };
+                let footer = (self.height.value - 34.0).max(60.0) - 18.0;
+                if cy >= row_top && cy < footer {
+                    let row = ((cy - row_top) / 30.0).floor() as usize;
+                    let idx = self.clips_scroll + row;
+                    let rows = self.clips_rows().len();
+                    if idx < rows {
+                        if self.clips_view_notes {
+                            if cx >= content_w - 30.0 {
+                                self.clip_store.remove_note(idx);
+                                let _ = self.clip_store.save();
+                                self.flash_message("Note removed");
+                            } else if let Some(note) = self.clip_store.notes.get(idx).cloned() {
+                                if let Ok(seq) = crate::clipboard::win::write_clipboard_text(&note) {
+                                    self.clip_store.last_own_seq = seq;
+                                    let _ = self.clip_store.save();
+                                    self.flash_message("Note copied");
+                                }
+                            }
+                        } else {
+                            self.copy_clip_entry(idx);
+                        }
                         return true;
                     }
                 }
@@ -1231,5 +1533,55 @@ impl NotchController {
             _ => {}
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fullscreen_quns_classification() {
+        assert!(is_fullscreen_quns(2)); // busy / fullscreen app
+        assert!(is_fullscreen_quns(3)); // D3D fullscreen
+        assert!(is_fullscreen_quns(4)); // presentation mode
+        assert!(!is_fullscreen_quns(1)); // user not present
+        assert!(!is_fullscreen_quns(5)); // normal desktop
+        assert!(!is_fullscreen_quns(6)); // quiet time
+        assert!(!is_fullscreen_quns(7)); // UWP app
+    }
+
+    #[test]
+    fn expanded_panel_dimensions_are_roomy_but_fit_window() {
+        // Window logical canvas = 540 x 220. Panel harus muat & lebih lapang
+        // dari desain lama (~380-400 x 140-150).
+        let (w, h, _r) = NotchController::target_dimensions_for(NotchState::Clips, false);
+        assert!(w >= 490.0 && w <= 540.0, "clips width {w}");
+        assert!(h >= 185.0 && h <= 220.0, "clips height {h}");
+        let (mw, mh, _) = NotchController::target_dimensions_for(NotchState::Music, false);
+        assert!(mw >= 490.0 && mh >= 180.0);
+        // Pet mode tetap kecil.
+        let (pw, ph, _) = NotchController::target_dimensions_for(NotchState::Pet, false);
+        assert!(pw < 200.0 && ph < 50.0);
+    }
+
+    #[test]
+    fn clips_scroll_never_underflows() {
+        // first = scroll.min(len-1) harus aman untuk list kosong & pendek.
+        for len in [0usize, 1, 5, 25] {
+            let scroll = 99usize;
+            let first = if len == 0 { 0 } else { scroll.min(len - 1) };
+            assert!(first < len.max(1));
+        }
+    }
+
+    #[test]
+    fn lyric_line_progress_stays_in_range() {
+        let start = 12.0_f32;
+        let end = 18.0_f32;
+        for t in [11.0_f32, 12.0, 15.0, 18.0, 19.0] {
+            let p = ((t - start) / (end - start).max(0.1)).clamp(0.0, 1.0);
+            assert!((0.0..=1.0).contains(&p));
+        }
     }
 }

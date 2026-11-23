@@ -460,8 +460,31 @@ impl NotchRenderer {
                 NotchState::Control => self.draw_control_panel(ctrl, content_rect, alpha),
                 NotchState::Pomo => self.draw_pomo_panel(ctrl, content_rect, alpha),
                 NotchState::Shelf => self.draw_shelf_panel(ctrl, content_rect, alpha),
+                NotchState::Clips => self.draw_clips_panel(ctrl, content_rect, alpha),
                 _ => {}
             }
+        }
+
+        if ctrl.clip_flash_timer > 0.0 && ctrl.height.value > 55.0 {
+            let fa = (ctrl.clip_flash_timer / 1.6).clamp(0.0, 1.0);
+            let flash_rect = D2D_RECT_F {
+                left: pill_rect.left + 30.0,
+                top: pill_rect.bottom - 26.0,
+                right: pill_rect.right - 30.0,
+                bottom: pill_rect.bottom - 8.0,
+            };
+            if let Ok(bb) = self.rt.CreateSolidColorBrush(
+                &D2D1_COLOR_F { r: 0.05, g: 0.07, b: 0.11, a: 0.92 * fa },
+                None,
+            ) {
+                self.rt.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT { rect: flash_rect, radiusX: 8.0, radiusY: 8.0 },
+                    &bb,
+                );
+            }
+            let mut tc = AntiMagicNeutralPalette::ACCENT_CYAN;
+            tc.a *= fa;
+            self.draw_text_centered(&ctrl.clip_flash_text, &self.fmt_caption, flash_rect, tc);
         }
 
         ctrl.chibi_liebe
@@ -626,13 +649,14 @@ impl NotchRenderer {
         pill_rect: D2D_RECT_F,
         alpha: f32,
     ) -> D2D_RECT_F {
-        let tabs = ["Hub", "Music", "Control", "Focus", "Shelf", "Stages"];
+        let tabs = ["Hub", "Music", "Control", "Focus", "Shelf", "Clips"];
         let active_idx = match ctrl.state {
             NotchState::Hub => 0,
             NotchState::Music => 1,
             NotchState::Control => 2,
             NotchState::Pomo => 3,
             NotchState::Shelf => 4,
+            NotchState::Clips => 5,
             _ => 0,
         };
 
@@ -716,12 +740,10 @@ impl NotchRenderer {
             let sl = tabs_left + slot_w * i as f32;
             let sr = sl + slot_w;
             let cx = (sl + sr) * 0.5;
-            let is_active = i == active_idx || (i == 5 && ctrl.stagedock_flash_timer > 0.0);
+            let is_active = i == active_idx;
 
             let text_col = if is_active {
                 white
-            } else if i == 5 {
-                AntiMagicNeutralPalette::ACCENT_CYAN
             } else {
                 muted
             };
@@ -761,8 +783,8 @@ impl NotchRenderer {
         }
 
         let dot_y = pill_rect.bottom - 4.5;
-        let total_dots = 5;
-        let dots_w = 44.0;
+        let total_dots = 6;
+        let dots_w = 54.0;
         let dot_start_x = (pill_rect.left + pill_rect.right - dots_w) * 0.5;
         for d in 0..total_dots {
             let dx = dot_start_x + d as f32 * 9.5;
@@ -843,6 +865,24 @@ impl NotchRenderer {
                 bottom: area.top + 60.0,
             },
             muted,
+        );
+
+        let sys_line = format!("RAM {}% · C: {}GB free", ctrl.ram_used_pct, ctrl.disk_free_gb);
+        let sys_col = if ctrl.ram_used_pct >= 90 || ctrl.disk_free_gb < 10 {
+            D2D1_COLOR_F { r: 1.0, g: 0.45, b: 0.35, a: alpha }
+        } else {
+            muted
+        };
+        self.draw_text_left(
+            &sys_line,
+            &self.fmt_caption,
+            D2D_RECT_F {
+                left: area.left + 2.0,
+                top: area.top + 60.0,
+                right: area.left + 120.0,
+                bottom: area.top + 78.0,
+            },
+            sys_col,
         );
 
         self.draw_nusa_ring_battery(
@@ -935,18 +975,10 @@ impl NotchRenderer {
     }
 
     unsafe fn draw_music_panel(&self, ctrl: &NotchController, area: D2D_RECT_F, alpha: f32) {
-        let white = D2D1_COLOR_F {
-            r: 1.0,
-            g: 1.0,
-            b: 1.0,
-            a: alpha,
-        };
-        let muted = D2D1_COLOR_F {
-            r: 0.60,
-            g: 0.64,
-            b: 0.70,
-            a: alpha,
-        };
+        let white = D2D1_COLOR_F { r: 1.0, g: 1.0, b: 1.0, a: alpha };
+        let muted = D2D1_COLOR_F { r: 0.60, g: 0.64, b: 0.70, a: alpha };
+        let cyan = AntiMagicNeutralPalette::ACCENT_CYAN;
+        let blue = AntiMagicNeutralPalette::ACCENT_BLUE;
 
         let total_w = area.right - area.left;
         let player_right = if ctrl.show_side_lyrics {
@@ -954,405 +986,275 @@ impl NotchRenderer {
         } else {
             area.right - 4.0
         };
+        let content_h = area.bottom - area.top;
 
+        // --- Album art besar + equalizer animasi (ala Spotify now-playing) ---
         let art_rect = D2D_RECT_F {
-            left: area.left + 4.0,
-            top: area.top + 4.0,
-            right: area.left + 52.0,
-            bottom: area.top + 52.0,
+            left: area.left + 8.0,
+            top: area.top + 12.0,
+            right: area.left + 86.0,
+            bottom: area.top + 90.0,
         };
         if let Ok(art_bg) = self.rt.CreateSolidColorBrush(
-            &D2D1_COLOR_F {
-                r: 0.14,
-                g: 0.22,
-                b: 0.34,
-                a: alpha,
-            },
-            None,
+            &D2D1_COLOR_F { r: 0.13, g: 0.20, b: 0.32, a: alpha }, None,
         ) {
             self.rt.FillRoundedRectangle(
-                &D2D1_ROUNDED_RECT {
-                    rect: art_rect,
-                    radiusX: 10.0,
-                    radiusY: 10.0,
-                },
+                &D2D1_ROUNDED_RECT { rect: art_rect, radiusX: 12.0, radiusY: 12.0 },
                 &art_bg,
             );
         }
-        self.draw_text_centered("🎵", &self.fmt_title, art_rect, white);
-
-        self.draw_text_left(
-            &ctrl.media_title,
-            &self.fmt_title,
+        // Highlight lembut di pojok atas art (kesan depth, tetap flat-theme).
+        if let Ok(hl) = self.rt.CreateSolidColorBrush(
+            &D2D1_COLOR_F { r: 0.22, g: 0.32, b: 0.48, a: 0.35 * alpha }, None,
+        ) {
+            self.rt.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: D2D_RECT_F {
+                        left: art_rect.left + 4.0, top: art_rect.top + 4.0,
+                        right: art_rect.right - 4.0, bottom: art_rect.top + 26.0,
+                    },
+                    radiusX: 9.0, radiusY: 9.0,
+                },
+                &hl,
+            );
+        }
+        self.draw_text_centered(
+            "🎵", &self.fmt_title,
             D2D_RECT_F {
-                left: art_rect.right + 10.0,
-                top: area.top + 6.0,
-                right: player_right,
-                bottom: area.top + 28.0,
+                left: art_rect.left, top: art_rect.top + 8.0,
+                right: art_rect.right, bottom: art_rect.top + 46.0,
             },
             white,
         );
-        self.draw_text_left(
-            &ctrl.media_artist,
-            &self.fmt_caption,
-            D2D_RECT_F {
-                left: art_rect.right + 10.0,
-                top: area.top + 27.0,
-                right: player_right,
-                bottom: area.top + 46.0,
-            },
-            muted,
-        );
-
-        if !ctrl.show_side_lyrics && !ctrl.timed_lyrics.is_empty() {
-            let total_lines = ctrl.timed_lyrics.len().max(1);
-            let cur_idx = ctrl.active_lyric_idx % total_lines;
-            if let Some((_, text)) = ctrl.timed_lyrics.get(cur_idx) {
-                self.draw_text_left(
-                    &format!("♪ {}", text),
-                    &self.fmt_caption,
-                    D2D_RECT_F {
-                        left: art_rect.right + 10.0,
-                        top: area.top + 44.0,
-                        right: player_right - 4.0,
-                        bottom: area.top + 58.0,
+        // Equalizer: 4 bar bergoyang saat playing, diam saat pause.
+        let eq_base = art_rect.bottom - 12.0;
+        let eq_left = art_rect.left + 16.0;
+        for b in 0..4 {
+            let phase = ctrl.anim_time * 5.2 + b as f32 * 1.35;
+            let amp = if ctrl.media_playing { (phase.sin().abs() * 0.75 + 0.25) } else { 0.18 };
+            let bh = 6.0 + amp * 16.0;
+            let bx = eq_left + b as f32 * 12.0;
+            if let Ok(eb) = self.rt.CreateSolidColorBrush(
+                &D2D1_COLOR_F { r: cyan.r, g: cyan.g, b: cyan.b, a: (0.55 + 0.4 * amp) * alpha },
+                None,
+            ) {
+                self.rt.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT {
+                        rect: D2D_RECT_F { left: bx, top: eq_base - bh, right: bx + 7.0, bottom: eq_base },
+                        radiusX: 2.0, radiusY: 2.0,
                     },
-                    AntiMagicNeutralPalette::ACCENT_CYAN,
+                    &eb,
                 );
             }
         }
 
-        let elapsed_s = ctrl.media_elapsed_exact.max(0.0) as u32;
-        let total_s = ctrl.media_total_secs.max(1.0) as u32;
-        let rem_s = total_s.saturating_sub(elapsed_s);
-
-        let left_time = format!("{:02}:{:02}", elapsed_s / 60, elapsed_s % 60);
-        let right_time = format!("-{:02}:{:02}", rem_s / 60, rem_s % 60);
-
-        let bar_y = area.top + 64.0;
+        // --- Judul + artist/channel, rata kiri setelah art. Tanpa label status;
+        // artist sengaja lebih ke bawah supaya tidak menabrak judul. ---
+        let text_l = art_rect.right + 14.0;
         self.draw_text_left(
-            &left_time,
-            &self.fmt_caption,
-            D2D_RECT_F {
-                left: area.left + 4.0,
-                top: bar_y - 9.0,
-                right: area.left + 40.0,
-                bottom: bar_y + 9.0,
-            },
+            &ctrl.media_title, &self.fmt_body,
+            D2D_RECT_F { left: text_l, top: area.top + 16.0, right: player_right - 6.0, bottom: area.top + 44.0 },
             white,
         );
-        self.draw_text_right(
-            &right_time,
-            &self.fmt_caption,
-            D2D_RECT_F {
-                left: player_right - 44.0,
-                top: bar_y - 9.0,
-                right: player_right,
-                bottom: bar_y + 9.0,
-            },
-            white,
+        self.draw_text_left(
+            &ctrl.media_artist, &self.fmt_caption,
+            D2D_RECT_F { left: text_l, top: area.top + 62.0, right: player_right - 6.0, bottom: area.top + 80.0 },
+            muted,
         );
 
-        let track_l = area.left + 42.0;
-        let track_r = (player_right - 46.0).max(track_l + 30.0);
+        // --- Progress bar full-width + waktu di bawahnya (Spotify layout) ---
+        let track_l = area.left + 10.0;
+        let track_r = player_right - 10.0;
+        let bar_y = area.bottom - 64.0;
         if let Ok(tb) = self.rt.CreateSolidColorBrush(
-            &D2D1_COLOR_F {
-                r: 0.28,
-                g: 0.30,
-                b: 0.34,
-                a: alpha,
-            },
-            None,
+            &D2D1_COLOR_F { r: 0.24, g: 0.27, b: 0.33, a: alpha }, None,
         ) {
             self.rt.FillRoundedRectangle(
                 &D2D1_ROUNDED_RECT {
-                    rect: D2D_RECT_F {
-                        left: track_l,
-                        top: bar_y - 2.0,
-                        right: track_r,
-                        bottom: bar_y + 2.0,
-                    },
-                    radiusX: 2.0,
-                    radiusY: 2.0,
+                    rect: D2D_RECT_F { left: track_l, top: bar_y - 2.0, right: track_r, bottom: bar_y + 2.0 },
+                    radiusX: 2.0, radiusY: 2.0,
                 },
                 &tb,
             );
         }
-
         let dot_x = track_l + (track_r - track_l) * ctrl.media_progress.clamp(0.0, 1.0);
-        if let Ok(fb) = self
-            .rt
-            .CreateSolidColorBrush(&AntiMagicNeutralPalette::ACCENT_BLUE, None)
-        {
+        if let Ok(fb) = self.rt.CreateSolidColorBrush(&cyan, None) {
             self.rt.FillRoundedRectangle(
                 &D2D1_ROUNDED_RECT {
-                    rect: D2D_RECT_F {
-                        left: track_l,
-                        top: bar_y - 2.0,
-                        right: dot_x.max(track_l + 2.0),
-                        bottom: bar_y + 2.0,
-                    },
-                    radiusX: 2.0,
-                    radiusY: 2.0,
+                    rect: D2D_RECT_F { left: track_l, top: bar_y - 2.0, right: dot_x.max(track_l + 2.0), bottom: bar_y + 2.0 },
+                    radiusX: 2.0, radiusY: 2.0,
                 },
                 &fb,
             );
         }
-        // Glowing cyan thumb for track bar
+        // Thumb: tumbuh saat hover/drag.
+        let thumb = if ctrl.is_dragging_track_bar { 6.5 } else if ctrl.is_hovered { 4.8 } else { 3.4 };
+        let glow = thumb + 3.5;
         if let Ok(gb) = self.rt.CreateSolidColorBrush(
-            &D2D1_COLOR_F {
-                r: 0.0,
-                g: 0.96,
-                b: 1.0,
-                a: 0.35 * alpha,
-            },
-            None,
+            &D2D1_COLOR_F { r: 0.0, g: 0.96, b: 1.0, a: 0.30 * alpha }, None,
         ) {
             self.rt.FillEllipse(
-                &D2D1_ELLIPSE {
-                    point: D2D_POINT_2F { x: dot_x, y: bar_y },
-                    radiusX: 6.0,
-                    radiusY: 6.0,
-                },
+                &D2D1_ELLIPSE { point: D2D_POINT_2F { x: dot_x, y: bar_y }, radiusX: glow, radiusY: glow },
                 &gb,
             );
         }
         if let Ok(wb) = self.rt.CreateSolidColorBrush(&white, None) {
             self.rt.FillEllipse(
-                &D2D1_ELLIPSE {
-                    point: D2D_POINT_2F { x: dot_x, y: bar_y },
-                    radiusX: 3.5,
-                    radiusY: 3.5,
-                },
+                &D2D1_ELLIPSE { point: D2D_POINT_2F { x: dot_x, y: bar_y }, radiusX: thumb, radiusY: thumb },
                 &wb,
             );
         }
 
-        let ctrl_y = area.top + 88.0;
-        let mid_x = (area.left + player_right) * 0.52;
+        let elapsed_s = ctrl.media_elapsed_exact.max(0.0) as u32;
+        let total_s = ctrl.media_total_secs.max(1.0) as u32;
+        let rem_s = total_s.saturating_sub(elapsed_s);
+        self.draw_text_left(
+            &format!("{:02}:{:02}", elapsed_s / 60, elapsed_s % 60), &self.fmt_caption,
+            D2D_RECT_F { left: track_l, top: bar_y + 6.0, right: track_l + 46.0, bottom: bar_y + 22.0 },
+            muted,
+        );
+        self.draw_text_right(
+            &format!("-{:02}:{:02}", rem_s / 60, rem_s % 60), &self.fmt_caption,
+            D2D_RECT_F { left: track_r - 46.0, top: bar_y + 6.0, right: track_r, bottom: bar_y + 22.0 },
+            muted,
+        );
 
-        let lyr_col = if ctrl.show_side_lyrics {
-            AntiMagicNeutralPalette::ACCENT_CYAN
-        } else {
-            muted
-        };
+        // --- Baris kontrol: 💬 | ⏮ | (▶ bulat besar) | ⏭ | speed pill ---
+        let ctrl_cy = area.bottom - 24.0;
+        let mid_x = (area.left + player_right) * 0.5;
+
+        let lyr_col = if ctrl.show_side_lyrics { cyan } else { muted };
         self.draw_text_centered(
-            "💬",
-            &self.fmt_body,
-            D2D_RECT_F {
-                left: mid_x - 76.0,
-                top: ctrl_y - 10.0,
-                right: mid_x - 48.0,
-                bottom: ctrl_y + 12.0,
-            },
+            "💬", &self.fmt_body,
+            D2D_RECT_F { left: mid_x - 92.0, top: ctrl_cy - 11.0, right: mid_x - 62.0, bottom: ctrl_cy + 11.0 },
             lyr_col,
         );
         self.draw_text_centered(
-            "⏮",
-            &self.fmt_title,
-            D2D_RECT_F {
-                left: mid_x - 44.0,
-                top: ctrl_y - 10.0,
-                right: mid_x - 16.0,
-                bottom: ctrl_y + 12.0,
-            },
+            "⏮", &self.fmt_title,
+            D2D_RECT_F { left: mid_x - 52.0, top: ctrl_cy - 11.0, right: mid_x - 24.0, bottom: ctrl_cy + 11.0 },
             white,
         );
-        self.draw_text_centered(
-            if ctrl.media_playing { "⏸" } else { "▶" },
-            &self.fmt_title,
-            D2D_RECT_F {
-                left: mid_x - 14.0,
-                top: ctrl_y - 10.0,
-                right: mid_x + 14.0,
-                bottom: ctrl_y + 12.0,
-            },
-            white,
-        );
-        self.draw_text_centered(
-            "⏭",
-            &self.fmt_title,
-            D2D_RECT_F {
-                left: mid_x + 16.0,
-                top: ctrl_y - 10.0,
-                right: mid_x + 44.0,
-                bottom: ctrl_y + 12.0,
-            },
-            white,
-        );
-
-        // Tombol Speed (1.0x, 1.25x, 1.5x, 2.0x, 0.75x)
-        let speed_str = format!("{:.2}x", ctrl.playback_rate)
-            .replace(".00", "")
-            .replace("0x", "x");
-        let speed_label = if speed_str == "1x" {
-            "1.0x".to_string()
-        } else {
-            speed_str
-        };
-        let speed_rect = D2D_RECT_F {
-            left: mid_x + 48.0,
-            top: ctrl_y - 8.0,
-            right: mid_x + 82.0,
-            bottom: ctrl_y + 10.0,
-        };
-        if let Ok(sb) = self.rt.CreateSolidColorBrush(
-            &D2D1_COLOR_F {
-                r: 0.14,
-                g: 0.20,
-                b: 0.30,
-                a: alpha,
-            },
-            None,
+        // Tombol play bulat besar ala Spotify.
+        if let Ok(pb) = self.rt.CreateSolidColorBrush(
+            &D2D1_COLOR_F { r: blue.r, g: blue.g, b: blue.b, a: 0.95 * alpha }, None,
         ) {
-            self.rt.FillRoundedRectangle(
-                &D2D1_ROUNDED_RECT {
-                    rect: speed_rect,
-                    radiusX: 4.5,
-                    radiusY: 4.5,
-                },
-                &sb,
+            self.rt.FillEllipse(
+                &D2D1_ELLIPSE { point: D2D_POINT_2F { x: mid_x, y: ctrl_cy }, radiusX: 16.0, radiusY: 16.0 },
+                &pb,
             );
         }
         self.draw_text_centered(
-            &speed_label,
-            &self.fmt_caption,
-            speed_rect,
-            AntiMagicNeutralPalette::ACCENT_CYAN,
+            if ctrl.media_playing { "⏸" } else { "▶" }, &self.fmt_body,
+            D2D_RECT_F { left: mid_x - 14.0, top: ctrl_cy - 12.0, right: mid_x + 14.0, bottom: ctrl_cy + 12.0 },
+            white,
+        );
+        self.draw_text_centered(
+            "⏭", &self.fmt_title,
+            D2D_RECT_F { left: mid_x + 24.0, top: ctrl_cy - 11.0, right: mid_x + 52.0, bottom: ctrl_cy + 11.0 },
+            white,
         );
 
+        let speed_str = format!("{:.2}x", ctrl.playback_rate)
+            .replace(".00", "").replace("0x", "x");
+        let speed_label = if speed_str == "1x" { "1.0x".to_string() } else { speed_str };
+        let speed_rect = D2D_RECT_F {
+            left: mid_x + 60.0, top: ctrl_cy - 10.0, right: mid_x + 96.0, bottom: ctrl_cy + 10.0,
+        };
+        if let Ok(sb) = self.rt.CreateSolidColorBrush(
+            &D2D1_COLOR_F { r: 0.14, g: 0.20, b: 0.30, a: alpha }, None,
+        ) {
+            self.rt.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT { rect: speed_rect, radiusX: 9.0, radiusY: 9.0 }, &sb,
+            );
+        }
+        self.draw_text_centered(&speed_label, &self.fmt_caption, speed_rect, cyan);
+
+        // --- Side lyrics: 3 bait di tengah vertikal + karaoke bar ---
         if ctrl.show_side_lyrics {
-            let lyr_left = player_right + 10.0;
+            let lyr_left = player_right + 12.0;
             if let Ok(div_b) = self.rt.CreateSolidColorBrush(
-                &D2D1_COLOR_F {
-                    r: 0.18,
-                    g: 0.24,
-                    b: 0.36,
-                    a: 0.6 * alpha,
-                },
-                None,
+                &D2D1_COLOR_F { r: 0.18, g: 0.24, b: 0.36, a: 0.6 * alpha }, None,
             ) {
                 self.rt.DrawLine(
-                    D2D_POINT_2F {
-                        x: player_right + 4.0,
-                        y: area.top + 6.0,
-                    },
-                    D2D_POINT_2F {
-                        x: player_right + 4.0,
-                        y: area.bottom - 8.0,
-                    },
-                    &div_b,
-                    1.0,
-                    None,
+                    D2D_POINT_2F { x: player_right + 5.0, y: area.top + 10.0 },
+                    D2D_POINT_2F { x: player_right + 5.0, y: area.bottom - 10.0 },
+                    &div_b, 1.0, None,
                 );
             }
 
             let total_lines = ctrl.timed_lyrics.len().max(1);
             let cur_idx = ctrl.active_lyric_idx % total_lines;
             let prev_line = if cur_idx > 0 {
-                ctrl.timed_lyrics
-                    .get(cur_idx - 1)
-                    .map(|(_, s)| s.as_str())
-                    .unwrap_or("")
-            } else {
-                "♪ · · ·"
-            };
-            let cur_line = ctrl
-                .timed_lyrics
-                .get(cur_idx)
-                .map(|(_, s)| s.as_str())
-                .unwrap_or("♪ ...");
-            let next_line = ctrl
-                .timed_lyrics
-                .get((cur_idx + 1) % total_lines)
-                .map(|(_, s)| s.as_str())
-                .unwrap_or("");
+                ctrl.timed_lyrics.get(cur_idx - 1).map(|(_, s)| s.as_str()).unwrap_or("")
+            } else { "♪ · · ·" };
+            let cur_line = ctrl.timed_lyrics.get(cur_idx).map(|(_, s)| s.as_str()).unwrap_or("♪ ...");
+            let next_line = ctrl.timed_lyrics.get((cur_idx + 1) % total_lines).map(|(_, s)| s.as_str()).unwrap_or("");
 
-            // Smooth ease-out vertical gliding offset
             let ease = 1.0 - (1.0 - ctrl.lyric_anim_progress).powi(3);
             let glide_y = (1.0 - ease) * 8.0;
+            let mid_y = (area.top + area.bottom) * 0.5;
 
-            // Baris lirik sebelumnya (fading up)
+            // Bait sebelumnya (redup, di atas)
             self.draw_text_left(
-                prev_line,
-                &self.fmt_caption,
-                D2D_RECT_F {
-                    left: lyr_left + 6.0,
-                    top: area.top + 6.0 - glide_y,
-                    right: area.right,
-                    bottom: area.top + 26.0 - glide_y,
-                },
-                D2D1_COLOR_F {
-                    r: 0.50,
-                    g: 0.55,
-                    b: 0.62,
-                    a: alpha * 0.55,
-                },
+                prev_line, &self.fmt_caption,
+                D2D_RECT_F { left: lyr_left + 6.0, top: mid_y - 44.0 - glide_y, right: area.right - 4.0, bottom: mid_y - 24.0 - glide_y },
+                D2D1_COLOR_F { r: 0.50, g: 0.55, b: 0.62, a: alpha * 0.55 },
             );
 
-            // Indikator aktif bercahaya di samping kiri baris saat ini
-            let cur_top = area.top + 28.0 - glide_y;
-            let cur_bottom = area.top + 72.0 - glide_y;
+            // Indikator aktif + bait saat ini
+            let cur_top = mid_y - 18.0 - glide_y;
+            let cur_bottom = mid_y + 16.0 - glide_y;
             if let Ok(ind_b) = self.rt.CreateSolidColorBrush(
-                &D2D1_COLOR_F {
-                    r: 0.0,
-                    g: 0.96,
-                    b: 1.0,
-                    a: alpha * (0.6 + 0.4 * ease),
-                },
-                None,
+                &D2D1_COLOR_F { r: 0.0, g: 0.96, b: 1.0, a: alpha * (0.6 + 0.4 * ease) }, None,
             ) {
                 self.rt.FillRoundedRectangle(
                     &D2D1_ROUNDED_RECT {
-                        rect: D2D_RECT_F {
-                            left: lyr_left,
-                            top: cur_top + 4.0,
-                            right: lyr_left + 3.0,
-                            bottom: cur_top + 22.0,
-                        },
-                        radiusX: 1.5,
-                        radiusY: 1.5,
+                        rect: D2D_RECT_F { left: lyr_left, top: cur_top + 4.0, right: lyr_left + 3.0, bottom: cur_top + 24.0 },
+                        radiusX: 1.5, radiusY: 1.5,
                     },
                     &ind_b,
                 );
             }
-
-            // Baris lirik saat ini (terang menyala putih-cyan)
             self.draw_text_left(
-                cur_line,
-                &self.fmt_body,
-                D2D_RECT_F {
-                    left: lyr_left + 8.0,
-                    top: cur_top,
-                    right: area.right,
-                    bottom: cur_bottom,
-                },
-                D2D1_COLOR_F {
-                    r: 0.95,
-                    g: 1.0,
-                    b: 1.0,
-                    a: alpha * (0.85 + 0.15 * ease),
-                },
+                cur_line, &self.fmt_body,
+                D2D_RECT_F { left: lyr_left + 8.0, top: cur_top, right: area.right - 4.0, bottom: cur_bottom },
+                D2D1_COLOR_F { r: 0.95, g: 1.0, b: 1.0, a: alpha * (0.85 + 0.15 * ease) },
             );
 
-            // Baris lirik berikutnya (menunggu di bawah)
+            // Karaoke bar hanya untuk lirik asli.
+            if ctrl.has_real_lyrics {
+                let kb_left = lyr_left + 8.0;
+                let kb_right = area.right - 6.0;
+                let kb_y = cur_bottom + 3.0;
+                if let Ok(bb) = self.rt.CreateSolidColorBrush(
+                    &D2D1_COLOR_F { r: 0.16, g: 0.20, b: 0.28, a: 0.8 * alpha }, None,
+                ) {
+                    self.rt.FillRoundedRectangle(
+                        &D2D1_ROUNDED_RECT {
+                            rect: D2D_RECT_F { left: kb_left, top: kb_y, right: kb_right, bottom: kb_y + 2.0 },
+                            radiusX: 1.0, radiusY: 1.0,
+                        }, &bb,
+                    );
+                }
+                let fill_x = kb_left + (kb_right - kb_left) * ctrl.lyric_line_progress;
+                if let Ok(fb) = self.rt.CreateSolidColorBrush(&cyan, None) {
+                    self.rt.FillRoundedRectangle(
+                        &D2D1_ROUNDED_RECT {
+                            rect: D2D_RECT_F { left: kb_left, top: kb_y, right: fill_x.max(kb_left + 1.0), bottom: kb_y + 2.0 },
+                            radiusX: 1.0, radiusY: 1.0,
+                        }, &fb,
+                    );
+                }
+            }
+
+            // Bait berikutnya (menunggu di bawah)
             self.draw_text_left(
-                next_line,
-                &self.fmt_caption,
-                D2D_RECT_F {
-                    left: lyr_left + 6.0,
-                    top: area.top + 74.0 - glide_y,
-                    right: area.right,
-                    bottom: area.top + 96.0 - glide_y,
-                },
-                D2D1_COLOR_F {
-                    r: 0.58,
-                    g: 0.63,
-                    b: 0.72,
-                    a: alpha * 0.65,
-                },
+                next_line, &self.fmt_caption,
+                D2D_RECT_F { left: lyr_left + 6.0, top: mid_y + 30.0 - glide_y, right: area.right - 4.0, bottom: mid_y + 50.0 - glide_y },
+                D2D1_COLOR_F { r: 0.58, g: 0.63, b: 0.72, a: alpha * 0.65 },
             );
         }
+        let _ = content_h;
     }
 
     unsafe fn draw_control_panel(&self, ctrl: &NotchController, area: D2D_RECT_F, alpha: f32) {
@@ -1465,177 +1367,153 @@ impl NotchRenderer {
     }
 
     unsafe fn draw_pomo_panel(&self, ctrl: &NotchController, area: D2D_RECT_F, alpha: f32) {
-            let white = D2D1_COLOR_F {
-                r: 1.0,
-                g: 1.0,
-                b: 1.0,
-                a: alpha,
-            };
-            let muted = D2D1_COLOR_F {
-                r: 0.60,
-                g: 0.64,
-                b: 0.72,
-                a: alpha,
-            };
+        let white = D2D1_COLOR_F { r: 1.0, g: 1.0, b: 1.0, a: alpha };
+        let muted = D2D1_COLOR_F { r: 0.60, g: 0.64, b: 0.72, a: alpha };
+        let cyan = AntiMagicNeutralPalette::ACCENT_CYAN;
+        let blue = AntiMagicNeutralPalette::ACCENT_BLUE;
 
-            let mins = ctrl.pomo_remaining_secs / 60;
-            let secs = ctrl.pomo_remaining_secs % 60;
-            let time_str = format!("{:02}:{:02}", mins, secs);
+        let content_w = area.right - area.left;
+        let content_h = area.bottom - area.top;
 
-            self.draw_text_left(
-                &time_str,
-                &self.fmt_clock_hero,
-                D2D_RECT_F {
-                    left: area.left + 6.0,
-                    top: area.top + 14.0,
-                    right: area.left + 112.0,
-                    bottom: area.top + 54.0,
-                },
-                white,
-            );
-            self.draw_text_left(
-                if ctrl.pomo_is_break {
-                    "☕ Break Mode"
-                } else {
-                    "🎯 Focus Mode"
-                },
-                &self.fmt_caption,
-                D2D_RECT_F {
-                    left: area.left + 6.0,
-                    top: area.top + 56.0,
-                    right: area.left + 112.0,
-                    bottom: area.top + 78.0,
-                },
-                AntiMagicNeutralPalette::ACCENT_CYAN,
-            );
+        // --- Kolom kiri: jam besar + mode + progress sesi, center vertikal ---
+        let left_w = content_w * 0.42;
+        let left_cx = area.left + left_w * 0.5;
+        let mid_y = (area.top + area.bottom) * 0.5;
 
-            let focus_mode_rect = D2D_RECT_F {
-                left: area.left + 102.0,
-                top: area.top + 10.0,
-                right: area.left + 192.0,
-                bottom: area.top + 42.0,
-            };
-            let break_mode_rect = D2D_RECT_F {
-                left: area.left + 198.0,
-                top: area.top + 10.0,
-                right: area.left + 288.0,
-                bottom: area.top + 42.0,
-            };
-
-            let active_pill_col = D2D1_COLOR_F {
-                r: 0.23,
-                g: 0.51,
-                b: 0.96,
-                a: 0.90 * alpha,
-            };
-            let inactive_pill_col = D2D1_COLOR_F {
-                r: 0.14,
-                g: 0.17,
-                b: 0.24,
-                a: 0.90 * alpha,
-            };
-
-            if let Ok(fb) = self.rt.CreateSolidColorBrush(
-                if !ctrl.pomo_is_break {
-                    &active_pill_col
-                } else {
-                    &inactive_pill_col
-                },
-                None,
-            ) {
-                self.rt.FillRoundedRectangle(
-                    &D2D1_ROUNDED_RECT {
-                        rect: focus_mode_rect,
-                        radiusX: 8.0,
-                        radiusY: 8.0,
-                    },
-                    &fb,
-                );
-            }
-            if let Ok(bb) = self.rt.CreateSolidColorBrush(
-                if ctrl.pomo_is_break {
-                    &active_pill_col
-                } else {
-                    &inactive_pill_col
-                },
-                None,
-            ) {
-                self.rt.FillRoundedRectangle(
-                    &D2D1_ROUNDED_RECT {
-                        rect: break_mode_rect,
-                        radiusX: 8.0,
-                        radiusY: 8.0,
-                    },
-                    &bb,
-                );
-            }
-
-            self.draw_text_centered(
-                "Focus 25m",
-                &self.fmt_caption,
-                focus_mode_rect,
-                if !ctrl.pomo_is_break { white } else { muted },
-            );
-            self.draw_text_centered(
-                "Break 5m",
-                &self.fmt_caption,
-                break_mode_rect,
-                if ctrl.pomo_is_break { white } else { muted },
-            );
-
-            let start_rect = D2D_RECT_F {
-                left: area.left + 102.0,
-                top: area.top + 50.0,
-                right: area.left + 192.0,
-                bottom: area.top + 92.0,
-            };
-            let reset_rect = D2D_RECT_F {
-                left: area.left + 198.0,
-                top: area.top + 50.0,
-                right: area.left + 278.0,
-                bottom: area.top + 92.0,
-            };
-
-        if let Ok(sb) = self.rt.CreateSolidColorBrush(
-            &D2D1_COLOR_F {
-                r: 0.18,
-                g: 0.24,
-                b: 0.36,
-                a: alpha,
+        let mins = ctrl.pomo_remaining_secs / 60;
+        let secs = ctrl.pomo_remaining_secs % 60;
+        let time_str = format!("{:02}:{:02}", mins, secs);
+        self.draw_text_centered(
+            &time_str, &self.fmt_clock_hero,
+            D2D_RECT_F {
+                left: area.left + 4.0, top: mid_y - 34.0,
+                right: area.left + left_w - 4.0, bottom: mid_y + 6.0,
             },
-            None,
+            white,
+        );
+        self.draw_text_centered(
+            if ctrl.pomo_is_break { "☕ Break Mode" } else { "🎯 Focus Mode" },
+            &self.fmt_caption,
+            D2D_RECT_F {
+                left: area.left + 4.0, top: mid_y + 10.0,
+                right: area.left + left_w - 4.0, bottom: mid_y + 28.0,
+            },
+            cyan,
+        );
+        // Progress sesi tipis di bawah mode.
+        let prog = if ctrl.pomo_total_secs > 0 {
+            1.0 - (ctrl.pomo_remaining_secs as f32 / ctrl.pomo_total_secs as f32)
+        } else { 0.0 };
+        let pb_l = area.left + 18.0;
+        let pb_r = area.left + left_w - 18.0;
+        let pb_y = mid_y + 36.0;
+        if let Ok(tb) = self.rt.CreateSolidColorBrush(
+            &D2D1_COLOR_F { r: 0.22, g: 0.26, b: 0.33, a: alpha }, None,
         ) {
             self.rt.FillRoundedRectangle(
                 &D2D1_ROUNDED_RECT {
-                    rect: start_rect,
-                    radiusX: 8.0,
-                    radiusY: 8.0,
-                },
-                &sb,
+                    rect: D2D_RECT_F { left: pb_l, top: pb_y, right: pb_r, bottom: pb_y + 3.0 },
+                    radiusX: 1.5, radiusY: 1.5,
+                }, &tb,
             );
         }
-        if let Ok(rb) = self.rt.CreateSolidColorBrush(&inactive_pill_col, None) {
+        if let Ok(fb) = self.rt.CreateSolidColorBrush(&cyan, None) {
             self.rt.FillRoundedRectangle(
                 &D2D1_ROUNDED_RECT {
-                    rect: reset_rect,
-                    radiusX: 8.0,
-                    radiusY: 8.0,
-                },
-                &rb,
+                    rect: D2D_RECT_F { left: pb_l, top: pb_y, right: (pb_l + (pb_r - pb_l) * prog.clamp(0.0, 1.0)).max(pb_l + 1.0), bottom: pb_y + 3.0 },
+                    radiusX: 1.5, radiusY: 1.5,
+                }, &fb,
+            );
+        }
+        let _ = left_cx;
+
+        // Divider vertikal tipis antara kolom.
+        let div_x = area.left + left_w + 6.0;
+        if let Ok(db) = self.rt.CreateSolidColorBrush(
+            &D2D1_COLOR_F { r: 0.18, g: 0.24, b: 0.36, a: 0.6 * alpha }, None,
+        ) {
+            self.rt.DrawLine(
+                D2D_POINT_2F { x: div_x, y: area.top + 12.0 },
+                D2D_POINT_2F { x: div_x, y: area.bottom - 12.0 },
+                &db, 1.0, None,
             );
         }
 
+        // --- Kolom kanan: pill mode di atas, Start/Reset besar di bawah ---
+        let right_l = div_x + 14.0;
+        let right_r = area.right - 8.0;
+        let right_w = right_r - right_l;
+        let gap = 10.0;
+        let pill_w = (right_w - gap) * 0.5;
+        let pill_h = 30.0;
+        let btn_h = 40.0;
+        let block_h = pill_h + 12.0 + btn_h;
+        let block_top = mid_y - block_h * 0.5;
+
+        let focus_rect = D2D_RECT_F {
+            left: right_l, top: block_top,
+            right: right_l + pill_w, bottom: block_top + pill_h,
+        };
+        let break_rect = D2D_RECT_F {
+            left: right_l + pill_w + gap, top: block_top,
+            right: right_r, bottom: block_top + pill_h,
+        };
+        let active_col = D2D1_COLOR_F { r: blue.r, g: blue.g, b: blue.b, a: 0.90 * alpha };
+        let inactive_col = D2D1_COLOR_F { r: 0.14, g: 0.17, b: 0.24, a: 0.90 * alpha };
+
+        if let Ok(fb) = self.rt.CreateSolidColorBrush(
+            if !ctrl.pomo_is_break { &active_col } else { &inactive_col }, None,
+        ) {
+            self.rt.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT { rect: focus_rect, radiusX: 9.0, radiusY: 9.0 }, &fb,
+            );
+        }
+        if let Ok(bb) = self.rt.CreateSolidColorBrush(
+            if ctrl.pomo_is_break { &active_col } else { &inactive_col }, None,
+        ) {
+            self.rt.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT { rect: break_rect, radiusX: 9.0, radiusY: 9.0 }, &bb,
+            );
+        }
         self.draw_text_centered(
-            if ctrl.pomo_running {
-                "⏸ Pause"
-            } else {
-                "▶ Start"
-            },
-            &self.fmt_body,
-            start_rect,
-            white,
+            "Focus 25m", &self.fmt_caption, focus_rect,
+            if !ctrl.pomo_is_break { white } else { muted },
         );
-        self.draw_text_centered("↺ Reset", &self.fmt_caption, reset_rect, muted);
+        self.draw_text_centered(
+            "Break 5m", &self.fmt_caption, break_rect,
+            if ctrl.pomo_is_break { white } else { muted },
+        );
+
+        let btn_top = block_top + pill_h + 12.0;
+        let start_w = (right_w - gap) * 0.58;
+        let start_rect = D2D_RECT_F {
+            left: right_l, top: btn_top,
+            right: right_l + start_w, bottom: btn_top + btn_h,
+        };
+        let reset_rect = D2D_RECT_F {
+            left: right_l + start_w + gap, top: btn_top,
+            right: right_r, bottom: btn_top + btn_h,
+        };
+        let start_col = if ctrl.pomo_running {
+            D2D1_COLOR_F { r: 0.16, g: 0.22, b: 0.34, a: alpha }
+        } else {
+            D2D1_COLOR_F { r: blue.r, g: blue.g, b: blue.b, a: 0.95 * alpha }
+        };
+        if let Ok(sb) = self.rt.CreateSolidColorBrush(&start_col, None) {
+            self.rt.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT { rect: start_rect, radiusX: 10.0, radiusY: 10.0 }, &sb,
+            );
+        }
+        if let Ok(rb) = self.rt.CreateSolidColorBrush(&inactive_col, None) {
+            self.rt.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT { rect: reset_rect, radiusX: 10.0, radiusY: 10.0 }, &rb,
+            );
+        }
+        self.draw_text_centered(
+            if ctrl.pomo_running { "⏸ Pause" } else { "▶ Start" },
+            &self.fmt_body, start_rect, white,
+        );
+        self.draw_text_centered("↺ Reset", &self.fmt_body, reset_rect, muted);
     }
 
     unsafe fn draw_shelf_panel(&self, ctrl: &NotchController, area: D2D_RECT_F, alpha: f32) {
@@ -1779,4 +1657,172 @@ impl NotchRenderer {
             }
         }
     }
+
+    unsafe fn draw_clips_panel(&self, ctrl: &NotchController, area: D2D_RECT_F, alpha: f32) {
+        let white = D2D1_COLOR_F { r: 1.0, g: 1.0, b: 1.0, a: alpha };
+        let muted = D2D1_COLOR_F { r: 0.56, g: 0.60, b: 0.68, a: alpha };
+        let accent = AntiMagicNeutralPalette::ACCENT_BLUE;
+        let cyan = AntiMagicNeutralPalette::ACCENT_CYAN;
+
+        // Header: History | Notes | Clear
+        let btn_y = area.top;
+        let btn_h = 22.0;
+        let buttons: [(&str, f32, f32, bool); 3] = [
+            ("History", area.left, area.left + 76.0, !ctrl.clips_view_notes),
+            ("Notes", area.left + 84.0, area.left + 160.0, ctrl.clips_view_notes),
+            ("Clear", area.right - 66.0, area.right, false),
+        ];
+        for (label, l, r, active) in buttons {
+            let rect = D2D_RECT_F { left: l, top: btn_y, right: r, bottom: btn_y + btn_h };
+            let bg = if active {
+                D2D1_COLOR_F { r: accent.r, g: accent.g, b: accent.b, a: 0.32 * alpha }
+            } else {
+                D2D1_COLOR_F { r: 0.12, g: 0.15, b: 0.21, a: 0.85 * alpha }
+            };
+            if let Ok(bb) = self.rt.CreateSolidColorBrush(&bg, None) {
+                self.rt.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT { rect, radiusX: 6.0, radiusY: 6.0 }, &bb,
+                );
+            }
+            self.draw_text_centered(label, &self.fmt_caption, rect, if active { white } else { muted });
+        }
+
+        if let Ok(lb) = self.rt.CreateSolidColorBrush(
+            &D2D1_COLOR_F { r: 0.18, g: 0.22, b: 0.30, a: 0.7 * alpha }, None,
+        ) {
+            self.rt.DrawLine(
+                D2D_POINT_2F { x: area.left, y: area.top + btn_h + 3.0 },
+                D2D_POINT_2F { x: area.right, y: area.top + btn_h + 3.0 },
+                &lb, 1.0, None,
+            );
+        }
+
+        let mut row_top = area.top + 30.0;
+        let footer_top = area.bottom - 18.0;
+
+        if ctrl.clips_view_notes {
+            let input_rect = D2D_RECT_F {
+                left: area.left, top: area.top + 27.0, right: area.right, bottom: area.top + 49.0,
+            };
+            if let Ok(bb) = self.rt.CreateSolidColorBrush(
+                &D2D1_COLOR_F { r: 0.08, g: 0.10, b: 0.15, a: 0.9 * alpha }, None,
+            ) {
+                self.rt.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT { rect: input_rect, radiusX: 6.0, radiusY: 6.0 }, &bb,
+                );
+            }
+            let hint = if ctrl.note_input.is_empty() && !ctrl.note_input_active {
+                "+ Type a note (click here, Enter saves)"
+            } else {
+                &ctrl.note_input
+            };
+            let mut shown = hint.to_string();
+            if ctrl.note_input_active { shown.push('|'); }
+            self.draw_text_left(
+                &shown, &self.fmt_caption,
+                D2D_RECT_F { left: input_rect.left + 10.0, ..input_rect },
+                if ctrl.note_input.is_empty() && !ctrl.note_input_active { muted } else { white },
+            );
+            row_top = area.top + 53.0;
+        }
+
+        if ctrl.ocr_busy {
+            self.draw_text_centered(
+                "Reading screen text…", &self.fmt_body,
+                D2D_RECT_F { left: area.left, top: row_top + 10.0, right: area.right, bottom: footer_top },
+                cyan,
+            );
+            return;
+        }
+
+        let rows = ctrl.clips_rows();
+        if rows.is_empty() {
+            let msg = if ctrl.clips_view_notes {
+                "No notes yet — type above"
+            } else {
+                "Copy anything — it lands here"
+            };
+            self.draw_text_centered(
+                msg, &self.fmt_body,
+                D2D_RECT_F { left: area.left, top: row_top + 12.0, right: area.right, bottom: footer_top },
+                muted,
+            );
+            return;
+        }
+
+        let pitch = 30.0_f32;
+        let max_rows = (((footer_top - row_top - 4.0) / pitch).floor() as usize).max(1);
+        let first = ctrl.clips_scroll.min(rows.len().saturating_sub(1));
+        for (i, text) in rows.iter().skip(first).take(max_rows).enumerate() {
+            let abs_idx = first + i;
+            let ry = row_top + i as f32 * pitch;
+            let row_rect = D2D_RECT_F {
+                left: area.left, top: ry, right: area.right, bottom: ry + pitch - 4.0,
+            };
+            if let Ok(bb) = self.rt.CreateSolidColorBrush(
+                &D2D1_COLOR_F { r: 0.10, g: 0.13, b: 0.19, a: 0.85 * alpha }, None,
+            ) {
+                self.rt.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT { rect: row_rect, radiusX: 7.0, radiusY: 7.0 }, &bb,
+                );
+            }
+
+            let badge = D2D_RECT_F {
+                left: row_rect.left + 7.0, top: ry + 4.0,
+                right: row_rect.left + 33.0, bottom: ry + 22.0,
+            };
+            if let Ok(bb) = self.rt.CreateSolidColorBrush(
+                &D2D1_COLOR_F { r: accent.r, g: accent.g, b: accent.b, a: 0.30 * alpha }, None,
+            ) {
+                self.rt.FillRoundedRectangle(
+                    &D2D1_ROUNDED_RECT { rect: badge, radiusX: 5.0, radiusY: 5.0 }, &bb,
+                );
+            }
+            self.draw_text_centered(
+                &format!("{:02}", abs_idx + 1), &self.fmt_caption, badge, cyan,
+            );
+
+            let delete_zone = if ctrl.clips_view_notes { 30.0 } else { 8.0 };
+            self.draw_text_left(
+                text, &self.fmt_caption,
+                D2D_RECT_F {
+                    left: badge.right + 9.0, top: ry + 2.0,
+                    right: row_rect.right - delete_zone, bottom: row_rect.bottom,
+                },
+                white,
+            );
+
+            if ctrl.clips_view_notes {
+                self.draw_text_centered(
+                    "✕", &self.fmt_caption,
+                    D2D_RECT_F {
+                        left: row_rect.right - 26.0, top: ry + 2.0,
+                        right: row_rect.right - 4.0, bottom: row_rect.bottom,
+                    },
+                    muted,
+                );
+            }
+        }
+
+        if rows.len() > max_rows {
+            self.draw_text_left(
+                &format!("{}-{} / {}", first + 1, (first + max_rows).min(rows.len()), rows.len()),
+                &self.fmt_caption,
+                D2D_RECT_F { left: area.left + 4.0, top: footer_top, right: area.right - 130.0, bottom: area.bottom },
+                muted,
+            );
+            self.draw_text_right(
+                "scroll ↕  click = copy", &self.fmt_caption,
+                D2D_RECT_F { left: area.right - 132.0, top: footer_top, right: area.right, bottom: area.bottom },
+                muted,
+            );
+        } else {
+            self.draw_text_right(
+                "click = copy", &self.fmt_caption,
+                D2D_RECT_F { left: area.right - 90.0, top: footer_top, right: area.right, bottom: area.bottom },
+                muted,
+            );
+        }
+    }
+
 }
