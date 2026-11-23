@@ -157,6 +157,66 @@ impl IdleCharacter for ErenAttackTitan {
                 );
             }
         }
+
+        // ── Ambience: berkas sinar, halo, bara, refleksi dasar ──────────────
+        draw_back_rays(
+            rt,
+            factory,
+            cx,
+            pill_rect.bottom - 1.0,
+            8,
+            0.95,
+            ph * 1.20,
+            ctx.phase_time * 0.5,
+            D2D1_COLOR_F {
+                r: 1.0,
+                g: 0.72,
+                b: 0.20,
+                a: (0.075 + 0.05 * flash + 0.03 * titan) * alpha,
+            },
+        );
+        draw_soft_radial_glow(
+            rt,
+            D2D_POINT_2F {
+                x: cx,
+                y: pill_rect.top + ph * 0.60,
+            },
+            pw * 0.18,
+            ph * 0.58,
+            lerp(0.55, 1.0, flash),
+            lerp(0.85, 0.95, flash),
+            lerp(0.45, 0.55, flash),
+            (0.14 + 0.10 * titan) * alpha,
+        );
+        draw_rising_particles(
+            rt,
+            cx,
+            pill_rect.bottom - 1.0,
+            pw * 0.38,
+            ph * 0.9,
+            ctx.phase_time,
+            9,
+            D2D1_COLOR_F {
+                r: 1.0,
+                g: 0.86,
+                b: 0.42,
+                a: (0.28 + 0.10 * titan) * alpha,
+            },
+            0.95,
+        );
+        draw_soft_radial_glow(
+            rt,
+            D2D_POINT_2F {
+                x: cx,
+                y: pill_rect.bottom - 0.5,
+            },
+            pw * 0.42,
+            2.2,
+            1.0,
+            0.86,
+            0.48,
+            (0.26 + 0.10 * flash) * alpha,
+        );
     }
 
     unsafe fn draw_character(
@@ -305,5 +365,63 @@ impl IdleCharacter for ErenAttackTitan {
                 }
             }
         }
+
+        // ── Aksesori pendukung: pecahan hardening & rune Eldia melayang ─────
+        let amber = D2D1_COLOR_F {
+            r: 1.0,
+            g: 0.82,
+            b: 0.34,
+            a: alpha,
+        };
+        for (i, (bx, by, sc)) in [
+            (-20.0_f32, -7.0_f32, 1.0_f32),
+            (19.0, -9.0, 0.8),
+            (-23.0, 6.0, 0.6),
+            (22.0, 5.0, 0.9),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let drift = (ctx.phase_time * (1.1 + i as f32 * 0.17) + i as f32).sin();
+            let px = face_cx + bx + drift * 1.4;
+            let py = eye_y + by + drift * 1.8;
+            let w = 2.2 * sc;
+            let h = 3.4 * sc;
+            fill_polygon(
+                rt,
+                factory,
+                &[
+                    D2D_POINT_2F { x: px, y: py - h },
+                    D2D_POINT_2F { x: px + w, y: py },
+                    D2D_POINT_2F { x: px, y: py + h },
+                    D2D_POINT_2F { x: px - w, y: py },
+                ],
+                D2D1_COLOR_F {
+                    a: (0.35 + 0.25 * drift.abs()) * alpha,
+                    ..amber
+                },
+            );
+        }
+        // Busur rune Eldia di belakang kepala.
+        let arc_r = 26.0;
+        let arc: Vec<D2D_POINT_2F> = (0..9)
+            .map(|k| {
+                let a = std::f32::consts::PI * (0.18 + 0.64 * k as f32 / 8.0);
+                D2D_POINT_2F {
+                    x: face_cx - a.cos() * arc_r,
+                    y: eye_y - 2.0 - a.sin() * arc_r * 0.55,
+                }
+            })
+            .collect();
+        draw_polyline(
+            rt,
+            factory,
+            &arc,
+            D2D1_COLOR_F {
+                a: (0.22 + 0.12 * titan) * alpha,
+                ..amber
+            },
+            1.0,
+        );
     }
 }

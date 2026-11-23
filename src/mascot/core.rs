@@ -366,6 +366,116 @@ pub unsafe fn draw_lightning_bolt(
     }
 }
 
+/// Garis polyline dengan ujung membulat (outline rambut, bilah pedang, retakan).
+pub unsafe fn draw_polyline(
+    rt: &ID2D1HwndRenderTarget,
+    factory: &ID2D1Factory,
+    pts: &[D2D_POINT_2F],
+    color: D2D1_COLOR_F,
+    width: f32,
+) {
+    if pts.len() < 2 || color.a <= 0.004 {
+        return;
+    }
+    let stroke = create_round_stroke(factory);
+    if let (Ok(brush), Ok(path)) = (
+        rt.CreateSolidColorBrush(&color, None),
+        factory.CreatePathGeometry(),
+    ) {
+        if let Ok(sink) = path.Open() {
+            sink.BeginFigure(pts[0], D2D1_FIGURE_BEGIN_HOLLOW);
+            let _ = sink.AddLines(&pts[1..]);
+            sink.EndFigure(D2D1_FIGURE_END_OPEN);
+            let _ = sink.Close();
+            rt.DrawGeometry(&path, &brush, width, stroke.as_ref());
+        }
+    }
+}
+
+/// Berkas sinar melingkar dari sumber cahaya di belakang karakter.
+/// Dipakai untuk aura iluminasi latar (crimson di Asta, emas di Eren, dst).
+pub unsafe fn draw_back_rays(
+    rt: &ID2D1HwndRenderTarget,
+    factory: &ID2D1Factory,
+    cx: f32,
+    base_y: f32,
+    count: usize,
+    spread: f32,
+    length: f32,
+    phase: f32,
+    color: D2D1_COLOR_F,
+) {
+    if color.a <= 0.006 || count == 0 {
+        return;
+    }
+    for i in 0..count {
+        let k = i as f32;
+        let norm = if count > 1 {
+            k / (count - 1) as f32 * 2.0 - 1.0
+        } else {
+            0.0
+        };
+        let jitter = (phase * 1.7 + k * 1.13).sin() * 0.5 + 0.5;
+        let angle = norm * spread + (phase * 0.6 + k).sin() * 0.03;
+        let len = length * (0.55 + 0.45 * jitter);
+        let half_w = (0.55 + 0.55 * jitter) * 1.2;
+
+        let tip_x = cx + angle.sin() * len;
+        let tip_y = base_y - angle.cos() * len;
+        let bx = cx + norm * half_w * 6.0;
+
+        let wedge = [
+            D2D_POINT_2F { x: bx - half_w, y: base_y },
+            D2D_POINT_2F { x: tip_x, y: tip_y },
+            D2D_POINT_2F { x: bx + half_w, y: base_y },
+        ];
+        fill_polygon(rt, factory, &wedge, color);
+    }
+}
+
+/// Partikel naik (bara api, debu anti-magic, uap) tersebar di area aura.
+pub unsafe fn draw_rising_particles(
+    rt: &ID2D1HwndRenderTarget,
+    cx: f32,
+    base_y: f32,
+    half_width: f32,
+    rise: f32,
+    t: f32,
+    count: usize,
+    color: D2D1_COLOR_F,
+    size: f32,
+) {
+    if color.a <= 0.006 {
+        return;
+    }
+    for i in 0..count {
+        let k = i as f32;
+        let seed = (k * 12.9898 + 4.1414).sin() * 43758.5453;
+        let rnd = seed - seed.floor();
+        let rnd2 = ((k + 7.0) * 78.233).sin() * 43758.5453;
+        let rnd2 = rnd2 - rnd2.floor();
+
+        let speed = rise * (0.55 + rnd * 0.9);
+        let travel = (t * speed + rnd2 * rise) % rise;
+        let y = base_y - (rise - travel);
+        let sway = (t * (1.1 + rnd) + k).sin() * 2.2;
+        let x = cx + (rnd * 2.0 - 1.0) * half_width + sway;
+
+        let fade = (1.0 - (travel / rise)).clamp(0.0, 1.0);
+        let sz = size * (0.5 + rnd * 0.8) * (0.45 + 0.55 * fade);
+        draw_soft_circle(
+            rt,
+            D2D_POINT_2F { x, y },
+            sz,
+            sz,
+            D2D1_COLOR_F {
+                a: color.a * fade,
+                ..color
+            },
+        );
+    }
+}
+
 /// Lingkaran lembut (partikel api, uap, telapak tangan).
 pub unsafe fn draw_soft_circle(
     rt: &ID2D1HwndRenderTarget,

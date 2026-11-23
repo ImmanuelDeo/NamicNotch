@@ -51,7 +51,7 @@ impl IdleCharacter for KatsukiBakugo {
     unsafe fn draw_aura(
         &self,
         rt: &ID2D1HwndRenderTarget,
-        _factory: &ID2D1Factory,
+        factory: &ID2D1Factory,
         pill_rect: D2D_RECT_F,
         alpha: f32,
         ctx: &MascotContext,
@@ -97,6 +97,66 @@ impl IdleCharacter for KatsukiBakugo {
                 },
             );
         }
+
+        // ── Ambience: panas ledakan, berkas sinar, percikan, refleksi dasar ──
+        draw_back_rays(
+            rt,
+            factory,
+            cx,
+            pill_rect.bottom - 1.0,
+            8,
+            0.95,
+            ph * 1.20,
+            ctx.phase_time * 0.6,
+            D2D1_COLOR_F {
+                r: 1.0,
+                g: 0.52,
+                b: 0.10,
+                a: 0.075 * alpha,
+            },
+        );
+        draw_soft_radial_glow(
+            rt,
+            D2D_POINT_2F {
+                x: cx,
+                y: pill_rect.top + ph * 0.60,
+            },
+            pw * 0.19,
+            ph * 0.58,
+            1.0,
+            0.62,
+            0.18,
+            0.17 * alpha,
+        );
+        draw_rising_particles(
+            rt,
+            cx,
+            pill_rect.bottom - 1.0,
+            pw * 0.38,
+            ph * 0.9,
+            ctx.phase_time,
+            10,
+            D2D1_COLOR_F {
+                r: 1.0,
+                g: 0.66,
+                b: 0.24,
+                a: 0.30 * alpha,
+            },
+            0.9,
+        );
+        draw_soft_radial_glow(
+            rt,
+            D2D_POINT_2F {
+                x: cx,
+                y: pill_rect.bottom - 0.5,
+            },
+            pw * 0.42,
+            2.2,
+            1.0,
+            0.66,
+            0.24,
+            0.26 * alpha,
+        );
     }
 
     unsafe fn draw_character(

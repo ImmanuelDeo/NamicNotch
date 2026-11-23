@@ -145,6 +145,66 @@ impl IdleCharacter for YujiSukuna {
                 }
             }
         }
+
+        // ── Ambience: aura kutukan, berkas sinar, bara, refleksi dasar ──────
+        draw_back_rays(
+            rt,
+            factory,
+            cx,
+            pill_rect.bottom - 1.0,
+            8,
+            0.95,
+            ph * 1.20,
+            ctx.phase_time * 0.55,
+            D2D1_COLOR_F {
+                r: 0.92,
+                g: 0.15,
+                b: 0.22,
+                a: 0.085 * alpha,
+            },
+        );
+        draw_soft_radial_glow(
+            rt,
+            D2D_POINT_2F {
+                x: cx,
+                y: pill_rect.top + ph * 0.60,
+            },
+            pw * 0.19,
+            ph * 0.58,
+            0.85,
+            0.12,
+            0.20,
+            0.18 * alpha,
+        );
+        draw_rising_particles(
+            rt,
+            cx,
+            pill_rect.bottom - 1.0,
+            pw * 0.38,
+            ph * 0.9,
+            ctx.phase_time,
+            9,
+            D2D1_COLOR_F {
+                r: 0.98,
+                g: 0.28,
+                b: 0.32,
+                a: 0.30 * alpha,
+            },
+            0.95,
+        );
+        draw_soft_radial_glow(
+            rt,
+            D2D_POINT_2F {
+                x: cx,
+                y: pill_rect.bottom - 0.5,
+            },
+            pw * 0.42,
+            2.2,
+            0.95,
+            0.18,
+            0.28,
+            0.27 * alpha,
+        );
     }
 
     unsafe fn draw_character(
