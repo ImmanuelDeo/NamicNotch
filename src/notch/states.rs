@@ -1170,15 +1170,48 @@ impl NotchController {
         }
     }
 
-    /// Ask the shell whether a fullscreen app owns the screen. Cheap COM call,
-    /// polled at 2 Hz; covers exclusive D3D, borderless fullscreen and
-    /// presentation mode without enumerating windows.
+    /// True when a real fullscreen app owns the primary screen.
+    ///
+    /// QUNS alone is unreliable: it reports `QUNS_BUSY` (2) for wallpaper
+    /// engines, maximised shell surfaces and other non-exclusive windows, which
+    /// left the notch hidden on a normal desktop. Trust QUNS only for D3D
+    /// exclusive (3) and presentation (4); otherwise require the foreground
+    /// window to actually cover the monitor and not be a shell/desktop window.
     pub fn detect_fullscreen() -> bool {
+        use windows::Win32::Foundation::RECT;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetClassNameW, GetForegroundWindow, GetSystemMetrics, GetWindowRect, IsIconic,
+            IsWindowVisible, SM_CXSCREEN, SM_CYSCREEN,
+        };
         unsafe {
-            match windows::Win32::UI::Shell::SHQueryUserNotificationState() {
-                Ok(state) => is_fullscreen_quns(state.0),
-                Err(_) => false,
+            if let Ok(state) = windows::Win32::UI::Shell::SHQueryUserNotificationState() {
+                if state.0 >= 3 {
+                    return true;
+                }
             }
+            let hwnd = GetForegroundWindow();
+            if hwnd.0.is_null()
+                || !IsWindowVisible(hwnd).as_bool()
+                || IsIconic(hwnd).as_bool()
+            {
+                return false;
+            }
+            let mut cls = [0u16; 64];
+            let len = GetClassNameW(hwnd, &mut cls) as usize;
+            let class = String::from_utf16_lossy(&cls[..len.min(cls.len())]);
+            if matches!(
+                class.as_str(),
+                "Progman" | "WorkerW" | "Shell_TrayWnd" | "NotifyIconOverflowWindow"
+            ) {
+                return false;
+            }
+            let mut rect = RECT::default();
+            if GetWindowRect(hwnd, &mut rect).is_err() {
+                return false;
+            }
+            let sw = GetSystemMetrics(SM_CXSCREEN);
+            let sh = GetSystemMetrics(SM_CYSCREEN);
+            rect.left <= 0 && rect.top <= 0 && rect.right >= sw && rect.bottom >= sh
         }
     }
 
