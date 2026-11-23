@@ -17,7 +17,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     MessageBoxW, MB_OK, MB_ICONINFORMATION,
 };
 use windows::Win32::System::Registry::{
-    RegOpenKeyExW, RegSetValueExW, RegDeleteValueW, RegCloseKey, HKEY_CURRENT_USER,
+    RegOpenKeyExW, RegSetValueExW, RegDeleteValueW, RegCloseKey, RegGetValueW,
+    RRF_RT_REG_SZ, HKEY_CURRENT_USER,
     KEY_SET_VALUE, REG_SZ, HKEY,
 };
 use windows::core::PCWSTR;
@@ -87,13 +88,14 @@ pub fn handle_tray_command(cmd: u32, hwnd: HWND, settings: &Arc<RwLock<Settings>
     match cmd {
         ID_START_WITH_WINDOWS => {
             let mut s = settings.write().unwrap();
-            s.start_with_windows = !s.start_with_windows;
-            if s.start_with_windows {
-                let _ = enable_start_with_windows();
+            let enabled = is_start_with_windows_enabled()?;
+            if enabled {
+                disable_start_with_windows()?;
             } else {
-                let _ = disable_start_with_windows();
+                enable_start_with_windows()?;
             }
-            let _ = s.save();
+            s.start_with_windows = !enabled;
+            s.save()?;
             Ok(false)
         }
         ID_SHOW_MASCOT => {
@@ -183,7 +185,7 @@ fn create_context_menu(settings: &Arc<RwLock<Settings>>) -> Result<HMENU> {
         let text = to_wide_string("Start with Windows\0");
         AppendMenuW(
             menu,
-            MF_STRING | if settings.start_with_windows { MF_CHECKED } else { MF_UNCHECKED },
+            MF_STRING | if is_start_with_windows_enabled()? { MF_CHECKED } else { MF_UNCHECKED },
             ID_START_WITH_WINDOWS as usize,
             PCWSTR(text.as_ptr()),
         )?;
@@ -216,13 +218,28 @@ fn create_context_menu(settings: &Arc<RwLock<Settings>>) -> Result<HMENU> {
     }
 }
 
+fn is_start_with_windows_enabled() -> Result<bool> {
+    let key = to_wide_string("Software\\Microsoft\\Windows\\CurrentVersion\\Run\0");
+    let name = to_wide_string("NamicNotch\0");
+    let mut size = 0;
+    let result = unsafe {
+        RegGetValueW(HKEY_CURRENT_USER, PCWSTR(key.as_ptr()), PCWSTR(name.as_ptr()),
+            RRF_RT_REG_SZ, None, None, Some(&mut size))
+    };
+    if result == windows::Win32::Foundation::ERROR_FILE_NOT_FOUND {
+        return Ok(false);
+    }
+    result.ok()?;
+    Ok(size > 2)
+}
+
 fn enable_start_with_windows() -> Result<()> {
     unsafe {
         let path = std::env::current_exe()?;
-        let path_str = path.to_string_lossy().to_string();
+        let path_str = format!("\"{}\"", path.display());
         let path_wide: Vec<u16> = OsStr::new(&path_str).encode_wide().chain(Some(0)).collect();
         
-        let key_name = to_wide_string(r"Software\Microsoft\Windows\CurrentVersion\Run\0");
+        let key_name = to_wide_string("Software\\Microsoft\\Windows\\CurrentVersion\\Run\0");
         let mut key = HKEY::default();
         RegOpenKeyExW(
             HKEY_CURRENT_USER,
@@ -234,26 +251,22 @@ fn enable_start_with_windows() -> Result<()> {
         
         let value_name = to_wide_string("NamicNotch\0");
         let bytes = std::slice::from_raw_parts(path_wide.as_ptr() as *const u8, path_wide.len() * 2);
-        RegSetValueExW(
+        let result = RegSetValueExW(
             key,
             PCWSTR(value_name.as_ptr()),
             0,
             REG_SZ,
             Some(bytes),
-        ).ok()?;
-        
-        // Bersihkan entri lama jika ada
-        let old_val = to_wide_string("NusaNotchClone\0");
-        let _ = RegDeleteValueW(key, PCWSTR(old_val.as_ptr()));
-        
-        RegCloseKey(key).ok()?;
+        ).ok();
+        let _ = RegCloseKey(key);
+        result?;
     }
     Ok(())
 }
 
 fn disable_start_with_windows() -> Result<()> {
     unsafe {
-        let key_name = to_wide_string(r"Software\Microsoft\Windows\CurrentVersion\Run\0");
+        let key_name = to_wide_string("Software\\Microsoft\\Windows\\CurrentVersion\\Run\0");
         let mut key = HKEY::default();
         RegOpenKeyExW(
             HKEY_CURRENT_USER,
@@ -264,11 +277,11 @@ fn disable_start_with_windows() -> Result<()> {
         ).ok()?;
         
         let value_name = to_wide_string("NamicNotch\0");
-        let _ = RegDeleteValueW(key, PCWSTR(value_name.as_ptr()));
-        let old_val = to_wide_string("NusaNotchClone\0");
-        let _ = RegDeleteValueW(key, PCWSTR(old_val.as_ptr()));
-        
-        RegCloseKey(key).ok()?;
+        let result = RegDeleteValueW(key, PCWSTR(value_name.as_ptr()));
+        let _ = RegCloseKey(key);
+        if result != windows::Win32::Foundation::ERROR_FILE_NOT_FOUND {
+            result.ok()?;
+        }
     }
     Ok(())
 }

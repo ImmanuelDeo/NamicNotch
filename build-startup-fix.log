@@ -1,0 +1,373 @@
+   Compiling nusa-clone v0.1.0 (D:\NusaNotch-RE)
+warning: unused import: `OverlayKind`
+  --> src\notch\mod.rs:30:47
+   |
+30 | pub use states::{NotchController, NotchState, OverlayKind};
+   |                                               ^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `debug` and `warn`
+ --> src\media\mod.rs:7:21
+  |
+7 | use tracing::{info, warn, debug};
+  |                     ^^^^  ^^^^^
+
+warning: unused imports: `IGlobalSystemMediaTransportControlsSessionManager` and `IGlobalSystemMediaTransportControlsSession`
+  --> src\media\mod.rs:12:5
+   |
+12 |     IGlobalSystemMediaTransportControlsSessionManager,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+13 |     IGlobalSystemMediaTransportControlsSession,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `windows::Foundation::TimeSpan`
+  --> src\media\mod.rs:16:5
+   |
+16 | use windows::Foundation::TimeSpan;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `warn`
+ --> src\shelf\mod.rs:7:21
+  |
+7 | use tracing::{info, warn};
+  |                     ^^^^
+
+warning: unused import: `warn`
+ --> src\timers\mod.rs:7:21
+  |
+7 | use tracing::{info, warn};
+  |                     ^^^^
+
+warning: unused import: `Timelike`
+ --> src\timers\mod.rs:8:31
+  |
+8 | use chrono::{DateTime, Local, Timelike};
+  |                               ^^^^^^^^
+
+warning: unused variable: `vol`
+   --> src\media\mod.rs:258:35
+    |
+258 |             MediaEvent::SetVolume(vol) => {
+    |                                   ^^^ help: if this is intentional, prefix it with an underscore: `_vol`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `shelf_dir`
+   --> src\shelf\mod.rs:179:33
+    |
+179 |     async fn handle_watch_event(shelf_dir: &PathBuf, event: Event) {
+    |                                 ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_shelf_dir`
+
+warning: multiple variants are never constructed
+  --> src\notch\mod.rs:39:5
+   |
+37 | pub enum NotchEvent {
+   |          ---------- variants in this enum
+38 |     SetState(NotchState),
+39 |     Show,
+   |     ^^^^
+40 |     Hide,
+   |     ^^^^
+41 |     Toggle,
+   |     ^^^^^^
+42 |     UpdateMedia(crate::media::MediaInfo),
+   |     ^^^^^^^^^^^
+43 |     UpdateLyrics(Vec<String>),
+   |     ^^^^^^^^^^^^
+44 |     UpdateTimer(crate::timers::TimerInfo),
+45 |     UpdateShelf(Vec<crate::shelf::ShelfItem>),
+   |     ^^^^^^^^^^^
+46 |     HotkeyVolume(u8),
+   |     ^^^^^^^^^^^^
+47 |     HotkeyBrightness(u8),
+   |     ^^^^^^^^^^^^^^^^
+48 |     HotkeyCapsLock(bool),
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `NotchEvent` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: associated constant `TEXT_SECONDARY` is never used
+  --> src\notch\renderer.rs:39:15
+   |
+32 | impl AntiMagicNeutralPalette {
+   | ---------------------------- associated constant in this implementation
+...
+39 |     pub const TEXT_SECONDARY: D2D1_COLOR_F = D2D1_COLOR_F {
+   |               ^^^^^^^^^^^^^^
+
+warning: field `dwrite` is never read
+  --> src\notch\renderer.rs:62:9
+   |
+59 | pub struct NotchRenderer {
+   |            ------------- field in this struct
+...
+62 |     pub dwrite: IDWriteFactory,
+   |         ^^^^^^
+
+warning: function `load_tray_icon_fallback` is never used
+   --> src\tray\mod.rs:133:4
+    |
+133 | fn load_tray_icon_fallback() -> Result<HICON> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: fields `artwork` and `source_app` are never read
+  --> src\media\mod.rs:28:9
+   |
+21 | pub struct MediaInfo {
+   |            --------- fields in this struct
+...
+28 |     pub artwork: Option<Vec<u8>>,
+   |         ^^^^^^^
+29 |     pub source_app: String,
+   |         ^^^^^^^^^^
+   |
+   = note: `MediaInfo` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variants `PlayPause`, `Next`, `Previous`, `Seek`, and `SetVolume` are never constructed
+  --> src\media\mod.rs:36:5
+   |
+34 | pub enum MediaEvent {
+   |          ---------- variants in this enum
+35 |     Update(MediaInfo),
+36 |     PlayPause,
+   |     ^^^^^^^^^
+37 |     Next,
+   |     ^^^^
+38 |     Previous,
+   |     ^^^^^^^^
+39 |     Seek(u32),
+   |     ^^^^
+40 |     SetVolume(f32),
+   |     ^^^^^^^^^
+   |
+   = note: `MediaEvent` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `settings` is never read
+  --> src\media\mod.rs:47:5
+   |
+44 | pub struct MediaManager {
+   |            ------------ field in this struct
+...
+47 |     settings: Arc<RwLock<Settings>>,
+   |     ^^^^^^^^
+
+warning: multiple fields are never read
+   --> src\media\mod.rs:269:5
+    |
+268 | struct LrclibResult {
+    |        ------------ fields in this struct
+269 |     id: u64,
+    |     ^^
+270 |     track_name: String,
+    |     ^^^^^^^^^^
+271 |     artist_name: String,
+    |     ^^^^^^^^^^^
+272 |     album_name: Option<String>,
+    |     ^^^^^^^^^^
+273 |     duration: Option<f64>,
+    |     ^^^^^^^^
+274 |     instrumental: bool,
+    |     ^^^^^^^^^^^^
+275 |     plain_lyrics: Option<String>,
+    |     ^^^^^^^^^^^^
+    |
+    = note: `LrclibResult` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `enable_brightness_keys` is never read
+  --> src\hooks\mod.rs:29:9
+   |
+26 | pub struct HookConfig {
+   |            ---------- field in this struct
+...
+29 |     pub enable_brightness_keys: bool,
+   |         ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `HookConfig` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `event_tx` is never read
+  --> src\hooks\mod.rs:35:5
+   |
+33 | pub struct HookManager {
+   |            ----------- field in this struct
+34 |     config: HookConfig,
+35 |     event_tx: mpsc::Sender<NotchEvent>,
+   |     ^^^^^^^^
+
+warning: variants `AddItem`, `RemoveItem`, `Clear`, `OpenItem`, and `OpenFolder` are never constructed
+  --> src\shelf\mod.rs:80:5
+   |
+79 | pub enum ShelfEvent {
+   |          ---------- variants in this enum
+80 |     AddItem(PathBuf),
+   |     ^^^^^^^
+81 |     RemoveItem(String),
+   |     ^^^^^^^^^^
+82 |     Clear,
+   |     ^^^^^
+83 |     OpenItem(String),
+   |     ^^^^^^^^
+84 |     OpenFolder(String),
+   |     ^^^^^^^^^^
+   |
+   = note: `ShelfEvent` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `event_tx` is never read
+  --> src\shelf\mod.rs:90:5
+   |
+88 | pub struct Shelf {
+   |            ----- field in this struct
+89 |     settings: Arc<RwLock<Settings>>,
+90 |     event_tx: mpsc::Sender<ShelfEvent>,
+   |     ^^^^^^^^
+
+warning: method `get_items` is never used
+   --> src\shelf\mod.rs:283:12
+    |
+ 97 | impl Shelf {
+    | ---------- method in this implementation
+...
+283 |     pub fn get_items(&self) -> &[ShelfItem] {
+    |            ^^^^^^^^^
+
+warning: methods `progress` and `format_time` are never used
+  --> src\timers\mod.rs:47:12
+   |
+36 | impl TimerInfo {
+   | -------------- methods in this implementation
+...
+47 |     pub fn progress(&self) -> f32 {
+   |            ^^^^^^^^
+...
+53 |     pub fn format_time(&self) -> String {
+   |            ^^^^^^^^^^^
+
+warning: methods `percentage` and `format` are never used
+  --> src\timers\mod.rs:79:12
+   |
+69 | impl WaterInfo {
+   | -------------- methods in this implementation
+...
+79 |     pub fn percentage(&self) -> f32 {
+   |            ^^^^^^^^^^
+...
+85 |     pub fn format(&self) -> String {
+   |            ^^^^^^
+
+warning: multiple variants are never constructed
+  --> src\timers\mod.rs:93:5
+   |
+92 | pub enum TimerEvent {
+   |          ---------- variants in this enum
+93 |     PomodoroStart,
+   |     ^^^^^^^^^^^^^
+94 |     PomodoroPause,
+   |     ^^^^^^^^^^^^^
+95 |     PomodoroReset,
+   |     ^^^^^^^^^^^^^
+96 |     PomodoroSkip,
+   |     ^^^^^^^^^^^^
+97 |     WaterDrink(u32), // ml
+   |     ^^^^^^^^^^
+98 |     WaterReset,
+   |     ^^^^^^^^^^
+99 |     Tick, // Internal tick
+   |     ^^^^
+   |
+   = note: `TimerEvent` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `event_tx` is never read
+   --> src\timers\mod.rs:106:5
+    |
+103 | pub struct TimerManager {
+    |            ------------ field in this struct
+...
+106 |     event_tx: mpsc::Sender<TimerEvent>,
+    |     ^^^^^^^^
+
+warning: enum `SettingsEvent` is never used
+  --> src\settings\mod.rs:18:10
+   |
+18 | pub enum SettingsEvent {
+   |          ^^^^^^^^^^^^^
+
+warning: methods `get` and `set` are never used
+   --> src\settings\mod.rs:158:12
+    |
+ 78 | impl Settings {
+    | ------------- methods in this implementation
+...
+158 |     pub fn get(&self, key: &str) -> Option<String> {
+    |            ^^^
+...
+179 |     pub fn set(&mut self, key: &str, value: &str) {
+    |            ^^^
+
+warning: struct `SettingsManager` is never constructed
+   --> src\settings\mod.rs:231:12
+    |
+231 | pub struct SettingsManager {
+    |            ^^^^^^^^^^^^^^^
+
+warning: associated items `new` and `run` are never used
+   --> src\settings\mod.rs:238:12
+    |
+237 | impl SettingsManager {
+    | -------------------- associated items in this implementation
+238 |     pub fn new() -> Result<(Self, mpsc::Sender<SettingsEvent>)> {
+    |            ^^^
+...
+251 |     pub async fn run(mut self) -> Result<()> {
+    |                  ^^^
+
+warning: function `get_monitor_work_area` is never used
+  --> src\utils\mod.rs:16:8
+   |
+16 | pub fn get_monitor_work_area(hwnd: HWND) -> Result<RECT> {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `get_dpi_scale` is never used
+  --> src\utils\mod.rs:29:8
+   |
+29 | pub fn get_dpi_scale(hwnd: HWND) -> f32 {
+   |        ^^^^^^^^^^^^^
+
+warning: function `set_window_pos_no_activate` is never used
+  --> src\utils\mod.rs:37:8
+   |
+37 | pub fn set_window_pos_no_activate(hwnd: HWND, x: i32, y: i32, width: i32, height: i32) -> Result<()> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_window_topmost` is never used
+  --> src\utils\mod.rs:53:8
+   |
+53 | pub fn set_window_topmost(hwnd: HWND, topmost: bool) -> Result<()> {
+   |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `logical_to_physical` is never used
+  --> src\utils\mod.rs:67:8
+   |
+67 | pub fn logical_to_physical(logical: i32, scale: f32) -> i32 {
+   |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `physical_to_logical` is never used
+  --> src\utils\mod.rs:72:8
+   |
+72 | pub fn physical_to_logical(physical: i32, scale: f32) -> i32 {
+   |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `center_rect` is never used
+  --> src\utils\mod.rs:77:8
+   |
+77 | pub fn center_rect(outer: RECT, inner_width: i32, inner_height: i32) -> RECT {
+   |        ^^^^^^^^^^^
+
+warning: function `get_primary_work_area` is never used
+  --> src\utils\mod.rs:91:8
+   |
+91 | pub fn get_primary_work_area() -> Result<RECT> {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: `nusa-clone` (bin "nusa-clone") generated 38 warnings (run `cargo fix --bin "nusa-clone" -p nusa-clone` to apply 9 suggestions)
+    Finished `release` profile [optimized] target(s) in 2m 03s

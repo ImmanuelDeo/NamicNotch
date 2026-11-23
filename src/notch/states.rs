@@ -24,7 +24,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::mascot::chibi_liebe::ChibiLiebe;
-use crate::mascot::eyes::DevilUnionEyes;
+use crate::mascot::DevilUnionEyes;
 
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 

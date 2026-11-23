@@ -24,7 +24,12 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 
 fn main() -> Result<()> {
     // 1. Single instance check
-    let _instance = SingleInstance::new("NamicNotch_SingleInstance_Mutex").ok();
+    let instance = SingleInstance::new("NamicNotch_SingleInstance_Mutex")
+        .map_err(|error| anyhow::anyhow!("Cannot acquire instance mutex: {error}"))?;
+    if !instance.is_single() {
+        return Ok(());
+    }
+    // Keep the mutex guard alive until main returns, including worker shutdown.
 
     // 2. Load settings
     let settings = Arc::new(RwLock::new(settings::Settings::load().unwrap_or_default()));

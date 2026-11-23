@@ -1,0 +1,635 @@
+   Compiling cfg-if v1.0.5
+   Compiling windows-link v0.2.1
+   Compiling stable_deref_trait v1.2.1
+   Compiling smallvec v1.16.4
+   Compiling once_cell v1.21.4
+   Compiling memchr v2.8.3
+   Compiling scopeguard v1.2.0
+   Compiling serde_core v1.0.229
+   Compiling pin-project-lite v0.2.17
+   Compiling num-traits v0.2.19
+   Compiling zerofrom v0.1.8
+   Compiling bytes v1.12.1
+   Compiling windows-sys v0.61.2
+   Compiling zerocopy v0.8.63
+   Compiling lock_api v0.4.14
+   Compiling futures-core v0.3.34
+   Compiling itoa v1.0.18
+   Compiling yoke v0.8.4
+   Compiling parking_lot_core v0.9.12
+   Compiling libc v0.2.191
+   Compiling crossbeam-utils v0.8.23
+   Compiling futures-sink v0.3.34
+   Compiling hashbrown v0.17.1
+   Compiling zerovec v0.11.9
+   Compiling equivalent v1.0.3
+   Compiling tracing-core v0.1.36
+   Compiling parking_lot v0.12.5
+   Compiling litemap v0.8.3
+   Compiling http v1.5.0
+   Compiling slab v0.4.12
+   Compiling crossbeam-epoch v0.9.21
+   Compiling writeable v0.6.4
+   Compiling log v0.4.34
+   Compiling indexmap v2.14.2
+   Compiling tinystr v0.8.5
+   Compiling simd-adler32 v0.3.10
+   Compiling crossbeam-deque v0.8.8
+   Compiling potential_utf v0.1.6
+   Compiling zerotrie v0.2.5
+   Compiling utf8_iter v1.0.4
+   Compiling percent-encoding v2.3.2
+   Compiling rayon-core v1.13.0
+   Compiling icu_locale_core v2.4.0
+   Compiling icu_collections v2.4.0
+   Compiling equator v0.4.2
+   Compiling tracing v0.1.44
+   Compiling num-integer v0.1.47
+   Compiling adler2 v2.0.1
+   Compiling http-body v1.1.0
+   Compiling futures-io v0.3.34
+   Compiling zeroize v1.9.1
+   Compiling either v1.19.0
+   Compiling futures-task v0.3.34
+   Compiling num-bigint v0.4.8
+   Compiling aligned-vec v0.6.4
+   Compiling futures-util v0.3.34
+   Compiling rustls-pki-types v1.15.1
+   Compiling icu_properties_data v2.4.0
+   Compiling icu_normalizer_data v2.4.0
+   Compiling getrandom v0.2.17
+   Compiling tower-service v0.3.3
+   Compiling try-lock v0.2.5
+   Compiling allocator-api2 v0.2.21
+   Compiling untrusted v0.9.0
+   Compiling arrayvec v0.7.8
+   Compiling fnv v1.0.7
+   Compiling atomic-waker v1.1.2
+   Compiling ring v0.17.14
+   Compiling want v0.3.2
+   Compiling icu_provider v2.4.0
+   Compiling v_frame v0.3.9
+   Compiling rayon v1.12.0
+   Compiling windows_x86_64_msvc v0.48.5
+   Compiling icu_normalizer v2.4.0
+   Compiling anyhow v1.0.104
+   Compiling num-rational v0.4.2
+   Compiling httparse v1.10.1
+   Compiling windows_x86_64_msvc v0.52.6
+   Compiling futures-channel v0.3.34
+   Compiling icu_properties v2.4.0
+   Compiling as-slice v0.2.1
+   Compiling windows-strings v0.5.1
+   Compiling windows-result v0.4.1
+   Compiling bytemuck v1.25.2
+   Compiling windows-registry v0.6.1
+   Compiling thiserror v2.0.21
+   Compiling aligned v0.4.3
+   Compiling psm v0.1.24
+   Compiling windows-targets v0.52.6
+   Compiling serde v1.0.229
+   Compiling bitflags v2.13.2
+   Compiling windows-targets v0.48.5
+   Compiling idna_adapter v1.2.2
+   Compiling const-random v0.1.18
+   Compiling crc32fast v1.5.3
+   Compiling miniz_oxide v0.9.1
+   Compiling form_urlencoded v1.2.2
+   Compiling nom v8.0.0
+   Compiling no_std_io2 v0.9.4
+   Compiling simdutf8 v0.1.5
+   Compiling ipnet v2.12.2
+   Compiling quick-error v2.0.1
+   Compiling y4m v0.8.0
+   Compiling core_detect v1.0.0
+   Compiling subtle v2.6.1
+   Compiling base64 v0.23.1
+   Compiling encoding_rs v0.8.42
+   Compiling flate2 v1.1.10
+   Compiling profiling v1.0.18
+   Compiling bitstream-io v4.10.0
+   Compiling dlv-list v0.5.2
+   Compiling serde_spanned v0.6.9
+   Compiling toml_datetime v0.6.11
+   Compiling idna v1.1.0
+   Compiling raw-cpuid v11.6.0
+   Compiling windows-sys v0.48.0
+   Compiling windows-result v0.2.0
+   Compiling rustls-webpki v0.103.16
+   Compiling libm v0.2.16
+   Compiling maybe-rayon v0.1.1
+   Compiling av-scenechange v0.14.1
+   Compiling rustls v0.23.46
+   Compiling zmij v1.0.23
+   Compiling getrandom v0.3.4
+   Compiling num-complex v0.4.6
+   Compiling itertools v0.14.0
+   Compiling miniz_oxide v0.8.9
+   Compiling av1-grain v0.2.5
+   Compiling ahash v0.8.12
+   Compiling hashbrown v0.14.5
+   Compiling half v2.7.1
+   Compiling sync_wrapper v1.0.2
+   Compiling toml_write v0.1.2
+   Compiling new_debug_unreachable v1.0.6
+   Compiling imgref v1.12.3
+   Compiling winnow v0.7.15
+   Compiling pulp-wasm-simd-flag v0.1.1
+   Compiling zune-core v0.5.3
+   Compiling tower-layer v0.3.3
+   Compiling regex-syntax v0.8.11
+   Compiling weezl v0.1.12
+   Compiling siphasher v1.0.4
+   Compiling reborrow v0.5.5
+   Compiling ucd-trie v0.1.7
+   Compiling phf_shared v0.11.3
+   Compiling pulp v0.22.3
+   Compiling zune-jpeg v0.5.15
+   Compiling hashlink v0.8.4
+   Compiling ordered-multimap v0.7.3
+   Compiling loop9 v0.1.5
+   Compiling rav1e v0.8.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling rand_core v0.9.5
+   Compiling serde_json v1.0.154
+   Compiling windows-strings v0.1.0
+   Compiling url v2.5.8
+   Compiling mio v1.2.4
+   Compiling socket2 v0.6.5
+   Compiling schannel v0.1.30
+   Compiling tokio v1.54.1
+   Compiling native-tls v0.2.18
+   Compiling winapi-util v0.1.11
+   Compiling stacker v0.1.25
+   Compiling same-file v1.0.6
+   Compiling toml_edit v0.22.27
+   Compiling pest v2.9.4
+   Compiling regex-automata v0.4.18
+   Compiling getrandom v0.4.3
+   Compiling avif-serialize v0.8.9
+   Compiling webpki-roots v1.0.11
+   Compiling http-body-util v0.1.5
+   Compiling fdeflate v0.3.7
+   Compiling zune-inflate v0.2.54
+   Compiling byteorder-lite v0.1.0
+   Compiling unicode-segmentation v1.13.3
+   Compiling bit_field v0.10.3
+   Compiling pxfm v0.1.30
+   Compiling fax v0.2.7
+   Compiling lebe v0.5.3
+   Compiling rgb v0.8.53
+   Compiling ryu v1.0.23
+   Compiling color_quant v1.1.0
+   Compiling base64 v0.21.7
+   Compiling option-ext v0.2.0
+   Compiling arraydeque v0.5.1
+   Compiling lazy_static v1.5.1
+   Compiling minimal-lexical v0.2.1
+   Compiling yaml-rust2 v0.8.1
+   Compiling ron v0.8.1
+   Compiling sharded-slab v0.1.7
+   Compiling nom v7.1.3
+   Compiling dirs-sys v0.4.1
+   Compiling serde_urlencoded v0.7.1
+   Compiling toml v0.8.23
+   Compiling exr v1.74.2
+   Compiling gif v0.14.2
+   Compiling tiff v0.11.3
+   Compiling matchers v0.2.0
+   Compiling convert_case v0.6.0
+   Compiling image-webp v0.2.4
+   Compiling png v0.18.1
+   Compiling json5 v0.4.1
+   Compiling windows-core v0.58.0
+   Compiling thiserror v1.0.69
+   Compiling walkdir v2.5.0
+   Compiling nu-ansi-term v0.50.3
+   Compiling rand_chacha v0.9.0
+   Compiling rust-ini v0.20.0
+   Compiling winapi v0.3.9
+   Compiling phf v0.11.3
+   Compiling chrono v0.4.45
+   Compiling qoi v0.4.1
+   Compiling tracing-log v0.2.0
+   Compiling crossbeam-channel v0.5.17
+   Compiling filetime v0.2.29
+   Compiling thread_local v1.1.10
+   Compiling pathdiff v0.2.3
+   Compiling fastrand v2.5.0
+   Compiling mime v0.3.17
+   Compiling moxcms v0.8.1
+   Compiling widestring v0.4.3
+   Compiling base64 v0.22.1
+   Compiling single-instance v0.3.3
+   Compiling tempfile v3.27.0
+   Compiling config v0.14.1
+   Compiling chrono-tz v0.8.6
+   Compiling tracing-subscriber v0.3.23
+   Compiling ravif v0.13.0
+   Compiling notify v6.1.1
+   Compiling tokio-util v0.7.20
+   Compiling tower v0.5.3
+   Compiling h2 v0.4.20
+   Compiling tokio-rustls v0.26.6
+   Compiling tokio-native-tls v0.3.1
+   Compiling tower-http v0.6.11
+   Compiling rand v0.9.5
+   Compiling image v0.25.10
+   Compiling windows v0.58.0
+   Compiling dirs v5.0.1
+   Compiling uuid v1.29.0
+   Compiling urlencoding v2.1.3
+   Compiling hyper v1.12.0
+   Compiling hyper-util v0.1.21
+   Compiling hyper-rustls v0.27.10
+   Compiling hyper-tls v0.6.0
+   Compiling reqwest v0.12.28
+   Compiling nusa-clone v0.1.0 (D:\NusaNotch-RE)
+warning: unused import: `OverlayKind`
+  --> src\notch\mod.rs:30:47
+   |
+30 | pub use states::{NotchController, NotchState, OverlayKind};
+   |                                               ^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `debug` and `warn`
+ --> src\media\mod.rs:7:21
+  |
+7 | use tracing::{info, warn, debug};
+  |                     ^^^^  ^^^^^
+
+warning: unused imports: `IGlobalSystemMediaTransportControlsSessionManager` and `IGlobalSystemMediaTransportControlsSession`
+  --> src\media\mod.rs:12:5
+   |
+12 |     IGlobalSystemMediaTransportControlsSessionManager,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+13 |     IGlobalSystemMediaTransportControlsSession,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `windows::Foundation::TimeSpan`
+  --> src\media\mod.rs:16:5
+   |
+16 | use windows::Foundation::TimeSpan;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `warn`
+ --> src\shelf\mod.rs:7:21
+  |
+7 | use tracing::{info, warn};
+  |                     ^^^^
+
+warning: unused import: `std::fs`
+   --> src\shelf\mod.rs:317:9
+    |
+317 |     use std::fs;
+    |         ^^^^^^^
+
+warning: unused import: `tempfile::TempDir`
+   --> src\shelf\mod.rs:318:9
+    |
+318 |     use tempfile::TempDir;
+    |         ^^^^^^^^^^^^^^^^^
+
+warning: unused import: `warn`
+ --> src\timers\mod.rs:7:21
+  |
+7 | use tracing::{info, warn};
+  |                     ^^^^
+
+warning: unused import: `Timelike`
+ --> src\timers\mod.rs:8:31
+  |
+8 | use chrono::{DateTime, Local, Timelike};
+  |                               ^^^^^^^^
+
+warning: unused variable: `vol`
+   --> src\media\mod.rs:258:35
+    |
+258 |             MediaEvent::SetVolume(vol) => {
+    |                                   ^^^ help: if this is intentional, prefix it with an underscore: `_vol`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `shelf_dir`
+   --> src\shelf\mod.rs:179:33
+    |
+179 |     async fn handle_watch_event(shelf_dir: &PathBuf, event: Event) {
+    |                                 ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_shelf_dir`
+
+warning: multiple variants are never constructed
+  --> src\notch\mod.rs:39:5
+   |
+37 | pub enum NotchEvent {
+   |          ---------- variants in this enum
+38 |     SetState(NotchState),
+39 |     Show,
+   |     ^^^^
+40 |     Hide,
+   |     ^^^^
+41 |     Toggle,
+   |     ^^^^^^
+42 |     UpdateMedia(crate::media::MediaInfo),
+   |     ^^^^^^^^^^^
+43 |     UpdateLyrics(Vec<String>),
+   |     ^^^^^^^^^^^^
+44 |     UpdateTimer(crate::timers::TimerInfo),
+45 |     UpdateShelf(Vec<crate::shelf::ShelfItem>),
+   |     ^^^^^^^^^^^
+46 |     HotkeyVolume(u8),
+   |     ^^^^^^^^^^^^
+47 |     HotkeyBrightness(u8),
+   |     ^^^^^^^^^^^^^^^^
+48 |     HotkeyCapsLock(bool),
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `NotchEvent` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: associated constant `TEXT_SECONDARY` is never used
+  --> src\notch\renderer.rs:39:15
+   |
+32 | impl AntiMagicNeutralPalette {
+   | ---------------------------- associated constant in this implementation
+...
+39 |     pub const TEXT_SECONDARY: D2D1_COLOR_F = D2D1_COLOR_F {
+   |               ^^^^^^^^^^^^^^
+
+warning: field `dwrite` is never read
+  --> src\notch\renderer.rs:62:9
+   |
+59 | pub struct NotchRenderer {
+   |            ------------- field in this struct
+...
+62 |     pub dwrite: IDWriteFactory,
+   |         ^^^^^^
+
+warning: function `load_tray_icon_fallback` is never used
+   --> src\tray\mod.rs:133:4
+    |
+133 | fn load_tray_icon_fallback() -> Result<HICON> {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: fields `artwork` and `source_app` are never read
+  --> src\media\mod.rs:28:9
+   |
+21 | pub struct MediaInfo {
+   |            --------- fields in this struct
+...
+28 |     pub artwork: Option<Vec<u8>>,
+   |         ^^^^^^^
+29 |     pub source_app: String,
+   |         ^^^^^^^^^^
+   |
+   = note: `MediaInfo` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: variants `PlayPause`, `Next`, `Previous`, `Seek`, and `SetVolume` are never constructed
+  --> src\media\mod.rs:36:5
+   |
+34 | pub enum MediaEvent {
+   |          ---------- variants in this enum
+35 |     Update(MediaInfo),
+36 |     PlayPause,
+   |     ^^^^^^^^^
+37 |     Next,
+   |     ^^^^
+38 |     Previous,
+   |     ^^^^^^^^
+39 |     Seek(u32),
+   |     ^^^^
+40 |     SetVolume(f32),
+   |     ^^^^^^^^^
+   |
+   = note: `MediaEvent` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `settings` is never read
+  --> src\media\mod.rs:47:5
+   |
+44 | pub struct MediaManager {
+   |            ------------ field in this struct
+...
+47 |     settings: Arc<RwLock<Settings>>,
+   |     ^^^^^^^^
+
+warning: multiple fields are never read
+   --> src\media\mod.rs:269:5
+    |
+268 | struct LrclibResult {
+    |        ------------ fields in this struct
+269 |     id: u64,
+    |     ^^
+270 |     track_name: String,
+    |     ^^^^^^^^^^
+271 |     artist_name: String,
+    |     ^^^^^^^^^^^
+272 |     album_name: Option<String>,
+    |     ^^^^^^^^^^
+273 |     duration: Option<f64>,
+    |     ^^^^^^^^
+274 |     instrumental: bool,
+    |     ^^^^^^^^^^^^
+275 |     plain_lyrics: Option<String>,
+    |     ^^^^^^^^^^^^
+    |
+    = note: `LrclibResult` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: field `enable_brightness_keys` is never read
+  --> src\hooks\mod.rs:29:9
+   |
+26 | pub struct HookConfig {
+   |            ---------- field in this struct
+...
+29 |     pub enable_brightness_keys: bool,
+   |         ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `HookConfig` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `event_tx` is never read
+  --> src\hooks\mod.rs:35:5
+   |
+33 | pub struct HookManager {
+   |            ----------- field in this struct
+34 |     config: HookConfig,
+35 |     event_tx: mpsc::Sender<NotchEvent>,
+   |     ^^^^^^^^
+
+warning: variants `AddItem`, `RemoveItem`, `Clear`, `OpenItem`, and `OpenFolder` are never constructed
+  --> src\shelf\mod.rs:80:5
+   |
+79 | pub enum ShelfEvent {
+   |          ---------- variants in this enum
+80 |     AddItem(PathBuf),
+   |     ^^^^^^^
+81 |     RemoveItem(String),
+   |     ^^^^^^^^^^
+82 |     Clear,
+   |     ^^^^^
+83 |     OpenItem(String),
+   |     ^^^^^^^^
+84 |     OpenFolder(String),
+   |     ^^^^^^^^^^
+   |
+   = note: `ShelfEvent` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `event_tx` is never read
+  --> src\shelf\mod.rs:90:5
+   |
+88 | pub struct Shelf {
+   |            ----- field in this struct
+89 |     settings: Arc<RwLock<Settings>>,
+90 |     event_tx: mpsc::Sender<ShelfEvent>,
+   |     ^^^^^^^^
+
+warning: method `get_items` is never used
+   --> src\shelf\mod.rs:283:12
+    |
+ 97 | impl Shelf {
+    | ---------- method in this implementation
+...
+283 |     pub fn get_items(&self) -> &[ShelfItem] {
+    |            ^^^^^^^^^
+
+warning: method `format_time` is never used
+  --> src\timers\mod.rs:53:12
+   |
+36 | impl TimerInfo {
+   | -------------- method in this implementation
+...
+53 |     pub fn format_time(&self) -> String {
+   |            ^^^^^^^^^^^
+
+warning: method `format` is never used
+  --> src\timers\mod.rs:85:12
+   |
+69 | impl WaterInfo {
+   | -------------- method in this implementation
+...
+85 |     pub fn format(&self) -> String {
+   |            ^^^^^^
+
+warning: multiple variants are never constructed
+  --> src\timers\mod.rs:93:5
+   |
+92 | pub enum TimerEvent {
+   |          ---------- variants in this enum
+93 |     PomodoroStart,
+   |     ^^^^^^^^^^^^^
+94 |     PomodoroPause,
+   |     ^^^^^^^^^^^^^
+95 |     PomodoroReset,
+   |     ^^^^^^^^^^^^^
+96 |     PomodoroSkip,
+   |     ^^^^^^^^^^^^
+97 |     WaterDrink(u32), // ml
+   |     ^^^^^^^^^^
+98 |     WaterReset,
+   |     ^^^^^^^^^^
+99 |     Tick, // Internal tick
+   |     ^^^^
+   |
+   = note: `TimerEvent` has derived impls for the traits `Clone` and `Debug`, but these are intentionally ignored during dead code analysis
+
+warning: field `event_tx` is never read
+   --> src\timers\mod.rs:106:5
+    |
+103 | pub struct TimerManager {
+    |            ------------ field in this struct
+...
+106 |     event_tx: mpsc::Sender<TimerEvent>,
+    |     ^^^^^^^^
+
+warning: enum `SettingsEvent` is never used
+  --> src\settings\mod.rs:18:10
+   |
+18 | pub enum SettingsEvent {
+   |          ^^^^^^^^^^^^^
+
+warning: methods `get` and `set` are never used
+   --> src\settings\mod.rs:158:12
+    |
+ 78 | impl Settings {
+    | ------------- methods in this implementation
+...
+158 |     pub fn get(&self, key: &str) -> Option<String> {
+    |            ^^^
+...
+179 |     pub fn set(&mut self, key: &str, value: &str) {
+    |            ^^^
+
+warning: struct `SettingsManager` is never constructed
+   --> src\settings\mod.rs:231:12
+    |
+231 | pub struct SettingsManager {
+    |            ^^^^^^^^^^^^^^^
+
+warning: associated items `new` and `run` are never used
+   --> src\settings\mod.rs:238:12
+    |
+237 | impl SettingsManager {
+    | -------------------- associated items in this implementation
+238 |     pub fn new() -> Result<(Self, mpsc::Sender<SettingsEvent>)> {
+    |            ^^^
+...
+251 |     pub async fn run(mut self) -> Result<()> {
+    |                  ^^^
+
+warning: function `get_monitor_work_area` is never used
+  --> src\utils\mod.rs:16:8
+   |
+16 | pub fn get_monitor_work_area(hwnd: HWND) -> Result<RECT> {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `get_dpi_scale` is never used
+  --> src\utils\mod.rs:29:8
+   |
+29 | pub fn get_dpi_scale(hwnd: HWND) -> f32 {
+   |        ^^^^^^^^^^^^^
+
+warning: function `set_window_pos_no_activate` is never used
+  --> src\utils\mod.rs:37:8
+   |
+37 | pub fn set_window_pos_no_activate(hwnd: HWND, x: i32, y: i32, width: i32, height: i32) -> Result<()> {
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `set_window_topmost` is never used
+  --> src\utils\mod.rs:53:8
+   |
+53 | pub fn set_window_topmost(hwnd: HWND, topmost: bool) -> Result<()> {
+   |        ^^^^^^^^^^^^^^^^^^
+
+warning: function `logical_to_physical` is never used
+  --> src\utils\mod.rs:67:8
+   |
+67 | pub fn logical_to_physical(logical: i32, scale: f32) -> i32 {
+   |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `physical_to_logical` is never used
+  --> src\utils\mod.rs:72:8
+   |
+72 | pub fn physical_to_logical(physical: i32, scale: f32) -> i32 {
+   |        ^^^^^^^^^^^^^^^^^^^
+
+warning: function `get_primary_work_area` is never used
+  --> src\utils\mod.rs:91:8
+   |
+91 | pub fn get_primary_work_area() -> Result<RECT> {
+   |        ^^^^^^^^^^^^^^^^^^^^^
+
+warning: `nusa-clone` (bin "nusa-clone" test) generated 39 warnings (run `cargo fix --bin "nusa-clone" -p nusa-clone --tests` to apply 11 suggestions)
+    Finished `release` profile [optimized] target(s) in 2m 50s
+     Running unittests src\main.rs (target\release\deps\nusa_clone-0b5a2e3fcdf80a72.exe)
+
+running 10 tests
+test mascot::eyes::tests::sword_grab_precedes_downward_pull ... ok
+test settings::tests::test_settings_parse ... ok
+test timers::tests::test_timer_info_progress ... ok
+test mascot::eyes::tests::cycle_returns_to_devil_and_keeps_animation_bounded ... ok
+test mascot::eyes::tests::grip_is_sustained_until_happy ... ok
+test media::tests::test_media_info_default ... ok
+test settings::tests::test_settings_display ... ok
+test utils::tests::test_center_rect ... ok
+test shelf::tests::test_shelf_item_type_detection ... ok
+test timers::tests::test_water_info_percentage ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

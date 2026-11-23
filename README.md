@@ -44,6 +44,34 @@ When idle or while you are working, Namic Notch sits quietly at the top edge of 
 - **Smart Click-Through**: Outside the pill boundaries, mouse clicks pass through completely to whatever window is behind it (`WS_EX_TRANSPARENT` dynamic hit-testing).
 - **No Focus Stealing**: Clicking or interacting with the notch never defocuses your active game, code editor, or document (`WS_EX_NOACTIVATE`).
 
+### 1a. Idle Mascot Roster — 4 Modular Phases
+
+The idle mascot is a rotation of four characters drawn procedurally with Direct2D
+(no sprites, no image assets). Each character owns one file and one `IdleCharacter`
+implementation; `MascotDirector` cycles the roster with a 0.45 s fade-out / fade-in
+and a short blink at every handover.
+
+| # | Character | Duration | Eyes | Right-side gesture | Ambient |
+|---|-----------|----------|------|--------------------|---------|
+| 1 | Asta (Devil Union) | 10 s | Crimson capsule, narrows when he reaches | Floating Demon-Slayer sword, dark hand grabs and pulls it | Crimson illumination + red thunder |
+| 2 | Yuji → Ryomen Sukuna | 11 s | Amber → crimson, plus a second pair of slit eyes | Malevolent Shrine hand sign with Dismantle/Cleave slash streaks | Amber fading into crimson + violet cursed mist |
+| 3 | Katsuki Bakugo | 10 s | Orange-red, permanently fierce | Black gauntlet firing a stylized nitroglycerin starburst | Fiery orange glow + rising embers |
+| 4 | Eren → Attack Titan | 11 s | Emerald, calm then intense | Golden transformation lightning, then titan steam wisps | Golden flash decaying to emerald-gold steam |
+
+```text
+src/mascot/
+├── mod.rs      # MascotDirector: roster, rotation, fade envelope, blink, gaze
+├── core.rs     # IdleCharacter trait, MascotContext, shared Direct2D primitives
+├── asta.rs     # phase 1
+├── sukuna.rs   # phase 2
+├── bakugo.rs   # phase 3
+└── eren.rs     # phase 4
+```
+
+Adding a character means one new file implementing `IdleCharacter` and one
+`Box::new(...)` line in `MascotDirector::new()`. `DevilUnionEyes` is kept as a type
+alias for `MascotDirector`, so nothing in `src/notch/` had to change.
+
 ---
 
 ### 2. Music Player & Flowing Karaoke Lyrics

@@ -54,19 +54,17 @@ Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{group}\Namic Notch"; Filename: "{app}\nusa.exe"; WorkingDir: "{app}"; Comment: "A living dynamic notch for Windows"
 Name: "{group}\{cm:UninstallProgram,Namic Notch}"; Filename: "{uninstallexe}"; WorkingDir: "{app}"
 Name: "{userdesktop}\Namic Notch"; Filename: "{app}\nusa.exe"; WorkingDir: "{app}"; Comment: "A living dynamic notch for Windows"; Tasks: desktopicon
-Name: "{userstartup}\Namic Notch"; Filename: "{app}\nusa.exe"; WorkingDir: "{app}"; Comment: "A living dynamic notch for Windows"; Tasks: startup
 
 [Registry]
 ; Auto-start with Windows
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "NamicNotch"; ValueData: "{app}\nusa.exe"; Flags: uninsdeletevalue; Tasks: startup
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "NamicNotch"; ValueData: """{app}\nusa.exe"""; Flags: uninsdeletevalue; Tasks: startup
 ; App Paths for "nusa" command in Run dialog
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\nusa.exe"; ValueType: string; ValueName: ""; ValueData: "{app}\nusa.exe"; Flags: uninsdeletekey
 
 [Run]
 Filename: "{app}\nusa.exe"; Description: "{cm:LaunchProgram,Namic Notch}"; Flags: nowait postinstall skipifsilent
 
-[UninstallDelete]
-Type: filesandordirs; Name: "{app}"
+; Inno Setup removes only files it installed; preserve other user files.
 
 ; [UninstallRun]
 ; Clean up registry
@@ -92,8 +90,8 @@ Type: filesandordirs; Name: "{app}"
 Name: "{app}"; Permissions: users-modify
 
 [InstallDelete]
-; Clean up old versions
-Type: files; Name: "{app}\*.*"
+; Remove only the redundant shortcut created by previous Namic installers.
+Type: files; Name: "{userstartup}\Namic Notch.lnk"
 
 [INI]
 ; INI file entries (if needed)
