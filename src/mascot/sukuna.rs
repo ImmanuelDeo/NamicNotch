@@ -149,6 +149,91 @@ impl IdleCharacter for YujiSukuna {
             );
         }
 
+        // Dismantle: busur putih bertepi merah, melintang naik ke kanan.
+        for k in 0..3 {
+            let fk = k as f32;
+            let phase = (t * 0.34 + fk * 0.29) % 1.0;
+            let a = (phase * (1.0 - phase) * 4.0).min(1.0) * 0.60 * alpha;
+            if a <= 0.01 {
+                continue;
+            }
+            let ox = pill_rect.left + pw * (0.42 + 0.10 * fk);
+            let oy = pill_rect.top + ph * (0.72 - 0.20 * fk);
+            let len = pw * 0.16;
+            let arc = [
+                D2D_POINT_2F {
+                    x: ox - len * 0.35,
+                    y: oy + len * 0.40,
+                },
+                D2D_POINT_2F {
+                    x: ox + len * 0.40,
+                    y: oy - len * 0.10,
+                },
+                D2D_POINT_2F {
+                    x: ox + len,
+                    y: oy - len * 0.62,
+                },
+            ];
+            draw_soft_streak(
+                rt,
+                factory,
+                &arc,
+                D2D1_COLOR_F {
+                    r: 1.0,
+                    g: 0.26,
+                    b: 0.34,
+                    a: a * 0.55,
+                },
+                1.9,
+            );
+            draw_soft_streak(
+                rt,
+                factory,
+                &arc,
+                D2D1_COLOR_F {
+                    r: 0.99,
+                    g: 0.95,
+                    b: 0.96,
+                    a,
+                },
+                1.0,
+            );
+        }
+
+        // Flame ribbon: crimson + ungu, mengalir menyilang.
+        draw_smoke_wisp(
+            rt,
+            pill_rect,
+            cx - pw * 0.20,
+            0.80,
+            -1.0,
+            D2D1_COLOR_F {
+                r: 0.95,
+                g: 0.16,
+                b: 0.26,
+                a: alpha,
+            },
+            (0.18 + 0.10 * sk) * alpha,
+            t * 1.15,
+            0.29,
+        );
+        draw_smoke_wisp(
+            rt,
+            pill_rect,
+            cx + pw * 0.22,
+            0.72,
+            1.0,
+            D2D1_COLOR_F {
+                r: 0.64,
+                g: 0.18,
+                b: 0.92,
+                a: alpha,
+            },
+            (0.16 + 0.12 * sk) * alpha,
+            t * 0.9,
+            0.53,
+        );
+
         // Kilatan Dismantle/Cleave saat hand sign aktif.
         if g > 0.4 {
             let wave = (t * 13.0).sin();
@@ -281,21 +366,31 @@ impl IdleCharacter for YujiSukuna {
         );
 
         // ── 1. Basis kepala ────────────────────────────────────────────────
-        if let Ok(b) = rt.CreateSolidColorBrush(&black, None) {
-            rt.FillRoundedRectangle(
-                &D2D1_ROUNDED_RECT {
-                    rect: D2D_RECT_F {
-                        left: base_cx - 20.5 * s,
-                        top: base_cy - 8.5 * s,
-                        right: base_cx + 20.5 * s,
-                        bottom: base_cy + 13.5 * s,
-                    },
-                    radiusX: 10.0 * s,
-                    radiusY: 10.0 * s,
-                },
-                &b,
-            );
-        }
+        // Wajah: loop mulus dengan dagu & tulang pipi (bukan kotak yang di-resize).
+        let skin = lerp_color(col(0.91, 0.79, 0.70), col(0.84, 0.72, 0.70), sk);
+        let skin_shade = col(0.60, 0.46, 0.42);
+        draw_smooth_face(
+            rt,
+            factory,
+            &local(&[
+                (0.0, -10.6),
+                (10.2, -9.2),
+                (17.0, -5.4),
+                (20.0, 0.6),
+                (17.2, 7.2),
+                (10.4, 12.0),
+                (3.6, 14.2),
+                (-3.6, 14.2),
+                (-10.4, 12.0),
+                (-17.2, 7.2),
+                (-20.0, 0.6),
+                (-17.0, -5.4),
+                (-10.2, -9.2),
+            ]),
+            skin,
+            skin_shade,
+            alpha,
+        );
         let rim = lerp_color(cyan, crimson, sk);
         draw_soft_radial_glow(
             rt,

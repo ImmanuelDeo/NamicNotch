@@ -126,6 +126,88 @@ impl IdleCharacter for OkarunTurbo {
             6,
         );
 
+        // Swoosh merah panjang melengkung (inti Turbo Granny).
+        for k in 0..4 {
+            let fk = k as f32;
+            let phase = (t * 0.42 + fk * 0.27) % 1.0;
+            let a = (phase * (1.0 - phase) * 4.0).min(1.0) * (0.30 + 0.30 * dash) * alpha;
+            let y = pill_rect.top + ph * (0.24 + 0.16 * fk);
+            let x0 = pill_rect.left + pw * (0.10 + 0.12 * fk) + phase * pw * 0.30;
+            let len = pw * 0.30;
+            draw_tapered_streak(
+                rt,
+                factory,
+                D2D_POINT_2F { x: x0, y },
+                D2D_POINT_2F {
+                    x: x0 + len,
+                    y: y - ph * 0.10,
+                },
+                ph * 6.0,
+                2.6,
+                D2D1_COLOR_F {
+                    r: 0.96,
+                    g: 0.22,
+                    b: 0.30,
+                    a,
+                },
+            );
+            // Highlight putih di atas swoosh.
+            draw_soft_streak(
+                rt,
+                factory,
+                &[
+                    D2D_POINT_2F {
+                        x: x0 + len * 0.20,
+                        y: y - 0.8,
+                    },
+                    D2D_POINT_2F {
+                        x: x0 + len * 0.55,
+                        y: y - ph * 0.05,
+                    },
+                    D2D_POINT_2F {
+                        x: x0 + len * 0.85,
+                        y: y - ph * 0.09,
+                    },
+                ],
+                D2D1_COLOR_F {
+                    r: 0.99,
+                    g: 0.96,
+                    b: 0.96,
+                    a: a * 0.55,
+                },
+                0.9,
+            );
+        }
+        // Crackle pink kecil di tepi frame.
+        for k in 0..2 {
+            let fk = k as f32;
+            let x = pill_rect.right - pw * (0.06 + 0.05 * fk);
+            let y = pill_rect.top + ph * (0.28 + 0.30 * fk);
+            draw_anime_bolt(
+                rt,
+                factory,
+                D2D_POINT_2F { x, y },
+                D2D_POINT_2F {
+                    x: x - pw * 0.03,
+                    y: y + ph * 0.14,
+                },
+                D2D1_COLOR_F {
+                    r: 1.0,
+                    g: 0.40,
+                    b: 0.60,
+                    a: (0.22 + 0.22 * dash) * alpha,
+                },
+                D2D1_COLOR_F {
+                    r: 1.0,
+                    g: 0.92,
+                    b: 0.94,
+                    a: (0.28 + 0.24 * dash) * alpha,
+                },
+                alpha,
+                t + fk * 2.0,
+            );
+        }
+
         // Cakar spektral di kanan.
         draw_claw_slashes(
             rt,
@@ -242,21 +324,29 @@ impl IdleCharacter for OkarunTurbo {
         }
 
         // ── 1. Basis kepala ────────────────────────────────────────────────
-        if let Ok(b) = rt.CreateSolidColorBrush(&black, None) {
-            rt.FillRoundedRectangle(
-                &D2D1_ROUNDED_RECT {
-                    rect: D2D_RECT_F {
-                        left: base_cx - 20.5 * s,
-                        top: base_cy - 8.5 * s,
-                        right: base_cx + 20.5 * s,
-                        bottom: base_cy + 13.5 * s,
-                    },
-                    radiusX: 10.0 * s,
-                    radiusY: 10.0 * s,
-                },
-                &b,
-            );
-        }
+        // Wajah pucat khas Okarun (referensi: satu-satunya wajah terang).
+        draw_smooth_face(
+            rt,
+            factory,
+            &local(&[
+                (0.0, -10.4),
+                (10.0, -9.0),
+                (16.8, -5.2),
+                (19.6, 0.8),
+                (17.0, 7.4),
+                (10.2, 12.2),
+                (3.4, 14.0),
+                (-3.4, 14.0),
+                (-10.2, 12.2),
+                (-17.0, 7.4),
+                (-19.6, 0.8),
+                (-16.8, -5.2),
+                (-10.0, -9.0),
+            ]),
+            col(0.90, 0.89, 0.88),
+            col(0.62, 0.58, 0.58),
+            alpha,
+        );
         draw_soft_radial_glow(rt, at(-19.0, 1.5), 9.0, 12.0, 0.94, 0.20, 0.26, 0.16 * alpha);
         draw_soft_radial_glow(rt, at(19.0, 1.5), 9.0, 12.0, 0.94, 0.92, 0.96, 0.12 * alpha);
 

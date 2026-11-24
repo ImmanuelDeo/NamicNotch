@@ -127,9 +127,9 @@ impl IdleCharacter for ErenAttackTitan {
                     0.92 - fk * 0.14,
                     1.0 - fk * 0.4,
                     D2D1_COLOR_F {
-                        r: 0.90,
-                        g: 0.93,
-                        b: 0.92,
+                        r: 0.74,
+                        g: 0.94,
+                        b: 0.86,
                         a: alpha,
                     },
                     (0.26 - 0.06 * fk) * titan * alpha,
@@ -145,9 +145,9 @@ impl IdleCharacter for ErenAttackTitan {
                 0.62,
                 -1.0,
                 D2D1_COLOR_F {
-                    r: 0.85,
+                    r: 0.70,
                     g: 0.90,
-                    b: 0.88,
+                    b: 0.82,
                     a: alpha,
                 },
                 0.12 * titan * alpha,
@@ -283,42 +283,30 @@ impl IdleCharacter for ErenAttackTitan {
         );
 
         // ── 1. Tengkorak: bulat rapi (manusia) -> memanjang (founding titan) ─
-        let head_half = 20.0 + 3.0 * titan;
-        let top = -8.5 - 2.6 * titan;
-        let bottom = 15.0 + 4.4 * titan;
-        if let Ok(b) = rt.CreateSolidColorBrush(&silhouette, None) {
-            rt.FillRoundedRectangle(
-                &windows::Win32::Graphics::Direct2D::D2D1_ROUNDED_RECT {
-                    rect: D2D_RECT_F {
-                        left: base_cx - head_half * s,
-                        top: base_cy + top * s,
-                        right: base_cx + head_half * s,
-                        bottom: base_cy + bottom * s,
-                    },
-                    radiusX: (10.0 - 6.0 * titan) * s,
-                    radiusY: (10.0 - 5.0 * titan) * s,
-                },
-                &b,
-            );
-        }
-        // Founding titan: dagu meruncing sempit.
-        if titan > 0.05 {
-            fill_polygon(
-                rt,
-                factory,
-                &local(&[
-                    (-11.0, 10.0),
-                    (11.0, 10.0),
-                    (7.0, 19.0),
-                    (0.0, 21.0),
-                    (-7.0, 19.0),
-                ]),
-                D2D1_COLOR_F {
-                    a: alpha * titan,
-                    ..silhouette
-                },
-            );
-        }
+        // Wajah: loop mulus. Manusia = rahang pendek; titan = tengkorak panjang
+        // dengan dagu meruncing (Founding Titan), bukan kotak yang dipaksa mengecil.
+        let hf = 1.0 + 0.10 * titan;
+        let vt = -10.2 - 2.2 * titan;
+        let vb = 14.4 + 5.6 * titan;
+        let span = vb - vt;
+        let skin = lerp_color(col(0.80, 0.65, 0.55), col(0.26, 0.19, 0.15), titan);
+        let skin_shade = lerp_color(col(0.55, 0.42, 0.36), col(0.12, 0.085, 0.07), titan);
+        let face = [
+            (0.0 * hf, vt),
+            (10.2 * hf, vt + span * 0.13),
+            (16.8 * hf, vt + span * 0.34),
+            (19.6 * hf, vt + span * 0.53),
+            (17.0 * hf, vt + span * 0.72),
+            (10.6 * hf, vt + span * 0.87),
+            (3.8 * hf, vb),
+            (-3.8 * hf, vb),
+            (-10.6 * hf, vt + span * 0.87),
+            (-17.0 * hf, vt + span * 0.72),
+            (-19.6 * hf, vt + span * 0.53),
+            (-16.8 * hf, vt + span * 0.34),
+            (-10.2 * hf, vt + span * 0.13),
+        ];
+        draw_smooth_face(rt, factory, &local(&face), skin, skin_shade, alpha);
 
         // ── 2. Rambut ──────────────────────────────────────────────────────
         let spread = titan * 2.0;

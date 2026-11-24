@@ -184,6 +184,55 @@ impl IdleCharacter for AstaDevilUnion {
             1.05,
         );
 
+        // 5b. Crimson thunder + asap anti-magic (referensi efek Asta).
+        for k in 0..2 {
+            let fk = k as f32;
+            let y = pill_rect.top + ph * (0.20 + 0.30 * fk);
+            let pulse = 0.40 + 0.40 * (t * (1.3 + fk * 0.4) + fk).sin().abs();
+            draw_anime_bolt(
+                rt,
+                factory,
+                D2D_POINT_2F {
+                    x: pill_rect.left + pw * 0.04,
+                    y,
+                },
+                D2D_POINT_2F {
+                    x: pill_rect.left + pw * 0.58,
+                    y: y + ph * 0.12,
+                },
+                D2D1_COLOR_F {
+                    r: 1.0,
+                    g: 0.24,
+                    b: 0.46,
+                    a: 0.45 * alpha * pulse,
+                },
+                D2D1_COLOR_F {
+                    r: 1.0,
+                    g: 0.92,
+                    b: 0.96,
+                    a: 0.65 * alpha * pulse,
+                },
+                alpha,
+                t + fk * 1.7,
+            );
+        }
+        draw_smoke_wisp(
+            rt,
+            pill_rect,
+            cx + pw * 0.26,
+            0.72,
+            1.0,
+            D2D1_COLOR_F {
+                r: 0.42,
+                g: 0.05,
+                b: 0.12,
+                a: alpha,
+            },
+            0.15 * alpha,
+            t,
+            0.41,
+        );
+
         // 6. Garis cahaya di bibir bawah notch (refleksi lantai).
         draw_soft_radial_glow(
             rt,

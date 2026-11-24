@@ -967,3 +967,45 @@ pub unsafe fn draw_anime_bolt(
         );
     }
 }
+
+/// Bentuk muka organik: satu loop mulus (bukan rounded-rect yang dipaksa),
+/// plus bayangan pipi/rahang lembut supaya terbaca sebagai wajah.
+pub unsafe fn draw_smooth_face(
+    rt: &ID2D1HwndRenderTarget,
+    factory: &ID2D1Factory,
+    pts: &[D2D_POINT_2F],
+    skin: D2D1_COLOR_F,
+    shade: D2D1_COLOR_F,
+    alpha: f32,
+) {
+    if pts.len() < 3 {
+        return;
+    }
+    fill_smooth_shape(rt, factory, pts, skin);
+    if shade.a <= 0.004 || alpha <= 0.004 {
+        return;
+    }
+    let n = pts.len();
+    // Bayangan rahang: kurva di bawah tulang pipi.
+    let jaw: Vec<D2D_POINT_2F> = (0..n)
+        .filter(|i| {
+            let y = pts[*i].y;
+            let y_max = pts.iter().fold(f32::MIN, |m, p| m.max(p.y));
+            let y_min = pts.iter().fold(f32::MAX, |m, p| m.min(p.y));
+            y > y_max - (y_max - y_min) * 0.34
+        })
+        .map(|i| pts[i])
+        .collect();
+    if jaw.len() >= 3 {
+        draw_soft_streak(
+            rt,
+            factory,
+            &jaw,
+            D2D1_COLOR_F {
+                a: shade.a * alpha,
+                ..shade
+            },
+            1.4,
+        );
+    }
+}

@@ -120,6 +120,81 @@ impl IdleCharacter for KatsukiBakugo {
             );
         }
 
+        // Impact starburst: inti putih-panas + sinar oranye.
+        let bx = cx + pw * 0.24;
+        let by = pill_rect.top + ph * 0.44;
+        let burst = 0.55 + 0.85 * blast;
+        draw_soft_radial_glow(
+            rt,
+            D2D_POINT_2F { x: bx, y: by },
+            17.0 * burst,
+            15.0 * burst,
+            1.0,
+            0.62,
+            0.24,
+            (0.18 + 0.30 * blast) * alpha,
+        );
+        draw_soft_radial_glow(
+            rt,
+            D2D_POINT_2F { x: bx, y: by },
+            7.0 * burst,
+            6.0 * burst,
+            1.0,
+            0.97,
+            0.86,
+            (0.24 + 0.40 * blast) * alpha,
+        );
+        for k in 0..10 {
+            let fk = k as f32;
+            let ang = -1.9 + fk * 0.42 + (t * 0.3).sin() * 0.06;
+            let inner = 4.0 * burst;
+            let outer = (11.0 + (fk % 3.0) * 4.0) * burst;
+            draw_soft_streak(
+                rt,
+                factory,
+                &[
+                    D2D_POINT_2F {
+                        x: bx + ang.cos() * inner,
+                        y: by + ang.sin() * inner,
+                    },
+                    D2D_POINT_2F {
+                        x: bx + ang.cos() * (inner + outer) * 0.5,
+                        y: by + ang.sin() * (inner + outer) * 0.5,
+                    },
+                    D2D_POINT_2F {
+                        x: bx + ang.cos() * outer,
+                        y: by + ang.sin() * outer,
+                    },
+                ],
+                D2D1_COLOR_F {
+                    r: 1.0,
+                    g: 0.72 - 0.10 * (fk % 2.0),
+                    b: 0.24,
+                    a: (0.30 + 0.45 * blast) * alpha,
+                },
+                1.5,
+            );
+        }
+        // Kepulan asap gelap di kiri & kanan ledakan.
+        for side in [-1.0_f32, 1.0_f32] {
+            draw_smoke_wisp(
+                rt,
+                pill_rect,
+                bx + side * pw * 0.13,
+                0.55,
+                side,
+                D2D1_COLOR_F {
+                    r: 0.26,
+                    g: 0.17,
+                    b: 0.12,
+                    a: alpha,
+                },
+                (0.14 + 0.10 * blast) * alpha,
+                t * 0.85 + side,
+                0.37 + side * 0.2,
+            );
+        }
+
         // Gelombang kejut lembut saat meledak.
         if blast > 0.08 {
             let stroke = create_round_stroke(factory);
@@ -273,21 +348,29 @@ impl IdleCharacter for KatsukiBakugo {
         }
 
         // ── 1. Basis kepala ────────────────────────────────────────────────
-        if let Ok(b) = rt.CreateSolidColorBrush(&black, None) {
-            rt.FillRoundedRectangle(
-                &D2D1_ROUNDED_RECT {
-                    rect: D2D_RECT_F {
-                        left: base_cx - 20.5 * s,
-                        top: base_cy - 8.5 * s,
-                        right: base_cx + 20.5 * s,
-                        bottom: base_cy + 13.5 * s,
-                    },
-                    radiusX: 10.0 * s,
-                    radiusY: 10.0 * s,
-                },
-                &b,
-            );
-        }
+        // Wajah: bentuk organik dengan dagu tegas.
+        draw_smooth_face(
+            rt,
+            factory,
+            &local(&[
+                (0.0, -10.8),
+                (10.6, -9.4),
+                (17.4, -5.6),
+                (20.2, 0.4),
+                (17.6, 7.0),
+                (11.0, 11.6),
+                (4.0, 13.8),
+                (-4.0, 13.8),
+                (-11.0, 11.6),
+                (-17.6, 7.0),
+                (-20.2, 0.4),
+                (-17.4, -5.6),
+                (-10.6, -9.4),
+            ]),
+            col(0.94, 0.82, 0.74),
+            col(0.64, 0.50, 0.44),
+            alpha,
+        );
         draw_soft_radial_glow(rt, at(-19.0, 1.5), 9.0, 12.0, 1.0, 0.45, 0.12, 0.16 * alpha);
         draw_soft_radial_glow(rt, at(19.0, 1.5), 9.0, 12.0, 1.0, 0.45, 0.12, 0.16 * alpha);
 
