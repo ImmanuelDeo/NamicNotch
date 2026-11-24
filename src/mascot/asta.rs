@@ -3,6 +3,7 @@
 // ikat kepala Black Bulls, pupil '+' anti-magic Liebe, pedang Demon-Slayer,
 // grimoire Black Bulls melayang, kerah mantel, bara anti-magic.
 use super::core::*;
+use super::vfx;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_POINT_2F, D2D_RECT_F};
 use windows::Win32::Graphics::Direct2D::{
     ID2D1Factory, ID2D1RenderTarget, D2D1_ELLIPSE, D2D1_ROUNDED_RECT,
@@ -71,6 +72,17 @@ impl IdleCharacter for AstaDevilUnion {
         let cx = (pill_rect.left + pill_rect.right) * 0.5;
         let t = ctx.phase_time;
         let boost = 1.0 + pull * 0.45 + grab * 0.15;
+
+        vfx::draw_ambient_notch_illumination(
+            rt,
+            pill_rect,
+            (0.34, 0.03, 0.07),
+            (0.22, 0.02, 0.05),
+            (1.00, 0.18, 0.28),
+            0.85 + 0.35 * grab,
+            alpha,
+        );
+        vfx::draw_bokeh_motes(rt, pill_rect, 10, t, 12.4, (1.0, 0.30, 0.36), alpha);
 
         // 1. Pendar dasar crimson dari bawah notch.
         draw_soft_radial_glow(
@@ -189,7 +201,7 @@ impl IdleCharacter for AstaDevilUnion {
             let fk = k as f32;
             let y = pill_rect.top + ph * (0.20 + 0.30 * fk);
             let pulse = 0.40 + 0.40 * (t * (1.3 + fk * 0.4) + fk).sin().abs();
-            draw_anime_bolt(
+            vfx::draw_tapered_anime_lightning(
                 rt,
                 factory,
                 D2D_POINT_2F {
@@ -200,20 +212,12 @@ impl IdleCharacter for AstaDevilUnion {
                     x: pill_rect.left + pw * 0.58,
                     y: y + ph * 0.12,
                 },
-                D2D1_COLOR_F {
-                    r: 1.0,
-                    g: 0.24,
-                    b: 0.46,
-                    a: 0.45 * alpha * pulse,
-                },
-                D2D1_COLOR_F {
-                    r: 1.0,
-                    g: 0.92,
-                    b: 0.96,
-                    a: 0.65 * alpha * pulse,
-                },
-                alpha,
-                t + fk * 1.7,
+                t,
+                fk * 3.1,
+                (1.0, 0.22, 0.40),
+                0.55 * alpha * pulse,
+                1.1,
+                3,
             );
         }
         draw_smoke_wisp(
@@ -571,108 +575,26 @@ impl IdleCharacter for AstaDevilUnion {
             0.8,
         );
 
-        // ── 5. Mata Devil Union: iris obsidian + pupil '+' anti-magic ───────
-        let ey = base_cy + 5.0 * s + ctx.look_y * 0.45;
-        let open = ctx.open_factor();
-        let squash = 1.0 - 0.18 * grab;
-        for side in [-1.0_f32, 1.0_f32] {
-            let ex = base_cx + side * 9.2 * s + ctx.look_x * 0.35;
-            draw_soft_radial_glow(
-                rt,
-                D2D_POINT_2F { x: ex, y: ey },
-                13.0,
-                14.0,
-                1.0,
-                0.12,
-                0.25,
-                0.65 * alpha,
-            );
-
-            let rx = 3.6 * s;
-            let ry = 5.8 * s * squash * open;
-            if let Ok(b) = rt.CreateSolidColorBrush(&dark, None) {
-                rt.FillEllipse(
-                    &D2D1_ELLIPSE {
-                        point: D2D_POINT_2F { x: ex, y: ey },
-                        radiusX: rx,
-                        radiusY: ry,
-                    },
-                    &b,
-                );
-            }
-            if let Ok(b) = rt.CreateSolidColorBrush(&red, None) {
-                rt.DrawEllipse(
-                    &D2D1_ELLIPSE {
-                        point: D2D_POINT_2F { x: ex, y: ey },
-                        radiusX: rx,
-                        radiusY: ry,
-                    },
-                    &b,
-                    2.0,
-                    None,
-                );
-            }
-            if let Ok(b) = rt.CreateSolidColorBrush(&red_core, None) {
-                rt.DrawEllipse(
-                    &D2D1_ELLIPSE {
-                        point: D2D_POINT_2F { x: ex, y: ey },
-                        radiusX: rx * 0.78,
-                        radiusY: ry * 0.78,
-                    },
-                    &b,
-                    0.8,
-                    None,
-                );
-            }
-
-            // Pupil '+' — tanda anti-magic Liebe.
-            let arm_h = 2.4 * s;
-            let arm_v = (3.6 * s * squash * open).max(0.8);
-            draw_soft_radial_glow(
-                rt,
-                D2D_POINT_2F { x: ex, y: ey },
-                7.0,
-                7.0,
-                1.0,
-                0.14,
-                0.26,
-                0.45 * alpha,
-            );
-            for (colr, w, k) in [(red, 1.6_f32, 1.0_f32), (red_core, 0.8, 0.55)] {
-                draw_polyline(
-                    rt,
-                    factory,
-                    &[
-                        D2D_POINT_2F {
-                            x: ex - arm_h * k,
-                            y: ey,
-                        },
-                        D2D_POINT_2F {
-                            x: ex + arm_h * k,
-                            y: ey,
-                        },
-                    ],
-                    colr,
-                    w,
-                );
-                draw_polyline(
-                    rt,
-                    factory,
-                    &[
-                        D2D_POINT_2F {
-                            x: ex,
-                            y: ey - arm_v * k,
-                        },
-                        D2D_POINT_2F {
-                            x: ex,
-                            y: ey + arm_v * k,
-                        },
-                    ],
-                    colr,
-                    w,
-                );
-            }
-        }
+        // ── 5. Mata capsule baku (tanpa pupil '+' / tanda silang) ──────────
+        let grab_now = grab;
+        draw_capsule_eyes(
+            rt,
+            factory,
+            base_cx,
+            base_cy + 5.0 * s,
+            9.2,
+            red,
+            D2D1_COLOR_F {
+                r: 1.0,
+                g: 0.72,
+                b: 0.78,
+                a: alpha,
+            },
+            (1.0, 0.14, 0.24),
+            0.15 + 0.75 * grab_now,
+            alpha,
+            ctx,
+        );
 
         // ── 6. Grimoire Black Bulls melayang (kiri) ─────────────────────────
         let gb = ctx.phase_time * 1.5;

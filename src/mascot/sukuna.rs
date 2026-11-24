@@ -4,6 +4,7 @@
 // highlight chunk + outline, aksesoris kepala, kerah pakaian, mata illuminated, objek
 // ikonik di kanan.
 use super::core::*;
+use super::vfx;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_POINT_2F, D2D_RECT_F};
 use windows::Win32::Graphics::Direct2D::{
     ID2D1Factory, ID2D1RenderTarget, D2D1_ELLIPSE, D2D1_ROUNDED_RECT,
@@ -68,207 +69,82 @@ impl IdleCharacter for YujiSukuna {
         let sk = Self::sukuna_factor(ctx.local_time);
         let g = Self::shrine_gesture(ctx.local_time);
         let pw = pill_rect.right - pill_rect.left;
-        let ph = pill_rect.bottom - pill_rect.top;
         let cx = (pill_rect.left + pill_rect.right) * 0.5;
+        let cy = (pill_rect.top + pill_rect.bottom) * 0.5;
         let t = ctx.phase_time;
 
-        // Glow inti: cyan (Yuji) -> merah (Sukuna).
-        draw_soft_radial_glow(
-            rt,
-            D2D_POINT_2F {
-                x: cx,
-                y: pill_rect.top + ph * 0.50,
-            },
-            pw * 0.30,
-            ph * 0.52,
-            lerp(0.20, 0.95, sk),
-            lerp(0.80, 0.14, sk),
-            lerp(1.00, 0.22, sk),
-            (0.20 + 0.14 * sk) * alpha,
-        );
-
-        // Gradien bawah: cyan -> ungu-magenta.
-        draw_bottom_gradient(
+        vfx::draw_ambient_notch_illumination(
             rt,
             pill_rect,
-            D2D1_COLOR_F {
-                r: lerp(0.20, 0.62, sk),
-                g: lerp(0.78, 0.16, sk),
-                b: lerp(1.00, 0.92, sk),
-                a: alpha,
-            },
-            ph * 0.46,
-            (0.55 + 0.25 * sk) * alpha,
+            (lerp(0.10, 0.40, sk), lerp(0.34, 0.05, sk), lerp(0.46, 0.09, sk)),
+            (lerp(0.10, 0.20, sk), lerp(0.22, 0.02, sk), lerp(0.38, 0.24, sk)),
+            (lerp(0.30, 1.00, sk), lerp(0.90, 0.20, sk), lerp(1.00, 0.34, sk)),
+            0.82 + 0.30 * g,
+            alpha,
+        );
+        vfx::draw_bokeh_motes(
+            rt,
+            pill_rect,
+            10,
+            t,
+            21.7,
+            (lerp(0.40, 1.00, sk), lerp(0.86, 0.28, sk), lerp(1.00, 0.36, sk)),
+            alpha,
         );
 
-        // Asap ungu-magenta di kiri & kanan kepala.
-        let smoke = D2D1_COLOR_F {
-            r: lerp(0.34, 0.72, sk),
-            g: lerp(0.72, 0.18, sk),
-            b: lerp(1.00, 0.94, sk),
-            a: alpha,
-        };
-        for side in [-1.0_f32, 1.0_f32] {
-            draw_smoke_wisp(
-                rt,
-                pill_rect,
-                cx + side * pw * 0.24,
-                0.86,
-                side,
-                smoke,
-                (0.22 + 0.08 * sk) * alpha,
-                t,
-                side * 0.31 + 0.17,
-            );
-        }
-
-        // Wisp cursed energy tipis di depan (mengalir naik).
-        for k in 0..3 {
+        // Flame ribbon crimson + ungu, mengalir melengkung.
+        for k in 0..2 {
             let fk = k as f32;
-            let life = ((t * (0.20 + fk * 0.03)) + (t * 0.08 + fk).sin() * 0.05 + fk * 0.23) % 1.0;
-            let a = (life * (1.0 - life) * 3.2).min(1.0) * 0.26 * alpha;
-            let bx = cx + pw * (0.14 + 0.24 * ((fk * 0.37) % 1.0));
-            let by = pill_rect.bottom - 3.0;
-            let bow = (t * 0.6 + fk * 1.6).sin() * 4.4 + (t * 0.22 + fk).cos() * 2.2;
-            draw_tapered_streak(
+            let y0 = pill_rect.bottom - 2.0;
+            let sway = (t * 0.9 + fk * 2.1).sin() * 5.0;
+            vfx::draw_tapered_flame_ribbon(
                 rt,
                 factory,
-                D2D_POINT_2F { x: bx, y: by },
                 D2D_POINT_2F {
-                    x: bx + bow,
-                    y: by - ph * (0.40 + 0.30 * life),
+                    x: pill_rect.left + pw * (0.12 + 0.52 * fk),
+                    y: y0,
                 },
-                bow * 0.7,
-                2.2,
-                D2D1_COLOR_F {
-                    r: lerp(0.30, 0.98, sk),
-                    g: lerp(0.88, 0.26, sk),
-                    b: lerp(1.00, 0.34, sk),
-                    a,
+                D2D_POINT_2F {
+                    x: pill_rect.left + pw * (0.22 + 0.52 * fk) + sway,
+                    y: y0 - 14.0,
                 },
+                D2D_POINT_2F {
+                    x: pill_rect.left + pw * (0.40 + 0.34 * fk) - sway * 0.6,
+                    y: y0 - 30.0,
+                },
+                D2D_POINT_2F {
+                    x: pill_rect.left + pw * (0.58 + 0.20 * fk),
+                    y: pill_rect.top + 4.0,
+                },
+                3.4 + 1.4 * fk,
+                if k == 0 {
+                    (0.98, 0.16, 0.26)
+                } else {
+                    (0.62, 0.18, 0.94)
+                },
+                (0.22 + 0.20 * sk) * alpha,
+                k == 0,
             );
         }
 
-        // Dismantle: busur putih bertepi merah, melintang naik ke kanan.
-        for k in 0..3 {
-            let fk = k as f32;
-            let phase = (t * 0.34 + fk * 0.29) % 1.0;
-            let a = (phase * (1.0 - phase) * 4.0).min(1.0) * 0.60 * alpha;
-            if a <= 0.01 {
-                continue;
-            }
-            let ox = pill_rect.left + pw * (0.42 + 0.10 * fk);
-            let oy = pill_rect.top + ph * (0.72 - 0.20 * fk);
-            let len = pw * 0.16;
-            let arc = [
-                D2D_POINT_2F {
-                    x: ox - len * 0.35,
-                    y: oy + len * 0.40,
-                },
-                D2D_POINT_2F {
-                    x: ox + len * 0.40,
-                    y: oy - len * 0.10,
-                },
-                D2D_POINT_2F {
-                    x: ox + len,
-                    y: oy - len * 0.62,
-                },
-            ];
-            draw_soft_streak(
-                rt,
-                factory,
-                &arc,
-                D2D1_COLOR_F {
-                    r: 1.0,
-                    g: 0.26,
-                    b: 0.34,
-                    a: a * 0.55,
-                },
-                1.9,
-            );
-            draw_soft_streak(
-                rt,
-                factory,
-                &arc,
-                D2D1_COLOR_F {
-                    r: 0.99,
-                    g: 0.95,
-                    b: 0.96,
-                    a,
-                },
-                1.0,
-            );
-        }
-
-        // Flame ribbon: crimson + ungu, mengalir menyilang.
-        draw_smoke_wisp(
-            rt,
-            pill_rect,
-            cx - pw * 0.20,
-            0.80,
-            -1.0,
-            D2D1_COLOR_F {
-                r: 0.95,
-                g: 0.16,
-                b: 0.26,
-                a: alpha,
-            },
-            (0.18 + 0.10 * sk) * alpha,
-            t * 1.15,
-            0.29,
-        );
-        draw_smoke_wisp(
-            rt,
-            pill_rect,
-            cx + pw * 0.22,
-            0.72,
-            1.0,
-            D2D1_COLOR_F {
-                r: 0.64,
-                g: 0.18,
-                b: 0.92,
-                a: alpha,
-            },
-            (0.16 + 0.12 * sk) * alpha,
-            t * 0.9,
-            0.53,
-        );
-
-        // Kilatan Dismantle/Cleave saat hand sign aktif.
-        if g > 0.4 {
-            let wave = (t * 13.0).sin();
-            if wave > 0.35 {
-                let sa = ((wave - 0.35) / 0.65) * g * alpha;
-                let ox = cx + 30.0;
-                let oy = pill_rect.top + ph * 0.40;
-                for k in 0..2 {
-                    let dx = k as f32 * 5.0;
-                    draw_soft_streak(
-                        rt,
-                        factory,
-                        &[
-                            D2D_POINT_2F {
-                                x: ox - 9.0 + dx,
-                                y: oy - 6.0,
-                            },
-                            D2D_POINT_2F {
-                                x: ox + 1.0 + dx,
-                                y: oy - 0.8,
-                            },
-                            D2D_POINT_2F {
-                                x: ox + 9.0 + dx,
-                                y: oy + 5.0,
-                            },
-                        ],
-                        D2D1_COLOR_F {
-                            r: 1.0,
-                            g: 0.50,
-                            b: 0.56,
-                            a: sa * 0.9,
-                        },
-                        1.1,
-                    );
-                }
+        // Dismantle crescents saat hand sign aktif.
+        if g > 0.25 {
+            for k in 0..3 {
+                let fk = k as f32;
+                let phase = (t * 0.36 + fk * 0.31) % 1.0;
+                let a = (phase * (1.0 - phase) * 4.0).min(1.0) * g * alpha;
+                vfx::draw_crescent_dismantle_slash(
+                    rt,
+                    factory,
+                    D2D_POINT_2F {
+                        x: cx + pw * (0.05 + 0.10 * fk),
+                        y: cy + 10.0 - 7.0 * fk,
+                    },
+                    -0.55,
+                    pw * (0.20 + 0.05 * fk),
+                    6.0 + 2.0 * fk,
+                    a * 0.85,
+                );
             }
         }
     }
@@ -312,6 +188,34 @@ impl IdleCharacter for YujiSukuna {
         let amber_core = col(1.00, 0.91, 0.72);
         let cloth_white = col(0.86, 0.84, 0.80);
         let cloth_dark = col(0.075, 0.070, 0.090);
+
+        // Basis kepala: hampir menyatu dengan latar obsidian, hanya cukup
+        // untuk memisahkan siluet dari background (tanpa warna kulit).
+        fill_smooth_shape(
+            rt,
+            factory,
+            &local(&[
+                (0.0, -9.6),
+                (9.6, -8.4),
+                (15.8, -4.8),
+                (18.6, 0.8),
+                (16.0, 6.8),
+                (9.6, 11.4),
+                (3.4, 13.4),
+                (-3.4, 13.4),
+                (-9.6, 11.4),
+                (-16.0, 6.8),
+                (-18.6, 0.8),
+                (-15.8, -4.8),
+                (-9.6, -8.4),
+            ]),
+            D2D1_COLOR_F {
+                r: 0.055,
+                g: 0.052,
+                b: 0.062,
+                a: alpha * 0.92,
+            },
+        );
 
         // ── 0. Kerah + bahu ────────────────────────────────────────────────
         fill_polygon(
@@ -363,54 +267,6 @@ impl IdleCharacter for YujiSukuna {
             ]),
             if sk > 0.5 { cloth_white } else { crimson },
             1.0,
-        );
-
-        // ── 1. Basis kepala ────────────────────────────────────────────────
-        // Wajah: loop mulus dengan dagu & tulang pipi (bukan kotak yang di-resize).
-        let skin = lerp_color(col(0.91, 0.79, 0.70), col(0.84, 0.72, 0.70), sk);
-        let skin_shade = col(0.60, 0.46, 0.42);
-        draw_smooth_face(
-            rt,
-            factory,
-            &local(&[
-                (0.0, -10.6),
-                (10.2, -9.2),
-                (17.0, -5.4),
-                (20.0, 0.6),
-                (17.2, 7.2),
-                (10.4, 12.0),
-                (3.6, 14.2),
-                (-3.6, 14.2),
-                (-10.4, 12.0),
-                (-17.2, 7.2),
-                (-20.0, 0.6),
-                (-17.0, -5.4),
-                (-10.2, -9.2),
-            ]),
-            skin,
-            skin_shade,
-            alpha,
-        );
-        let rim = lerp_color(cyan, crimson, sk);
-        draw_soft_radial_glow(
-            rt,
-            at(-19.0, 1.5),
-            9.0,
-            12.0,
-            rim.r,
-            rim.g,
-            rim.b,
-            0.16 * alpha,
-        );
-        draw_soft_radial_glow(
-            rt,
-            at(19.0, 1.5),
-            9.0,
-            12.0,
-            rim.r,
-            rim.g,
-            rim.b,
-            0.16 * alpha,
         );
 
         // ── 2. Rambut berlapis ─────────────────────────────────────────────
@@ -762,25 +618,45 @@ impl IdleCharacter for YujiSukuna {
                     0.9,
                 );
             }
-            let stroke = create_round_stroke(factory);
-            if let Ok(rb) = rt.CreateSolidColorBrush(
-                &D2D1_COLOR_F {
-                    r: 1.0,
-                    g: 0.18,
-                    b: 0.30,
-                    a: 0.42 * gg,
-                },
-                None,
-            ) {
-                rt.DrawEllipse(
-                    &D2D1_ELLIPSE {
-                        point: D2D_POINT_2F { x: sx, y: sy },
-                        radiusX: 12.0 * s,
-                        radiusY: 12.0 * s,
+            // Pengganti ring keras: glow lembut + dua busur meruncing.
+            draw_soft_radial_glow(
+                rt,
+                D2D_POINT_2F { x: sx, y: sy },
+                15.0 * s,
+                14.0 * s,
+                1.0,
+                0.20,
+                0.28,
+                0.30 * gg,
+            );
+            for k in 0..2 {
+                let fk = k as f32;
+                let a0 = -1.9 + fk * 3.1;
+                let a1 = a0 + 1.9;
+                let r = 11.0 * s;
+                vfx::draw_tapered_flame_ribbon(
+                    rt,
+                    factory,
+                    D2D_POINT_2F {
+                        x: sx + a0.cos() * r,
+                        y: sy + a0.sin() * r,
                     },
-                    &rb,
-                    0.9,
-                    stroke.as_ref(),
+                    D2D_POINT_2F {
+                        x: sx + ((a0 + a1) * 0.5).cos() * r * 1.04,
+                        y: sy + ((a0 + a1) * 0.5).sin() * r * 1.04,
+                    },
+                    D2D_POINT_2F {
+                        x: sx + ((a0 + a1) * 0.5).cos() * r * 1.05,
+                        y: sy + ((a0 + a1) * 0.5).sin() * r * 1.05,
+                    },
+                    D2D_POINT_2F {
+                        x: sx + a1.cos() * r,
+                        y: sy + a1.sin() * r,
+                    },
+                    2.2 * s,
+                    (1.0, 0.22, 0.32),
+                    0.40 * gg,
+                    false,
                 );
             }
         }

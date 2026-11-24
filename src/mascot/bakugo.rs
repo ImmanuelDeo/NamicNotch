@@ -4,6 +4,7 @@
 // topeng mata hitam bergerigi, sirip flare hitam ber-outline oranye, kerah kostum +
 // pelat dada, gauntlet granat dengan ledakan di kanan.
 use super::core::*;
+use super::vfx;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_POINT_2F, D2D_RECT_F};
 use windows::Win32::Graphics::Direct2D::{
     ID2D1Factory, ID2D1RenderTarget, D2D1_ELLIPSE, D2D1_ROUNDED_RECT,
@@ -66,167 +67,62 @@ impl IdleCharacter for KatsukiBakugo {
         let pw = pill_rect.right - pill_rect.left;
         let ph = pill_rect.bottom - pill_rect.top;
         let cx = (pill_rect.left + pill_rect.right) * 0.5;
+        let cy = (pill_rect.top + pill_rect.bottom) * 0.5;
         let t = ctx.phase_time;
 
-        // Glow amber di belakang kepala.
-        draw_soft_radial_glow(
-            rt,
-            D2D_POINT_2F {
-                x: cx,
-                y: pill_rect.top + ph * 0.50,
-            },
-            pw * 0.32,
-            ph * 0.54,
-            1.0,
-            0.55,
-            0.16,
-            (0.22 + 0.12 * blast) * alpha,
-        );
-        // Gradien bawah oranye.
-        draw_bottom_gradient(
+        vfx::draw_ambient_notch_illumination(
             rt,
             pill_rect,
-            D2D1_COLOR_F {
-                r: 1.0,
-                g: 0.46,
-                b: 0.10,
-                a: alpha,
+            (0.52, 0.26, 0.06),
+            (0.34, 0.14, 0.03),
+            (1.00, 0.62, 0.18),
+            0.90 + 0.40 * blast,
+            alpha,
+        );
+        vfx::draw_bokeh_motes(rt, pill_rect, 12, t, 33.9, (1.0, 0.66, 0.26), alpha);
+
+        vfx::draw_connected_anime_explosion(
+            rt,
+            factory,
+            D2D_POINT_2F {
+                x: cx + pw * 0.24,
+                y: cy - 4.0,
             },
-            ph * 0.44,
-            (0.60 + 0.20 * blast) * alpha,
+            (13.0 + 10.0 * blast) * (1.0 + 0.05 * (t * 6.0).sin()),
+            t,
+            (0.55 + 0.45 * blast) * alpha,
         );
 
-        // Ember melayang: ukuran & alfa bervariasi, gerak dua harmonisa.
-        for i in 0..12 {
-            let fi = i as f32;
-            let seed = (fi * 0.371).fract();
-            let life = ((t * (0.10 + 0.06 * seed)) + seed * 3.1) % 1.0;
-            let a = (life * (1.0 - life) * 4.0).min(1.0) * alpha * (0.20 + 0.35 * seed);
-            let ex = pill_rect.left + pw * (0.10 + 0.80 * ((fi * 0.271 + 0.07) % 1.0))
-                + (t * 0.35 + fi * 1.7).sin() * 5.0;
-            let ey = pill_rect.bottom - 4.0 - life * ph * 0.90;
-            let size = 0.7 + seed * 1.5;
-            draw_soft_circle(
-                rt,
-                D2D_POINT_2F { x: ex, y: ey },
-                size,
-                size,
-                D2D1_COLOR_F {
-                    r: 1.0,
-                    g: 0.66 + 0.20 * seed,
-                    b: 0.22,
-                    a,
-                },
-            );
-        }
-
-        // Impact starburst: inti putih-panas + sinar oranye.
-        let bx = cx + pw * 0.24;
-        let by = pill_rect.top + ph * 0.44;
-        let burst = 0.55 + 0.85 * blast;
-        draw_soft_radial_glow(
-            rt,
-            D2D_POINT_2F { x: bx, y: by },
-            17.0 * burst,
-            15.0 * burst,
-            1.0,
-            0.62,
-            0.24,
-            (0.18 + 0.30 * blast) * alpha,
-        );
-        draw_soft_radial_glow(
-            rt,
-            D2D_POINT_2F { x: bx, y: by },
-            7.0 * burst,
-            6.0 * burst,
-            1.0,
-            0.97,
-            0.86,
-            (0.24 + 0.40 * blast) * alpha,
-        );
-        for k in 0..10 {
+        // Uap hangat menyebar dari ledakan.
+        for k in 0..2 {
             let fk = k as f32;
-            let ang = -1.9 + fk * 0.42 + (t * 0.3).sin() * 0.06;
-            let inner = 4.0 * burst;
-            let outer = (11.0 + (fk % 3.0) * 4.0) * burst;
-            draw_soft_streak(
+            let side = if k == 0 { -1.0_f32 } else { 1.0_f32 };
+            vfx::draw_tapered_flame_ribbon(
                 rt,
                 factory,
-                &[
-                    D2D_POINT_2F {
-                        x: bx + ang.cos() * inner,
-                        y: by + ang.sin() * inner,
-                    },
-                    D2D_POINT_2F {
-                        x: bx + ang.cos() * (inner + outer) * 0.5,
-                        y: by + ang.sin() * (inner + outer) * 0.5,
-                    },
-                    D2D_POINT_2F {
-                        x: bx + ang.cos() * outer,
-                        y: by + ang.sin() * outer,
-                    },
-                ],
-                D2D1_COLOR_F {
-                    r: 1.0,
-                    g: 0.72 - 0.10 * (fk % 2.0),
-                    b: 0.24,
-                    a: (0.30 + 0.45 * blast) * alpha,
+                D2D_POINT_2F {
+                    x: cx + pw * (0.24 + side * 0.04),
+                    y: cy + 4.0,
                 },
-                1.5,
+                D2D_POINT_2F {
+                    x: cx + pw * (0.24 + side * 0.14),
+                    y: cy - 2.0,
+                },
+                D2D_POINT_2F {
+                    x: cx + pw * (0.24 + side * 0.20),
+                    y: cy - 10.0,
+                },
+                D2D_POINT_2F {
+                    x: cx + pw * (0.24 + side * 0.26),
+                    y: cy - 16.0,
+                },
+                3.0,
+                (1.0, 0.70, 0.32),
+                (0.16 + 0.18 * blast) * alpha,
+                false,
             );
         }
-        // Kepulan asap gelap di kiri & kanan ledakan.
-        for side in [-1.0_f32, 1.0_f32] {
-            draw_smoke_wisp(
-                rt,
-                pill_rect,
-                bx + side * pw * 0.13,
-                0.55,
-                side,
-                D2D1_COLOR_F {
-                    r: 0.26,
-                    g: 0.17,
-                    b: 0.12,
-                    a: alpha,
-                },
-                (0.14 + 0.10 * blast) * alpha,
-                t * 0.85 + side,
-                0.37 + side * 0.2,
-            );
-        }
-
-        // Gelombang kejut lembut saat meledak.
-        if blast > 0.08 {
-            let stroke = create_round_stroke(factory);
-            if let Ok(rb) = rt.CreateSolidColorBrush(
-                &D2D1_COLOR_F {
-                    r: 1.0,
-                    g: 0.78,
-                    b: 0.36,
-                    a: blast * alpha * 0.32,
-                },
-                None,
-            ) {
-                let bx = cx + 28.0;
-                let grow = 1.0 + (1.0 - blast) * 2.4;
-                for k in 0..2 {
-                    let fk = k as f32;
-                    rt.DrawEllipse(
-                        &D2D1_ELLIPSE {
-                            point: D2D_POINT_2F {
-                                x: bx,
-                                y: pill_rect.top + ph * 0.42,
-                            },
-                            radiusX: (6.0 + fk * 4.0) * grow,
-                            radiusY: (4.6 + fk * 3.0) * grow,
-                        },
-                        &rb,
-                        0.8 - 0.2 * fk,
-                        stroke.as_ref(),
-                    );
-                }
-            }
-        }
+        let _ = ph;
     }
 
     unsafe fn draw_character(
@@ -266,6 +162,34 @@ impl IdleCharacter for KatsukiBakugo {
         let costume_hi = col(0.18, 0.19, 0.22);
         let silver = col(0.78, 0.81, 0.84);
         let green = col(0.18, 0.35, 0.24);
+
+        // Basis kepala: hampir menyatu dengan latar obsidian, hanya cukup
+        // untuk memisahkan siluet dari background (tanpa warna kulit).
+        fill_smooth_shape(
+            rt,
+            factory,
+            &local(&[
+                (0.0, -9.6),
+                (9.6, -8.4),
+                (15.8, -4.8),
+                (18.6, 0.8),
+                (16.0, 6.8),
+                (9.6, 11.4),
+                (3.4, 13.4),
+                (-3.4, 13.4),
+                (-9.6, 11.4),
+                (-16.0, 6.8),
+                (-18.6, 0.8),
+                (-15.8, -4.8),
+                (-9.6, -8.4),
+            ]),
+            D2D1_COLOR_F {
+                r: 0.055,
+                g: 0.052,
+                b: 0.058,
+                a: alpha * 0.92,
+            },
+        );
 
         // ── 0. Kerah kostum + pelat dada + granat leher ───────────────────
         fill_polygon(
@@ -346,33 +270,6 @@ impl IdleCharacter for KatsukiBakugo {
                 );
             }
         }
-
-        // ── 1. Basis kepala ────────────────────────────────────────────────
-        // Wajah: bentuk organik dengan dagu tegas.
-        draw_smooth_face(
-            rt,
-            factory,
-            &local(&[
-                (0.0, -10.8),
-                (10.6, -9.4),
-                (17.4, -5.6),
-                (20.2, 0.4),
-                (17.6, 7.0),
-                (11.0, 11.6),
-                (4.0, 13.8),
-                (-4.0, 13.8),
-                (-11.0, 11.6),
-                (-17.6, 7.0),
-                (-20.2, 0.4),
-                (-17.4, -5.6),
-                (-10.6, -9.4),
-            ]),
-            col(0.94, 0.82, 0.74),
-            col(0.64, 0.50, 0.44),
-            alpha,
-        );
-        draw_soft_radial_glow(rt, at(-19.0, 1.5), 9.0, 12.0, 1.0, 0.45, 0.12, 0.16 * alpha);
-        draw_soft_radial_glow(rt, at(19.0, 1.5), 9.0, 12.0, 1.0, 0.45, 0.12, 0.16 * alpha);
 
         // ── 2. Rambut pirang berlapis + sirip flare ────────────────────────
         let hair_pts = [

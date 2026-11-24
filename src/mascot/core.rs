@@ -486,331 +486,36 @@ pub unsafe fn draw_soft_circle(
     ry: f32,
     color: D2D1_COLOR_F,
 ) {
-    if color.a <= 0.004 {
+    if color.a <= 0.004 || rx <= 0.4 || ry <= 0.4 {
         return;
     }
-    if let Ok(b) = rt.CreateSolidColorBrush(&color, None) {
+    let stops = [
+        D2D1_GRADIENT_STOP { position: 0.0, color },
+        D2D1_GRADIENT_STOP { position: 0.42, color: D2D1_COLOR_F { a: color.a * 0.42, ..color } },
+        D2D1_GRADIENT_STOP { position: 0.74, color: D2D1_COLOR_F { a: color.a * 0.10, ..color } },
+        D2D1_GRADIENT_STOP { position: 1.0, color: D2D1_COLOR_F { r: 0.0, g: 0.0, b: 0.0, a: 0.0 } },
+    ];
+    let Ok(sc) = rt.CreateGradientStopCollection(&stops, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP) else {
+        return;
+    };
+    let props = D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES {
+        center,
+        gradientOriginOffset: D2D_POINT_2F { x: 0.0, y: 0.0 },
+        radiusX: rx,
+        radiusY: ry,
+    };
+    if let Ok(brush) = rt.CreateRadialGradientBrush(&props, None, &sc) {
         rt.FillEllipse(
             &D2D1_ELLIPSE {
                 point: center,
                 radiusX: rx,
                 radiusY: ry,
             },
-            &b,
+            &brush,
         );
     }
 }
 
-// ── Primitif kurva halus (gaya rambut anime, bukan poligon kaku) ────────────
-
-/// Loop tertutup mulus lewat `pts` (Catmull-Rom → cubic bezier).
-unsafe fn smooth_loop_geometry(
-    factory: &ID2D1Factory,
-    pts: &[D2D_POINT_2F],
-) -> Option<ID2D1PathGeometry> {
-    if pts.len() < 3 {
-        return None;
-    }
-    let path = factory.CreatePathGeometry().ok()?;
-    let sink = path.Open().ok()?;
-    let n = pts.len();
-    sink.BeginFigure(pts[0], D2D1_FIGURE_BEGIN_FILLED);
-    for i in 0..n {
-        let p0 = pts[(i + n - 1) % n];
-        let p1 = pts[i];
-        let p2 = pts[(i + 1) % n];
-        let p3 = pts[(i + 2) % n];
-        let seg = D2D1_BEZIER_SEGMENT {
-            point1: D2D_POINT_2F {
-                x: p1.x + (p2.x - p0.x) / 6.0,
-                y: p1.y + (p2.y - p0.y) / 6.0,
-            },
-            point2: D2D_POINT_2F {
-                x: p2.x - (p3.x - p1.x) / 6.0,
-                y: p2.y - (p3.y - p1.y) / 6.0,
-            },
-            point3: p2,
-        };
-        let _ = sink.AddBezier(&seg);
-    }
-    sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-    let _ = sink.Close();
-    Some(path)
-}
-
-/// Isi siluet mulus; mengembalikan geometry agar bisa di-stroke sebagai rim light.
-pub unsafe fn fill_smooth_shape(
-    rt: &ID2D1RenderTarget,
-    factory: &ID2D1Factory,
-    pts: &[D2D_POINT_2F],
-    color: D2D1_COLOR_F,
-) -> Option<ID2D1PathGeometry> {
-    let path = smooth_loop_geometry(factory, pts)?;
-    if color.a > 0.004 {
-        if let Ok(brush) = rt.CreateSolidColorBrush(&color, None) {
-            rt.FillGeometry(&path, &brush, None);
-        }
-    }
-    Some(path)
-}
-
-/// Garis mulus terbuka lewat `pts` (highlight rambut, retakan, tali).
-pub unsafe fn stroke_smooth_curve(
-    rt: &ID2D1RenderTarget,
-    factory: &ID2D1Factory,
-    pts: &[D2D_POINT_2F],
-    color: D2D1_COLOR_F,
-    width: f32,
-) {
-    if pts.len() < 2 || color.a <= 0.004 {
-        return;
-    }
-    let Ok(path) = factory.CreatePathGeometry() else {
-        return;
-    };
-    let Ok(sink) = path.Open() else { return };
-    let n = pts.len();
-    sink.BeginFigure(pts[0], D2D1_FIGURE_BEGIN_HOLLOW);
-    for i in 0..n - 1 {
-        let p0 = pts[i.saturating_sub(1)];
-        let p1 = pts[i];
-        let p2 = pts[i + 1];
-        let p3 = pts[(i + 2).min(n - 1)];
-        let seg = D2D1_BEZIER_SEGMENT {
-            point1: D2D_POINT_2F {
-                x: p1.x + (p2.x - p0.x) / 6.0,
-                y: p1.y + (p2.y - p0.y) / 6.0,
-            },
-            point2: D2D_POINT_2F {
-                x: p2.x - (p3.x - p1.x) / 6.0,
-                y: p2.y - (p3.y - p1.y) / 6.0,
-            },
-            point3: p2,
-        };
-        let _ = sink.AddBezier(&seg);
-    }
-    sink.EndFigure(D2D1_FIGURE_END_OPEN);
-    let _ = sink.Close();
-    if let Ok(brush) = rt.CreateSolidColorBrush(&color, None) {
-        let stroke = create_round_stroke(factory);
-        rt.DrawGeometry(&path, &brush, width, stroke.as_ref());
-    }
-}
-
-/// Satu helai rambut meruncing (pangkal lebar, ujung runcing, melengkung `bend`).
-/// `rim` tipis ditumpuk di atas fill supaya helai punya kilau tepi seperti Asta.
-pub unsafe fn hair_lock(
-    rt: &ID2D1RenderTarget,
-    factory: &ID2D1Factory,
-    base: D2D_POINT_2F,
-    tip: D2D_POINT_2F,
-    bend: f32,
-    width: f32,
-    color: D2D1_COLOR_F,
-    rim: D2D1_COLOR_F,
-) {
-    let dx = tip.x - base.x;
-    let dy = tip.y - base.y;
-    let len = (dx * dx + dy * dy).sqrt();
-    if len < 0.4 {
-        return;
-    }
-    let (ux, uy) = (dx / len, dy / len);
-    let (nx, ny) = (-uy, ux);
-    let half = width * 0.5;
-
-    let l = D2D_POINT_2F {
-        x: base.x + nx * half,
-        y: base.y + ny * half,
-    };
-    let r = D2D_POINT_2F {
-        x: base.x - nx * half,
-        y: base.y - ny * half,
-    };
-    // Titik kontrol mengecil di 2/3 jalur → helai melengkung, ujung tajam.
-    let mid_l = D2D_POINT_2F {
-        x: lerp(l.x, tip.x, 0.45) + nx * bend * 0.55,
-        y: lerp(l.y, tip.y, 0.45) + ny * bend * 0.55,
-    };
-    let mid_r = D2D_POINT_2F {
-        x: lerp(r.x, tip.x, 0.45) + nx * bend * 0.55,
-        y: lerp(r.y, tip.y, 0.45) + ny * bend * 0.55,
-    };
-
-    let Ok(path) = factory.CreatePathGeometry() else {
-        return;
-    };
-    let Ok(sink) = path.Open() else { return };
-    sink.BeginFigure(l, D2D1_FIGURE_BEGIN_FILLED);
-    let _ = sink.AddBezier(&D2D1_BEZIER_SEGMENT {
-        point1: mid_l,
-        point2: D2D_POINT_2F {
-            x: lerp(l.x, tip.x, 0.88),
-            y: lerp(l.y, tip.y, 0.88),
-        },
-        point3: tip,
-    });
-    let _ = sink.AddBezier(&D2D1_BEZIER_SEGMENT {
-        point1: D2D_POINT_2F {
-            x: lerp(r.x, tip.x, 0.88),
-            y: lerp(r.y, tip.y, 0.88),
-        },
-        point2: mid_r,
-        point3: r,
-    });
-    sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-    let _ = sink.Close();
-
-    if color.a > 0.004 {
-        if let Ok(brush) = rt.CreateSolidColorBrush(&color, None) {
-            rt.FillGeometry(&path, &brush, None);
-        }
-    }
-    if rim.a > 0.004 {
-        if let Ok(brush) = rt.CreateSolidColorBrush(&rim, None) {
-            let stroke = create_round_stroke(factory);
-            rt.DrawGeometry(&path, &brush, 0.9, stroke.as_ref());
-        }
-    }
-}
-
-/// Garis mulus dengan lapisan glow lembut (2 pass) — dipakai untuk efek asap,
-/// percikan, dan slash supaya terlihat seperti animasi anime, bukan partikel kaku.
-pub unsafe fn draw_soft_streak(
-    rt: &ID2D1RenderTarget,
-    factory: &ID2D1Factory,
-    pts: &[D2D_POINT_2F],
-    color: D2D1_COLOR_F,
-    width: f32,
-) {
-    if pts.len() < 2 || color.a <= 0.004 {
-        return;
-    }
-    stroke_smooth_curve(
-        rt,
-        factory,
-        pts,
-        D2D1_COLOR_F {
-            a: color.a * 0.22,
-            ..color
-        },
-        width * 3.4,
-    );
-    stroke_smooth_curve(
-        rt,
-        factory,
-        pts,
-        D2D1_COLOR_F {
-            a: color.a * 0.45,
-            ..color
-        },
-        width * 1.9,
-    );
-    stroke_smooth_curve(rt, factory, pts, color, width);
-}
-
-/// Pita mulus yang mengecil ke ujung (ekor asap / speed line).
-pub unsafe fn draw_tapered_streak(
-    rt: &ID2D1RenderTarget,
-    factory: &ID2D1Factory,
-    start: D2D_POINT_2F,
-    end: D2D_POINT_2F,
-    bow: f32,
-    width: f32,
-    color: D2D1_COLOR_F,
-) {
-    let dx = end.x - start.x;
-    let dy = end.y - start.y;
-    let len = (dx * dx + dy * dy).sqrt();
-    if len < 0.5 {
-        return;
-    }
-    let (nx, ny) = (-dy / len, dx / len);
-    for k in 0..4 {
-        let f = k as f32 / 3.0;
-        let bend = bow * (1.0 - f);
-        let p0 = D2D_POINT_2F {
-            x: start.x + dx * f * 0.34 + nx * bend,
-            y: start.y + dy * f * 0.34 + ny * bend,
-        };
-        let p1 = D2D_POINT_2F {
-            x: start.x + dx * (0.34 + f * 0.33) + nx * bend * 0.6,
-            y: start.y + dy * (0.34 + f * 0.33) + ny * bend * 0.6,
-        };
-        let p2 = D2D_POINT_2F {
-            x: start.x + dx * (0.67 + f * 0.33),
-            y: start.y + dy * (0.67 + f * 0.33),
-        };
-        draw_soft_streak(
-            rt,
-            factory,
-            &[p0, p1, p2],
-            D2D1_COLOR_F {
-                a: color.a * (1.0 - f * 0.62),
-                ..color
-            },
-            width * (1.0 - f * 0.5),
-        );
-    }
-}
-
-/// Gradien vertikal halus memakai linear gradient brush asli Direct2D
-/// (bukan tumpukan band, jadi tidak ada garis cincin).
-pub unsafe fn draw_bottom_gradient(
-    rt: &ID2D1RenderTarget,
-    pill: D2D_RECT_F,
-    color: D2D1_COLOR_F,
-    height: f32,
-    alpha: f32,
-) {
-    let stops = [
-        D2D1_GRADIENT_STOP {
-            position: 0.0,
-            color: D2D1_COLOR_F { a: 0.0, ..color },
-        },
-        D2D1_GRADIENT_STOP {
-            position: 0.45,
-            color: D2D1_COLOR_F {
-                a: alpha * 0.34,
-                ..color
-            },
-        },
-        D2D1_GRADIENT_STOP {
-            position: 1.0,
-            color: D2D1_COLOR_F {
-                a: alpha * 0.88,
-                ..color
-            },
-        },
-    ];
-    if let Ok(collection) = rt.CreateGradientStopCollection(&stops, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP) {
-        let brush = D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES {
-            startPoint: D2D_POINT_2F {
-                x: pill.left,
-                y: pill.bottom - height,
-            },
-            endPoint: D2D_POINT_2F {
-                x: pill.left,
-                y: pill.bottom + 28.0,
-            },
-        };
-        if let Ok(gb) = rt.CreateLinearGradientBrush(&brush, None, &collection) {
-            // Kanvas diperluas melewati tepi pill supaya gradien tidak berhenti
-            // dengan garis keras di dalam notch.
-            rt.FillRectangle(
-                &D2D_RECT_F {
-                    left: pill.left - 80.0,
-                    top: pill.top - 140.0,
-                    right: pill.right + 80.0,
-                    bottom: pill.bottom + 70.0,
-                },
-                &gb,
-            );
-        }
-    }
-}
-
-/// Asap bergerak: gumpalan lembut tersusun di jalur melengkung, alfa halus.
 pub unsafe fn draw_smoke_wisp(
     rt: &ID2D1RenderTarget,
     pill: D2D_RECT_F,
@@ -1055,5 +760,252 @@ pub unsafe fn draw_smooth_face(
             },
             1.4,
         );
+    }
+}
+
+// ── Geometri mulus ──────────────────────────────────────────────────────
+
+/// Kurva tertutup mulus (Catmull-Rom -> Bezier) untuk siluet rambut/wajah.
+pub unsafe fn fill_smooth_shape(
+    rt: &ID2D1RenderTarget,
+    factory: &ID2D1Factory,
+    pts: &[D2D_POINT_2F],
+    color: D2D1_COLOR_F,
+) {
+    if pts.len() < 3 || color.a <= 0.004 {
+        return;
+    }
+    let Ok(path) = factory.CreatePathGeometry() else { return };
+    let Ok(sink) = path.Open() else { return };
+    let n = pts.len();
+    sink.BeginFigure(pts[0], D2D1_FIGURE_BEGIN_FILLED);
+    for i in 0..n {
+        let p0 = pts[(i + n - 1) % n];
+        let p1 = pts[i];
+        let p2 = pts[(i + 1) % n];
+        let p3 = pts[(i + 2) % n];
+        let seg = D2D1_BEZIER_SEGMENT {
+            point1: D2D_POINT_2F {
+                x: p1.x + (p2.x - p0.x) / 6.0,
+                y: p1.y + (p2.y - p0.y) / 6.0,
+            },
+            point2: D2D_POINT_2F {
+                x: p2.x - (p3.x - p1.x) / 6.0,
+                y: p2.y - (p3.y - p1.y) / 6.0,
+            },
+            point3: p2,
+        };
+        let _ = sink.AddBezier(&seg);
+    }
+    sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+    let _ = sink.Close();
+    if let Ok(b) = rt.CreateSolidColorBrush(&color, None) {
+        rt.FillGeometry(&path, &b, None);
+    }
+}
+
+/// Kurva terbuka mulus.
+pub unsafe fn stroke_smooth_curve(
+    rt: &ID2D1RenderTarget,
+    factory: &ID2D1Factory,
+    pts: &[D2D_POINT_2F],
+    color: D2D1_COLOR_F,
+    width: f32,
+) {
+    if pts.len() < 2 || color.a <= 0.004 || width <= 0.02 {
+        return;
+    }
+    let Ok(path) = factory.CreatePathGeometry() else { return };
+    let Ok(sink) = path.Open() else { return };
+    let n = pts.len();
+    sink.BeginFigure(pts[0], D2D1_FIGURE_BEGIN_HOLLOW);
+    for i in 0..n - 1 {
+        let p0 = pts[i.saturating_sub(1)];
+        let p1 = pts[i];
+        let p2 = pts[i + 1];
+        let p3 = pts[(i + 2).min(n - 1)];
+        let seg = D2D1_BEZIER_SEGMENT {
+            point1: D2D_POINT_2F {
+                x: p1.x + (p2.x - p0.x) / 6.0,
+                y: p1.y + (p2.y - p0.y) / 6.0,
+            },
+            point2: D2D_POINT_2F {
+                x: p2.x - (p3.x - p1.x) / 6.0,
+                y: p2.y - (p3.y - p1.y) / 6.0,
+            },
+            point3: p2,
+        };
+        let _ = sink.AddBezier(&seg);
+    }
+    sink.EndFigure(D2D1_FIGURE_END_OPEN);
+    let _ = sink.Close();
+    if let Ok(b) = rt.CreateSolidColorBrush(&color, None) {
+        rt.DrawGeometry(&path, &b, width, create_round_stroke(factory).as_ref());
+    }
+}
+
+/// Garis halus 3 lapis (halo lebar, mid, inti).
+pub unsafe fn draw_soft_streak(
+    rt: &ID2D1RenderTarget,
+    factory: &ID2D1Factory,
+    pts: &[D2D_POINT_2F],
+    color: D2D1_COLOR_F,
+    width: f32,
+) {
+    if pts.len() < 2 || color.a <= 0.004 {
+        return;
+    }
+    stroke_smooth_curve(rt, factory, pts, D2D1_COLOR_F { a: color.a * 0.22, ..color }, width * 3.4);
+    stroke_smooth_curve(rt, factory, pts, D2D1_COLOR_F { a: color.a * 0.45, ..color }, width * 1.9);
+    stroke_smooth_curve(rt, factory, pts, color, width);
+}
+
+/// Pita dari start ke end dengan lekuk `bow`, lebar mengecil ke ujung.
+pub unsafe fn draw_tapered_streak(
+    rt: &ID2D1RenderTarget,
+    factory: &ID2D1Factory,
+    start: D2D_POINT_2F,
+    end: D2D_POINT_2F,
+    bow: f32,
+    width: f32,
+    color: D2D1_COLOR_F,
+) {
+    let dx = end.x - start.x;
+    let dy = end.y - start.y;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < 0.5 || color.a <= 0.004 {
+        return;
+    }
+    let (nx, ny) = (-dy / len, dx / len);
+    for k in 0..4 {
+        let f = k as f32 / 3.0;
+        let bend = bow * (1.0 - f);
+        let p0 = D2D_POINT_2F {
+            x: start.x + dx * f * 0.34 + nx * bend,
+            y: start.y + dy * f * 0.34 + ny * bend,
+        };
+        let p1 = D2D_POINT_2F {
+            x: start.x + dx * (0.34 + f * 0.33) + nx * bend * 0.6,
+            y: start.y + dy * (0.34 + f * 0.33) + ny * bend * 0.6,
+        };
+        let p2 = D2D_POINT_2F {
+            x: start.x + dx * (0.67 + f * 0.33),
+            y: start.y + dy * (0.67 + f * 0.33),
+        };
+        draw_soft_streak(
+            rt,
+            factory,
+            &[p0, p1, p2],
+            D2D1_COLOR_F {
+                a: color.a * (1.0 - f * 0.62),
+                ..color
+            },
+            width * (1.0 - f * 0.5),
+        );
+    }
+}
+
+/// Gradien vertikal halus lewat linear gradient brush asli.
+pub unsafe fn draw_bottom_gradient(
+    rt: &ID2D1RenderTarget,
+    pill: D2D_RECT_F,
+    color: D2D1_COLOR_F,
+    height: f32,
+    alpha: f32,
+) {
+    if alpha <= 0.004 {
+        return;
+    }
+    let stops = [
+        D2D1_GRADIENT_STOP {
+            position: 0.0,
+            color: D2D1_COLOR_F { a: 0.0, ..color },
+        },
+        D2D1_GRADIENT_STOP {
+            position: 0.55,
+            color: D2D1_COLOR_F {
+                a: alpha * 0.34,
+                ..color
+            },
+        },
+        D2D1_GRADIENT_STOP {
+            position: 1.0,
+            color: D2D1_COLOR_F {
+                a: alpha * 0.88,
+                ..color
+            },
+        },
+    ];
+    let Ok(sc) = rt.CreateGradientStopCollection(&stops, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP) else {
+        return;
+    };
+    let brush = D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES {
+        startPoint: D2D_POINT_2F {
+            x: pill.left,
+            y: pill.bottom - height,
+        },
+        endPoint: D2D_POINT_2F {
+            x: pill.left,
+            y: pill.bottom + 26.0,
+        },
+    };
+    if let Ok(gb) = rt.CreateLinearGradientBrush(&brush, None, &sc) {
+        rt.FillRectangle(
+            &D2D_RECT_F {
+                left: pill.left - 80.0,
+                top: pill.top - 140.0,
+                right: pill.right + 80.0,
+                bottom: pill.bottom + 70.0,
+            },
+            &gb,
+        );
+    }
+}
+
+/// Satu helai rambut/tanduk melengkung: pita meruncing + outline tipis.
+pub unsafe fn hair_lock(
+    rt: &ID2D1RenderTarget,
+    factory: &ID2D1Factory,
+    base: D2D_POINT_2F,
+    tip: D2D_POINT_2F,
+    bend: f32,
+    width: f32,
+    color: D2D1_COLOR_F,
+    outline: D2D1_COLOR_F,
+) {
+    let dx = tip.x - base.x;
+    let dy = tip.y - base.y;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < 0.5 {
+        return;
+    }
+    let (nx, ny) = (-dy / len, dx / len);
+    let c1 = D2D_POINT_2F {
+        x: base.x + dx * 0.35 + nx * bend,
+        y: base.y + dy * 0.35 + ny * bend,
+    };
+    let c2 = D2D_POINT_2F {
+        x: base.x + dx * 0.72 + nx * bend * 0.5,
+        y: base.y + dy * 0.72 + ny * bend * 0.5,
+    };
+    let samples = 14;
+    let mut left = Vec::with_capacity(samples);
+    let mut right = Vec::with_capacity(samples);
+    for i in 0..samples {
+        let f = i as f32 / (samples - 1) as f32;
+        let u = 1.0 - f;
+        let x = u * u * u * base.x + 3.0 * u * u * f * c1.x + 3.0 * u * f * f * c2.x + f * f * f * tip.x;
+        let y = u * u * u * base.y + 3.0 * u * u * f * c1.y + 3.0 * u * f * f * c2.y + f * f * f * tip.y;
+        let hw = width * 0.5 * (1.0 - f).powf(1.15) * (1.0 - 0.25 * (f * 3.0).sin().abs());
+        left.push(D2D_POINT_2F { x: x + nx * hw, y: y + ny * hw });
+        right.push(D2D_POINT_2F { x: x - nx * hw, y: y - ny * hw });
+    }
+    let mut poly = left;
+    poly.extend(right.into_iter().rev());
+    fill_smooth_shape(rt, factory, &poly, color);
+    if outline.a > 0.004 {
+        let mut ring = poly.clone();
+        ring.push(poly[0]);
+        stroke_smooth_curve(rt, factory, &ring, outline, 0.7);
     }
 }

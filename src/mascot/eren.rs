@@ -6,6 +6,7 @@
 // garis titan tipis di bawah mata.
 // Environment: asap abu di kanan, petir emas bercabang, gradien hijau-kuning bawah.
 use super::core::*;
+use super::vfx;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_POINT_2F, D2D_RECT_F};
 use windows::Win32::Graphics::Direct2D::{ID2D1Factory, ID2D1RenderTarget, D2D1_ELLIPSE};
 
@@ -85,128 +86,64 @@ impl IdleCharacter for ErenAttackTitan {
         let pw = pill_rect.right - pill_rect.left;
         let ph = pill_rect.bottom - pill_rect.top;
         let cx = (pill_rect.left + pill_rect.right) * 0.5;
+        let cy = (pill_rect.top + pill_rect.bottom) * 0.5;
         let t = ctx.phase_time;
 
-        // Glow inti di belakang kepala: teal (manusia) -> hijau-kuning (titan).
-        draw_soft_radial_glow(
-            rt,
-            D2D_POINT_2F {
-                x: cx,
-                y: pill_rect.top + ph * 0.52,
-            },
-            pw * 0.30,
-            ph * 0.52,
-            lerp(0.20, 0.55, titan),
-            lerp(0.86, 0.92, titan),
-            lerp(0.62, 0.45, titan),
-            (0.20 + 0.14 * titan + 0.16 * flash) * alpha,
-        );
-
-        // Gradien bawah hijau-kuning + dasar gelap di atas.
-        draw_bottom_gradient(
+        vfx::draw_ambient_notch_illumination(
             rt,
             pill_rect,
-            D2D1_COLOR_F {
-                r: lerp(0.30, 0.62, titan),
-                g: lerp(0.92, 0.94, titan),
-                b: lerp(0.60, 0.40, titan),
-                a: alpha,
-            },
-            ph * 0.42,
-            (0.55 + 0.25 * titan) * alpha,
+            (lerp(0.10, 0.46, titan), lerp(0.30, 0.42, titan), lerp(0.28, 0.12, titan)),
+            (lerp(0.06, 0.24, titan), lerp(0.20, 0.30, titan), lerp(0.12, 0.10, titan)),
+            (lerp(0.30, 0.92, titan), lerp(0.90, 0.94, titan), lerp(0.60, 0.44, titan)),
+            0.80 + 0.35 * titan + 0.20 * flash,
+            alpha,
+        );
+        vfx::draw_bokeh_motes(
+            rt,
+            pill_rect,
+            10,
+            t,
+            44.2,
+            (lerp(0.60, 0.92, titan), lerp(0.96, 0.98, titan), lerp(0.80, 0.72, titan)),
+            alpha,
         );
 
-        // Asap abu-putih di sisi kanan (dua kolom, arah sedikit berbeda).
         if titan > 0.08 {
-            for k in 0..2 {
-                let fk = k as f32;
-                draw_smoke_wisp(
-                    rt,
-                    pill_rect,
-                    cx + pw * (0.16 + 0.07 * fk),
-                    0.92 - fk * 0.14,
-                    1.0 - fk * 0.4,
-                    D2D1_COLOR_F {
-                        r: 0.74,
-                        g: 0.94,
-                        b: 0.86,
-                        a: alpha,
-                    },
-                    (0.16 - 0.04 * fk) * titan * alpha,
-                    t,
-                    fk * 0.43,
-                );
-            }
-            // Sedikit asap di sisi kiri supaya komposisi tidak berat sebelah.
-            draw_smoke_wisp(
+            vfx::draw_feathered_titan_steam(
                 rt,
                 pill_rect,
-                cx - pw * 0.22,
-                0.62,
-                -1.0,
-                D2D1_COLOR_F {
-                    r: 0.70,
-                    g: 0.90,
-                    b: 0.82,
-                    a: alpha,
-                },
-                0.12 * titan * alpha,
-                t * 0.8,
-                0.71,
+                cx,
+                18,
+                t,
+                7.3,
+                (0.74, 0.96, 0.88),
+                0.55 * titan * alpha,
             );
         }
 
-        // Petir emas bercabang di kanan.
-        let bolt = (flash + idle_bolt).clamp(0.0, 1.0) * alpha;
-        if bolt > 0.04 {
-            draw_anime_bolt(
+        let bolt = (flash + idle_bolt).clamp(0.0, 1.0);
+        if bolt > 0.03 {
+            vfx::draw_tapered_anime_lightning(
                 rt,
                 factory,
                 D2D_POINT_2F {
-                    x: cx + pw * 0.22 + 8.0,
-                    y: pill_rect.top + 2.0,
+                    x: cx + pw * 0.20,
+                    y: pill_rect.top + 1.0,
                 },
                 D2D_POINT_2F {
-                    x: cx + pw * 0.20 - 10.0,
-                    y: pill_rect.bottom - 3.0,
+                    x: cx + pw * 0.16,
+                    y: pill_rect.bottom - 2.0,
                 },
-                D2D1_COLOR_F {
-                    r: 1.0,
-                    g: 0.84,
-                    b: 0.24,
-                    a: bolt * 0.9,
-                },
-                D2D1_COLOR_F {
-                    r: 1.0,
-                    g: 0.99,
-                    b: 0.88,
-                    a: bolt,
-                },
-                bolt * 0.9,
                 t,
+                5.9,
+                (1.0, 0.84, 0.30),
+                bolt * alpha * 0.95,
+                1.35,
+                4,
             );
         }
-
-        // Mote ambient halus.
-        for i in 0..5 {
-            let fi = i as f32;
-            let phase = (t * 0.13 + fi * 0.19) % 1.0;
-            let a = (phase * std::f32::consts::PI).sin() * 0.16 * alpha;
-            let mx = cx + (t * 0.4 + fi * 2.1).sin() * pw * 0.28;
-            let my = pill_rect.bottom - 9.0 - phase * ph * 0.74;
-            draw_soft_circle(
-                rt,
-                D2D_POINT_2F { x: mx, y: my },
-                1.6,
-                1.6,
-                D2D1_COLOR_F {
-                    r: 1.0,
-                    g: lerp(0.90, 0.86, titan),
-                    b: lerp(0.62, 0.40, titan),
-                    a,
-                },
-            );
-        }
+        let _ = ph;
+        let _ = cy;
     }
 
     unsafe fn draw_character(
@@ -245,8 +182,35 @@ impl IdleCharacter for ErenAttackTitan {
         let teal_core = col(0.80, 1.00, 0.92);
         let green = col(0.30, 1.00, 0.58);
         let green_core = col(0.92, 1.00, 0.86);
-        let teeth = col(0.90, 0.88, 0.82);
         let sway = (ctx.phase_time * 1.3).sin();
+
+        // Basis kepala: hampir menyatu dengan latar obsidian, hanya cukup
+        // untuk memisahkan siluet dari background (tanpa warna kulit).
+        fill_smooth_shape(
+            rt,
+            factory,
+            &local(&[
+                (0.0, -9.6),
+                (9.6, -8.4),
+                (15.8, -4.8),
+                (18.6, 0.8),
+                (16.0, 6.8),
+                (9.6, 11.4),
+                (3.4, 13.4),
+                (-3.4, 13.4),
+                (-9.6, 11.4),
+                (-16.0, 6.8),
+                (-18.6, 0.8),
+                (-15.8, -4.8),
+                (-9.6, -8.4),
+            ]),
+            D2D1_COLOR_F {
+                r: 0.045,
+                g: 0.04,
+                b: 0.036,
+                a: alpha * 0.92,
+            },
+        );
 
         // ── 0. Bahu: tipis (manusia) -> lebar (titan) ──────────────────────
         let shoulder = lerp(26.0, 31.0, titan);
@@ -282,53 +246,25 @@ impl IdleCharacter for ErenAttackTitan {
             0.9,
         );
 
-        // ── 1. Tengkorak: bulat rapi (manusia) -> memanjang (founding titan) ─
-        // Wajah: loop mulus. Manusia = rahang pendek; titan = tengkorak panjang
-        // dengan dagu meruncing (Founding Titan), bukan kotak yang dipaksa mengecil.
-        let hf = 1.0 - 0.13 * titan;
-        let vt = -10.2 - 7.4 * titan;
-        let vb = 14.4 + 11.5 * titan;
-        let span = vb - vt;
-        let skin = lerp_color(col(0.80, 0.65, 0.55), col(0.26, 0.19, 0.15), titan);
-        let skin_shade = lerp_color(col(0.55, 0.42, 0.36), col(0.12, 0.085, 0.07), titan);
-        let face = [
-            (0.0 * hf, vt),
-            (10.2 * hf, vt + span * 0.13),
-            (16.8 * hf, vt + span * 0.34),
-            (19.6 * hf, vt + span * 0.53),
-            (17.0 * hf, vt + span * 0.72),
-            (10.6 * hf, vt + span * 0.87),
-            (3.8 * hf, vb),
-            (-3.8 * hf, vb),
-            (-10.6 * hf, vt + span * 0.87),
-            (-17.0 * hf, vt + span * 0.72),
-            (-19.6 * hf, vt + span * 0.53),
-            (-16.8 * hf, vt + span * 0.34),
-            (-10.2 * hf, vt + span * 0.13),
-        ];
-        draw_smooth_face(rt, factory, &local(&face), skin, skin_shade, alpha);
-
-        // Massa surai di belakang kepala (founding titan): dua tirai lebar
-        // yang turun melewati rahang sampai bahu, bukan dua helai tipis.
-        if titan > 0.10 {
+        // Ujung telinga runcing khas Attack Titan.
+        if titan > 0.2 {
+            let ear_a = smoothstep(0.2, 0.85, titan) * alpha;
+            let ear_col = D2D1_COLOR_F {
+                r: 0.20,
+                g: 0.15,
+                b: 0.12,
+                a: ear_a,
+            };
             for side in [-1.0_f32, 1.0_f32] {
-                let a = alpha * titan;
                 fill_polygon(
                     rt,
                     factory,
                     &local(&[
-                        (side * 12.0, -9.5),
-                        (side * 19.5, -7.0),
-                        (side * 20.5 + sway * 0.6, 10.0),
-                        (side * 19.0 + sway * 0.9, 26.0),
-                        (side * 15.0 + sway * 1.2, 38.0),
-                        (side * 11.5, 26.0),
-                        (side * 10.5, 8.0),
+                        (side * 14.0, -2.5),
+                        (side * 22.0, -7.0),
+                        (side * 15.5, 3.5),
                     ]),
-                    D2D1_COLOR_F {
-                        a,
-                        ..hair_deep
-                    },
+                    ear_col,
                 );
             }
         }
@@ -529,46 +465,14 @@ impl IdleCharacter for ErenAttackTitan {
                             },
                         ],
                         D2D1_COLOR_F {
-                            r: 0.52,
-                            g: 0.16,
-                            b: 0.16,
-                            a: ta * 0.75,
+                            r: 1.0,
+                            g: 0.80,
+                            b: 0.36,
+                            a: ta * 0.55,
                         },
-                        1.1,
+                        0.9,
                     );
                 }
-            }
-
-            // Satu baris gigi bergerigi di bawah mata (tanpa bibir, tanpa rahang anatomi).
-            let my = base_cy + 12.0 * s;
-            let count = 6;
-            for k in 0..count {
-                let fk = k as f32;
-                let tx = base_cx + (-7.6 + fk * 2.9) * s;
-                let h = (2.6 + (fk % 2.0) * 0.9) * s;
-                let w = 1.05 * s;
-                fill_polygon(
-                    rt,
-                    factory,
-                    &[
-                        D2D_POINT_2F {
-                            x: tx - w,
-                            y: my,
-                        },
-                        D2D_POINT_2F {
-                            x: tx + w,
-                            y: my,
-                        },
-                        D2D_POINT_2F {
-                            x: tx + w * 0.35,
-                            y: my + h,
-                        },
-                    ],
-                    D2D1_COLOR_F {
-                        a: ta * 0.95,
-                        ..teeth
-                    },
-                );
             }
         }
 

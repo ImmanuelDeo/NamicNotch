@@ -3,6 +3,9 @@
 #[path = "D:/NusaNotch-RE/src/mascot/core.rs"]
 pub mod core;
 
+#[path = "D:/NusaNotch-RE/src/mascot/vfx.rs"]
+pub mod vfx;
+
 #[path = "D:/NusaNotch-RE/src/mascot/asta.rs"]
 pub mod asta;
 

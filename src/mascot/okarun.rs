@@ -4,6 +4,7 @@
 // (putih-perak + aksen crimson), kacamata bulat tipis, garis yokai, kerah hoodie,
 // mata illuminated, speed-slash merah-putih di kanan.
 use super::core::*;
+use super::vfx;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_POINT_2F, D2D_RECT_F};
 use windows::Win32::Graphics::Direct2D::{
     ID2D1Factory, ID2D1RenderTarget, D2D1_ELLIPSE, D2D1_ROUNDED_RECT,
@@ -66,184 +67,91 @@ impl IdleCharacter for OkarunTurbo {
         let pw = pill_rect.right - pill_rect.left;
         let ph = pill_rect.bottom - pill_rect.top;
         let cx = (pill_rect.left + pill_rect.right) * 0.5;
+        let cy = (pill_rect.top + pill_rect.bottom) * 0.5;
         let t = ctx.phase_time;
 
-        // Glow merah di belakang kepala.
-        draw_soft_radial_glow(
-            rt,
-            D2D_POINT_2F {
-                x: cx,
-                y: pill_rect.top + ph * 0.50,
-            },
-            pw * 0.32,
-            ph * 0.54,
-            0.96,
-            0.20,
-            0.24,
-            (0.20 + 0.16 * dash) * alpha,
-        );
-        // Gradien bawah putih -> merah.
-        draw_bottom_gradient(
+        vfx::draw_ambient_notch_illumination(
             rt,
             pill_rect,
-            D2D1_COLOR_F {
-                r: 0.98,
-                g: 0.34,
-                b: 0.36,
-                a: alpha,
-            },
-            ph * 0.42,
-            (0.55 + 0.22 * dash) * alpha,
+            (0.42, 0.10, 0.14),
+            (0.30, 0.04, 0.08),
+            (1.00, 0.24, 0.34),
+            0.75 + 0.45 * dash,
+            alpha,
         );
+        vfx::draw_bokeh_motes(rt, pill_rect, 12, t, 58.6, (1.0, 0.34, 0.42), alpha);
 
-        // Garis kecepatan selebar panel.
-        draw_speed_lines(
-            rt,
-            factory,
-            pill_rect,
-            D2D1_COLOR_F {
-                r: 0.98,
-                g: 0.96,
-                b: 0.98,
-                a: alpha,
-            },
-            (0.26 + 0.34 * dash) * alpha,
-            t,
-            9,
-        );
-        draw_speed_lines(
-            rt,
-            factory,
-            pill_rect,
-            D2D1_COLOR_F {
-                r: 0.96,
-                g: 0.22,
-                b: 0.30,
-                a: alpha,
-            },
-            (0.20 + 0.38 * dash) * alpha,
-            t * 1.25 + 0.37,
-            6,
-        );
-
-        // Swoosh merah panjang melengkung (inti Turbo Granny).
-        for k in 0..4 {
-            let fk = k as f32;
-            let phase = (t * 0.42 + fk * 0.27) % 1.0;
-            let a = (phase * (1.0 - phase) * 4.0).min(1.0) * (0.30 + 0.30 * dash) * alpha;
-            let y = pill_rect.top + ph * (0.24 + 0.16 * fk);
-            let x0 = pill_rect.left + pw * (0.10 + 0.12 * fk) + phase * pw * 0.30;
-            let len = pw * 0.30;
-            draw_tapered_streak(
-                rt,
-                factory,
-                D2D_POINT_2F { x: x0, y },
-                D2D_POINT_2F {
-                    x: x0 + len,
-                    y: y - ph * 0.10,
-                },
-                ph * 6.0,
-                2.6,
-                D2D1_COLOR_F {
-                    r: 0.96,
-                    g: 0.22,
-                    b: 0.30,
-                    a,
-                },
-            );
-            // Highlight putih di atas swoosh.
-            draw_soft_streak(
-                rt,
-                factory,
-                &[
-                    D2D_POINT_2F {
-                        x: x0 + len * 0.20,
-                        y: y - 0.8,
-                    },
-                    D2D_POINT_2F {
-                        x: x0 + len * 0.55,
-                        y: y - ph * 0.05,
-                    },
-                    D2D_POINT_2F {
-                        x: x0 + len * 0.85,
-                        y: y - ph * 0.09,
-                    },
-                ],
-                D2D1_COLOR_F {
-                    r: 0.99,
-                    g: 0.96,
-                    b: 0.96,
-                    a: a * 0.55,
-                },
-                0.9,
-            );
-        }
-        // Crackle pink kecil di tepi frame.
-        for k in 0..2 {
-            let fk = k as f32;
-            let x = pill_rect.right - pw * (0.06 + 0.05 * fk);
-            let y = pill_rect.top + ph * (0.28 + 0.30 * fk);
-            draw_anime_bolt(
-                rt,
-                factory,
-                D2D_POINT_2F { x, y },
-                D2D_POINT_2F {
-                    x: x - pw * 0.03,
-                    y: y + ph * 0.14,
-                },
-                D2D1_COLOR_F {
-                    r: 1.0,
-                    g: 0.40,
-                    b: 0.60,
-                    a: (0.22 + 0.22 * dash) * alpha,
-                },
-                D2D1_COLOR_F {
-                    r: 1.0,
-                    g: 0.92,
-                    b: 0.94,
-                    a: (0.28 + 0.24 * dash) * alpha,
-                },
-                alpha,
-                t + fk * 2.0,
-            );
-        }
-
-        // Cakar spektral di kanan.
-        draw_claw_slashes(
+        // Dua pita kecepatan melengkung selebar notch.
+        let shift = (t * 3.5).sin() * 4.0;
+        vfx::draw_tapered_flame_ribbon(
             rt,
             factory,
             D2D_POINT_2F {
-                x: cx + pw * 0.30,
-                y: pill_rect.top + ph * 0.48,
+                x: pill_rect.left + 8.0,
+                y: pill_rect.bottom - 4.0,
             },
-            D2D1_COLOR_F {
-                r: 0.98,
-                g: 0.46,
-                b: 0.50,
-                a: alpha,
+            D2D_POINT_2F {
+                x: cx - pw * 0.18,
+                y: pill_rect.top + 2.0 + shift,
             },
-            (0.30 + 0.45 * dash) * alpha,
-            t,
-            1.0,
+            D2D_POINT_2F {
+                x: cx + pw * 0.16,
+                y: pill_rect.bottom - 2.0 - shift,
+            },
+            D2D_POINT_2F {
+                x: pill_rect.right - 8.0,
+                y: pill_rect.top + 6.0,
+            },
+            4.6 + 2.2 * dash,
+            (0.92, 0.12, 0.22),
+            (0.30 + 0.28 * dash) * alpha,
+            false,
+        );
+        vfx::draw_tapered_flame_ribbon(
+            rt,
+            factory,
+            D2D_POINT_2F {
+                x: pill_rect.left + pw * 0.16,
+                y: pill_rect.bottom - 2.0,
+            },
+            D2D_POINT_2F {
+                x: cx - pw * 0.06,
+                y: pill_rect.top + 4.0 - shift * 0.6,
+            },
+            D2D_POINT_2F {
+                x: cx + pw * 0.22,
+                y: pill_rect.bottom - 5.0 + shift * 0.6,
+            },
+            D2D_POINT_2F {
+                x: pill_rect.right - 6.0,
+                y: pill_rect.top + 4.0,
+            },
+            3.0 + 1.6 * dash,
+            (1.0, 0.96, 0.98),
+            (0.42 + 0.24 * dash) * alpha,
+            true,
         );
 
-        // Kabut tipis di kaki aura.
-        draw_smoke_wisp(
+        // Arc mikro di tepi kanan.
+        vfx::draw_tapered_anime_lightning(
             rt,
-            pill_rect,
-            cx + pw * 0.10,
-            0.55,
-            1.0,
-            D2D1_COLOR_F {
-                r: 0.95,
-                g: 0.90,
-                b: 0.90,
-                a: alpha,
+            factory,
+            D2D_POINT_2F {
+                x: cx + pw * 0.14,
+                y: pill_rect.bottom - 6.0,
             },
-            (0.06 + 0.08 * dash) * alpha,
-            t * 1.6,
-            0.23,
+            D2D_POINT_2F {
+                x: pill_rect.right - 12.0,
+                y: cy - 4.0,
+            },
+            t,
+            27.9,
+            (1.0, 0.18, 0.28),
+            (0.28 + 0.32 * dash) * alpha,
+            1.15,
+            2,
         );
+        let _ = ph;
     }
 
     unsafe fn draw_character(
@@ -284,6 +192,34 @@ impl IdleCharacter for OkarunTurbo {
         let eye_red = col(1.00, 0.22, 0.18);
         let eye_core = col(1.00, 0.80, 0.68);
 
+        // Basis kepala: hampir menyatu dengan latar obsidian, hanya cukup
+        // untuk memisahkan siluet dari background (tanpa warna kulit).
+        fill_smooth_shape(
+            rt,
+            factory,
+            &local(&[
+                (0.0, -9.6),
+                (9.6, -8.4),
+                (15.8, -4.8),
+                (18.6, 0.8),
+                (16.0, 6.8),
+                (9.6, 11.4),
+                (3.4, 13.4),
+                (-3.4, 13.4),
+                (-9.6, 11.4),
+                (-16.0, 6.8),
+                (-18.6, 0.8),
+                (-15.8, -4.8),
+                (-9.6, -8.4),
+            ]),
+            D2D1_COLOR_F {
+                r: 0.052,
+                g: 0.052,
+                b: 0.058,
+                a: alpha * 0.92,
+            },
+        );
+
         // ── 0. Kerah hoodie + tali serut merah ────────────────────────────
         fill_polygon(
             rt,
@@ -322,33 +258,6 @@ impl IdleCharacter for OkarunTurbo {
                 1.1,
             );
         }
-
-        // ── 1. Basis kepala ────────────────────────────────────────────────
-        // Wajah pucat khas Okarun (referensi: satu-satunya wajah terang).
-        draw_smooth_face(
-            rt,
-            factory,
-            &local(&[
-                (0.0, -10.4),
-                (10.0, -9.0),
-                (16.8, -5.2),
-                (19.6, 0.8),
-                (17.0, 7.4),
-                (10.2, 12.2),
-                (3.4, 14.0),
-                (-3.4, 14.0),
-                (-10.2, 12.2),
-                (-17.0, 7.4),
-                (-19.6, 0.8),
-                (-16.8, -5.2),
-                (-10.0, -9.0),
-            ]),
-            col(0.90, 0.89, 0.88),
-            col(0.62, 0.58, 0.58),
-            alpha,
-        );
-        draw_soft_radial_glow(rt, at(-19.0, 1.5), 9.0, 12.0, 0.94, 0.20, 0.26, 0.16 * alpha);
-        draw_soft_radial_glow(rt, at(19.0, 1.5), 9.0, 12.0, 0.94, 0.92, 0.96, 0.12 * alpha);
 
         // ── 2. Rambut api putih + lapisan crimson ──────────────────────────
         // Lapisan merah di belakang (aksen yokai).

@@ -5,6 +5,7 @@ pub mod asta;
 pub mod bakugo;
 pub mod chibi_liebe;
 pub mod core;
+pub mod vfx;
 pub mod eren;
 pub mod okarun;
 pub mod sukuna;
@@ -12,7 +13,7 @@ pub mod sukuna;
 use self::core::{IdleCharacter, MascotContext};
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Direct2D::{
-    ID2D1Factory, ID2D1HwndRenderTarget, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+    ID2D1Factory, ID2D1RenderTarget, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
 };
 
 pub struct MascotDirector {
@@ -147,7 +148,7 @@ impl MascotDirector {
 
     pub unsafe fn draw_idle_aura_background(
         &self,
-        rt: &ID2D1HwndRenderTarget,
+        rt: &ID2D1RenderTarget,
         factory: &ID2D1Factory,
         pill_rect: D2D_RECT_F,
         alpha: f32,
@@ -163,7 +164,7 @@ impl MascotDirector {
 
     pub unsafe fn draw(
         &self,
-        rt: &ID2D1HwndRenderTarget,
+        rt: &ID2D1RenderTarget,
         factory: &ID2D1Factory,
         cx: f32,
         cy: f32,
