@@ -94,23 +94,31 @@ impl IdleCharacter for KatsukiBakugo {
             (0.14 + 0.34 * blast) * alpha,
         );
 
-        for i in 0..6 {
+        // Lidah api: pita mulus yang membara naik dan memudar.
+        for i in 0..5 {
             let fi = i as f32;
-            let life = (ctx.phase_time * (0.9 + fi * 0.13) + fi * 0.37) % 1.0;
-            let ex = pill_rect.left
-                + pw * (0.16 + 0.68 * ((fi * 0.29 + 0.11) % 1.0))
-                + (ctx.phase_time * 3.0 + fi).sin() * 3.0;
-            let ey = pill_rect.bottom - 3.0 - life * (ph * 0.80);
-            draw_soft_circle(
+            let life = (ctx.phase_time * (0.24 + fi * 0.04) + fi * 0.21) % 1.0;
+            let a = (life * (1.0 - life) * 3.4).min(1.0)
+                * alpha
+                * (0.42 + 0.45 * blast);
+            let ex = pill_rect.left + pw * (0.18 + 0.62 * ((fi * 0.31 + 0.11) % 1.0));
+            let ey = pill_rect.bottom - 3.0;
+            let bow = (life * 4.2 + fi).sin() * 4.0;
+            draw_tapered_streak(
                 rt,
+                factory,
                 D2D_POINT_2F { x: ex, y: ey },
-                1.3,
-                1.3,
+                D2D_POINT_2F {
+                    x: ex + bow,
+                    y: ey - ph * (0.36 + 0.34 * life),
+                },
+                bow * 0.6,
+                2.0,
                 D2D1_COLOR_F {
                     r: 1.0,
-                    g: 0.70,
-                    b: 0.22,
-                    a: (1.0 - life) * alpha * (0.5 + 0.45 * blast),
+                    g: 0.62,
+                    b: 0.18,
+                    a,
                 },
             );
         }

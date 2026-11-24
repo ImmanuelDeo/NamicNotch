@@ -119,40 +119,65 @@ impl IdleCharacter for YujiSukuna {
                     let oy = pill_rect.top + ph * 0.40;
                     for k in 0..2 {
                         let dx = k as f32 * 5.0;
-                        rt.DrawLine(
-                            D2D_POINT_2F {
-                                x: ox - 9.0 + dx,
-                                y: oy - 6.0,
+                        draw_soft_streak(
+                            rt,
+                            factory,
+                            &[
+                                D2D_POINT_2F {
+                                    x: ox - 9.0 + dx,
+                                    y: oy - 6.0,
+                                },
+                                D2D_POINT_2F {
+                                    x: ox + 1.0 + dx,
+                                    y: oy - 0.8,
+                                },
+                                D2D_POINT_2F {
+                                    x: ox + 9.0 + dx,
+                                    y: oy + 5.0,
+                                },
+                            ],
+                            D2D1_COLOR_F {
+                                r: 1.0,
+                                g: 0.50,
+                                b: 0.56,
+                                a: sa * 0.9,
                             },
-                            D2D_POINT_2F {
-                                x: ox + 9.0 + dx,
-                                y: oy + 5.0,
-                            },
-                            &sb,
-                            1.2,
-                            stroke.as_ref(),
+                            1.1,
                         );
                     }
+                    let _ = &sb;
+                    let _ = stroke;
                 }
             }
         }
 
-        draw_rising_particles(
-            rt,
-            cx,
-            pill_rect.bottom - 1.0,
-            pw * 0.34,
-            ph * 0.78,
-            ctx.phase_time,
-            7,
-            D2D1_COLOR_F {
-                r: lerp(0.25, 0.98, s),
-                g: lerp(0.82, 0.26, s),
-                b: lerp(1.0, 0.34, s),
-                a: 0.22 * alpha,
-            },
-            0.9,
-        );
+        // Wisp cursed energy: pita mulus mengalir naik, alfa halus.
+        let wisp = D2D1_COLOR_F {
+            r: lerp(0.30, 0.98, s),
+            g: lerp(0.86, 0.28, s),
+            b: lerp(1.00, 0.36, s),
+            a: alpha,
+        };
+        for k in 0..4 {
+            let fk = k as f32;
+            let life = (ctx.phase_time * (0.26 + fk * 0.05) + fk * 0.23) % 1.0;
+            let a = (life * (1.0 - life) * 3.2).min(1.0) * 0.34 * alpha;
+            let bx = cx + pw * (0.18 + 0.20 * ((fk * 0.37) % 1.0));
+            let by = pill_rect.bottom - 3.0;
+            let bow = (life * 4.6 + fk).sin() * 4.4;
+            draw_tapered_streak(
+                rt,
+                factory,
+                D2D_POINT_2F { x: bx, y: by },
+                D2D_POINT_2F {
+                    x: bx + bow,
+                    y: by - ph * (0.40 + 0.30 * life),
+                },
+                bow * 0.7,
+                2.2,
+                D2D1_COLOR_F { a, ..wisp },
+            );
+        }
     }
 
     unsafe fn draw_character(
@@ -539,20 +564,27 @@ impl IdleCharacter for YujiSukuna {
             );
             for k in 0..3 {
                 let fk = k as f32;
-                let ph = (ctx.phase_time * 3.4 + fk * 0.6) % 1.0;
-                draw_soft_circle(
+                let ph = (ctx.phase_time * 1.6 + fk * 0.33) % 1.0;
+                let a = (ph * (1.0 - ph) * 3.6).min(1.0) * ca * 0.85;
+                let bx = sx + (fk - 1.0) * 4.6;
+                draw_tapered_streak(
                     rt,
+                    factory,
                     D2D_POINT_2F {
-                        x: sx + (fk - 1.0) * 5.0 + ph * 2.0,
-                        y: sy - 8.0 - ph * 7.0,
+                        x: bx,
+                        y: sy - 2.0,
                     },
-                    1.4 * (1.0 - ph),
-                    1.4 * (1.0 - ph),
+                    D2D_POINT_2F {
+                        x: bx + (fk - 1.0) * 2.2,
+                        y: sy - 11.0 - ph * 4.0,
+                    },
+                    (fk - 1.0) * 1.6,
+                    1.8,
                     D2D1_COLOR_F {
-                        r: 0.5,
-                        g: 0.95,
+                        r: 0.55,
+                        g: 0.96,
                         b: 1.0,
-                        a: (1.0 - ph) * ca * 0.8,
+                        a,
                     },
                 );
             }

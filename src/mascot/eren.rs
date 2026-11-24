@@ -1,7 +1,8 @@
 // src/mascot/eren.rs
 // Fase 4: Eren Yeager (man-bun) -> Attack Titan.
-// Bahasa visual sama dengan Asta Devil Union: basis kepala gelap, rambut berlapis,
-// kerah cloak Survey Corps, mata illuminated, petir emas -> uap putih di kanan.
+// Patokan visual: referensi 4A/4B (bun di kanan-atas yang jelas terlihat, poni di tengah
+// dahi; titan: rambut shaggy melebar, mulut bergerigi, garis gelap di pipi, petir + uap).
+// Efek memakai kurva mulus (draw_soft_streak / draw_tapered_streak), bukan partikel kaku.
 use super::core::*;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_POINT_2F, D2D_RECT_F};
 use windows::Win32::Graphics::Direct2D::{
@@ -22,12 +23,27 @@ impl ErenAttackTitan {
     }
 
     fn lightning_flash(t: f32) -> f32 {
-        if t < 2.8 || t > 4.6 {
+        if t < 2.8 || t > 4.8 {
             0.0
         } else if t < 3.3 {
             smoothstep(2.8, 3.3, t)
         } else {
-            1.0 - smoothstep(3.3, 4.6, t)
+            1.0 - smoothstep(3.3, 4.8, t)
+        }
+    }
+
+    /// Petir susulan halus setelah transformasi (denyut lembut, bukan kedip kaku).
+    fn lightning_idle(t: f32, titan: f32) -> f32 {
+        if titan <= 0.5 || t < 4.8 {
+            return 0.0;
+        }
+        let cycle = (t - 4.8) % 3.6;
+        if cycle < 0.5 {
+            smoothstep(0.0, 0.5, cycle) * 0.55
+        } else if cycle < 1.6 {
+            (1.0 - smoothstep(0.5, 1.6, cycle)) * 0.55
+        } else {
+            0.0
         }
     }
 }
@@ -50,7 +66,7 @@ impl IdleCharacter for ErenAttackTitan {
     fn override_look_target(&self, ctx: &MascotContext) -> Option<(f32, f32)> {
         let flash = Self::lightning_flash(ctx.local_time);
         if flash > 0.1 {
-            Some((1.8 * flash, -0.4 * flash))
+            Some((1.6 * flash, -0.35 * flash))
         } else {
             None
         }
@@ -66,126 +82,155 @@ impl IdleCharacter for ErenAttackTitan {
     ) {
         let titan = Self::titan_factor(ctx.local_time);
         let flash = Self::lightning_flash(ctx.local_time);
+        let idle_bolt = Self::lightning_idle(ctx.local_time, titan);
         let pw = pill_rect.right - pill_rect.left;
         let ph = pill_rect.bottom - pill_rect.top;
         let cx = (pill_rect.left + pill_rect.right) * 0.5;
+        let t = ctx.phase_time;
 
+        // Aura dasar: teal tenang -> emerald-gold, dua lapis supaya lembut.
         draw_soft_radial_glow(
             rt,
             D2D_POINT_2F {
                 x: cx,
                 y: pill_rect.bottom - 1.0,
             },
-            pw * 0.46,
-            ph * 0.70,
-            lerp(0.18, 0.92, titan.max(flash)),
-            lerp(0.77, 0.78, titan),
-            lerp(0.57, 0.30, titan),
-            (0.26 + 0.18 * titan + 0.26 * flash) * alpha,
+            pw * 0.47,
+            ph * 0.72,
+            lerp(0.16, 0.90, titan.max(flash)),
+            lerp(0.75, 0.78, titan),
+            lerp(0.56, 0.32, titan),
+            (0.24 + 0.16 * titan + 0.22 * flash) * alpha,
         );
         draw_soft_radial_glow(
             rt,
             D2D_POINT_2F {
-                x: cx + pw * 0.22,
-                y: pill_rect.bottom - 2.0,
+                x: cx + pw * 0.16,
+                y: pill_rect.bottom - 6.0,
             },
-            pw * 0.24,
-            ph * 0.62,
+            pw * 0.30,
+            ph * 0.54,
             1.0,
-            0.96,
-            0.86,
-            (0.10 + 0.24 * titan) * alpha,
+            0.95,
+            0.84,
+            (0.06 + 0.20 * titan) * alpha,
         );
 
-        let periodic = if titan > 0.6 {
-            ((ctx.phase_time * 7.5).sin() - 0.62).max(0.0) * 1.6
-        } else {
-            0.0
-        };
-        let bolt = flash.max(periodic).clamp(0.0, 1.0) * alpha;
-        if bolt > 0.05 {
-            let rx = cx + pw * 0.22;
-            let ry = pill_rect.top + 2.0;
-            draw_lightning_bolt(
-                rt,
-                factory,
-                &[
-                    D2D_POINT_2F {
-                        x: rx + 12.0,
-                        y: ry,
-                    },
-                    D2D_POINT_2F {
-                        x: rx + 3.0,
-                        y: ry + 8.0,
-                    },
-                    D2D_POINT_2F {
-                        x: rx + 8.0,
-                        y: ry + 12.0,
-                    },
-                    D2D_POINT_2F {
-                        x: rx - 3.0,
-                        y: ry + 19.0,
-                    },
-                    D2D_POINT_2F {
-                        x: rx - 12.0,
-                        y: pill_rect.bottom - 2.0,
-                    },
-                ],
-                D2D1_COLOR_F {
-                    r: 1.0,
-                    g: 0.82,
-                    b: 0.18,
-                    a: bolt * 0.42,
-                },
-                D2D1_COLOR_F {
-                    r: 1.0,
-                    g: 0.98,
-                    b: 0.78,
-                    a: bolt,
-                },
-                1.45,
-            );
-        }
-
-        if titan > 0.2 {
-            for i in 0..5 {
-                let fi = i as f32;
-                let life = (ctx.phase_time * (0.38 + fi * 0.07) + fi * 0.23) % 1.0;
-                let sx = cx + pw * (0.08 + 0.34 * ((fi * 0.23) % 1.0))
-                    + (ctx.phase_time * 1.1 + fi).sin() * 2.2
-                    + life * 6.0;
-                let sy = pill_rect.bottom - 4.0 - life * (ph * 0.78);
-                draw_soft_circle(
+        // Uap titan: pita mulus yang mengalir naik dan memudar (bukan titik-titik).
+        if titan > 0.15 {
+            for k in 0..4 {
+                let fk = k as f32;
+                let speed = 0.34 + fk * 0.05;
+                let life = (t * speed + fk * 0.27) % 1.0;
+                let a = (life * (1.0 - life) * 3.4).min(1.0) * titan * alpha * 0.42;
+                let bx = cx - pw * 0.06 + pw * 0.30 * ((fk * 0.31) % 1.0);
+                let by = pill_rect.bottom - 3.0;
+                let bow = (life * 5.0 + fk).sin() * 5.0;
+                draw_tapered_streak(
                     rt,
-                    D2D_POINT_2F { x: sx, y: sy },
-                    7.0 + life * 6.0,
-                    4.8 + life * 4.0,
+                    factory,
+                    D2D_POINT_2F { x: bx, y: by },
+                    D2D_POINT_2F {
+                        x: bx + bow,
+                        y: by - ph * (0.42 + 0.34 * life),
+                    },
+                    bow * 0.8,
+                    2.6,
                     D2D1_COLOR_F {
                         r: 0.90,
                         g: 0.95,
                         b: 0.93,
-                        a: (1.0 - life) * life * 0.7 * titan * alpha,
+                        a,
                     },
                 );
             }
         }
 
-        draw_rising_particles(
-            rt,
-            cx,
-            pill_rect.bottom - 1.0,
-            pw * 0.34,
-            ph * 0.82,
-            ctx.phase_time,
-            7,
-            D2D1_COLOR_F {
+        // Petir: kurva mulus berlapis + cabang, memudar halus.
+        let bolt = (flash + idle_bolt).clamp(0.0, 1.0) * alpha;
+        if bolt > 0.04 {
+            let bx = cx + pw * 0.23;
+            let top = pill_rect.top + 1.0;
+            let bottom = pill_rect.bottom - 2.0;
+            let sway = (t * 2.1).sin() * 2.6;
+            let main = [
+                D2D_POINT_2F {
+                    x: bx + 9.0,
+                    y: top,
+                },
+                D2D_POINT_2F {
+                    x: bx + 2.0,
+                    y: top + (bottom - top) * 0.26 + sway,
+                },
+                D2D_POINT_2F {
+                    x: bx + 7.0,
+                    y: top + (bottom - top) * 0.52 - sway * 0.6,
+                },
+                D2D_POINT_2F {
+                    x: bx - 3.0,
+                    y: top + (bottom - top) * 0.78,
+                },
+                D2D_POINT_2F {
+                    x: bx - 11.0,
+                    y: bottom,
+                },
+            ];
+            let glow = D2D1_COLOR_F {
                 r: 1.0,
-                g: lerp(0.86, 0.70, titan),
-                b: lerp(0.50, 0.26, titan),
-                a: 0.22 * alpha,
-            },
-            0.9,
-        );
+                g: 0.90,
+                b: 0.42,
+                a: bolt * 0.9,
+            };
+            draw_soft_streak(rt, factory, &main, glow, 1.5);
+            // Cabang kecil.
+            let branch = [
+                D2D_POINT_2F {
+                    x: bx + 3.0,
+                    y: top + (bottom - top) * 0.42,
+                },
+                D2D_POINT_2F {
+                    x: bx + 12.0,
+                    y: top + (bottom - top) * 0.52,
+                },
+                D2D_POINT_2F {
+                    x: bx + 9.0,
+                    y: top + (bottom - top) * 0.66,
+                },
+            ];
+            draw_soft_streak(
+                rt,
+                factory,
+                &branch,
+                D2D1_COLOR_F {
+                    r: 1.0,
+                    g: 0.97,
+                    b: 0.82,
+                    a: bolt * 0.55,
+                },
+                0.9,
+            );
+        }
+
+        // Mote ambient: melayang lambat dengan alfa sinusoidal (halus, tidak berkedip).
+        for i in 0..5 {
+            let fi = i as f32;
+            let phase = (t * 0.22 + fi * 0.19) % 1.0;
+            let a = (phase * std::f32::consts::PI).sin() * 0.22 * alpha;
+            let mx = cx + (t * 0.5 + fi * 2.1).sin() * pw * 0.30;
+            let my = pill_rect.bottom - 8.0 - phase * ph * 0.72;
+            draw_soft_circle(
+                rt,
+                D2D_POINT_2F { x: mx, y: my },
+                1.5,
+                1.5,
+                D2D1_COLOR_F {
+                    r: 1.0,
+                    g: lerp(0.88, 0.74, titan),
+                    b: lerp(0.56, 0.30, titan),
+                    a,
+                },
+            );
+        }
     }
 
     unsafe fn draw_character(
@@ -198,7 +243,6 @@ impl IdleCharacter for ErenAttackTitan {
         ctx: &MascotContext,
     ) {
         let titan = Self::titan_factor(ctx.local_time);
-        let flash = Self::lightning_flash(ctx.local_time);
         let s = SCALE;
         let base_cx = cx;
         let base_cy = cy + 2.0;
@@ -218,63 +262,40 @@ impl IdleCharacter for ErenAttackTitan {
 
         let black = col(0.018, 0.018, 0.024);
         let hair = col(0.21, 0.14, 0.11);
-        let hair_hi = col(0.34, 0.24, 0.19);
-        let hair_deep = col(0.12, 0.08, 0.07);
+        let hair_hi = col(0.35, 0.25, 0.20);
+        let hair_deep = col(0.11, 0.07, 0.06);
         let cloak = col(0.16, 0.26, 0.19);
         let cloak_hi = col(0.26, 0.38, 0.28);
-        let shirt = col(0.84, 0.82, 0.76);
-        let gold = col(1.00, 0.86, 0.32);
-        let emerald = col(0.12, 1.00, 0.55);
-        let emerald_core = col(0.90, 1.00, 0.95);
-        let teal = col(0.18, 0.77, 0.57);
-        let teal_core = col(0.77, 1.00, 0.91);
-        let sway = (ctx.phase_time * 1.8).sin();
+        let teal = col(0.20, 0.86, 0.62);
+        let teal_core = col(0.80, 1.00, 0.92);
+        let teeth = col(0.90, 0.88, 0.82);
+        let sway = (ctx.phase_time * 1.6).sin();
 
-        // ── 0. Kerah cloak + krawat putih ──────────────────────────────────
+        // ── 0. Kerah cloak tipis (fase manusia minimal, titan lebih tegas) ─
         fill_polygon(
             rt,
             factory,
             &local(&[
-                (-28.0, 13.5),
-                (-22.5, 4.5),
-                (-13.0, 7.2),
+                (-26.0, 13.5),
+                (-21.0, 5.0),
+                (-12.5, 7.4),
                 (0.0, 9.4),
-                (13.0, 7.2),
-                (22.5, 4.5),
-                (28.0, 13.5),
-                (0.0, 19.5),
+                (12.5, 7.4),
+                (21.0, 5.0),
+                (26.0, 13.5),
+                (0.0, 19.0),
             ]),
             cloak,
-        );
-        fill_polygon(
-            rt,
-            factory,
-            &local(&[
-                (-9.0, 8.2),
-                (0.0, 10.4),
-                (9.0, 8.2),
-                (6.0, 13.0),
-                (0.0, 15.6),
-                (-6.0, 13.0),
-            ]),
-            shirt,
-        );
-        // Krawat cravat.
-        fill_polygon(
-            rt,
-            factory,
-            &local(&[(-3.2, 9.4), (3.2, 9.4), (1.6, 13.4), (0.0, 15.2), (-1.6, 13.4)]),
-            cloak_hi,
         );
         draw_polyline(
             rt,
             factory,
-            &local(&[(-22.5, 4.6), (-13.0, 7.3), (0.0, 9.6), (13.0, 7.3), (22.5, 4.6)]),
+            &local(&[(-21.0, 5.2), (-12.5, 7.6), (0.0, 9.6), (12.5, 7.6), (21.0, 5.2)]),
             D2D1_COLOR_F {
-                a: 0.5 * alpha,
+                a: 0.45 * alpha,
                 ..cloak_hi
             },
-            1.0,
+            0.9,
         );
 
         // ── 1. Basis kepala ────────────────────────────────────────────────
@@ -293,60 +314,63 @@ impl IdleCharacter for ErenAttackTitan {
                 &b,
             );
         }
-        let rim = lerp_color(teal, emerald, titan);
-        draw_soft_radial_glow(rt, at(-19.0, 1.5), 9.0, 12.0, rim.r, rim.g, rim.b, 0.16 * alpha);
-        draw_soft_radial_glow(rt, at(19.0, 1.5), 9.0, 12.0, rim.r, rim.g, rim.b, 0.16 * alpha);
+        draw_soft_radial_glow(rt, at(-19.0, 1.5), 9.0, 12.0, teal.r, teal.g, teal.b, 0.15 * alpha);
+        draw_soft_radial_glow(rt, at(19.0, 1.5), 9.0, 12.0, teal.r, teal.g, teal.b, 0.15 * alpha);
 
-        // ── 2. Rambut: swept-back + man-bun -> shaggy titan ────────────────
-        let grow = titan * 2.6;
+        // ── 2. Rambut: swept-back rapi -> shaggy melebar ───────────────────
+        let spread = titan * 3.6;
         let hair_pts = [
-            (-22.0, -2.0),
-            (-24.5, -8.0),
-            (-19.5, -9.0),
-            (-22.5, -15.0),
-            (-14.5, -13.5),
-            (-13.0, -19.5),
-            (-5.0, -16.5),
-            (0.0, -21.0),
-            (5.5, -16.5),
-            (13.5, -19.0),
-            (14.5, -13.0),
-            (21.5, -14.5),
-            (19.0, -8.4),
-            (23.5, -7.0),
-            (21.0, -1.5),
-            (16.0, 1.0),
-            (8.0, -2.4),
-            (0.0, 0.4),
-            (-8.0, -2.4),
-            (-16.5, 1.0),
+            (-21.5 - spread, -1.8),
+            (-24.5 - spread, -7.4),
+            (-19.0 - spread * 0.6, -8.6),
+            (-22.5 - spread * 0.7, -14.6),
+            (-14.0, -13.2),
+            (-12.5, -19.4),
+            (-4.5, -16.2),
+            (0.0, -20.6),
+            (5.5, -16.0),
+            (13.5, -18.6),
+            (14.5, -12.6),
+            (21.5 + spread * 0.7, -14.0),
+            (19.0 + spread * 0.6, -8.0),
+            (24.5 + spread, -6.6),
+            (21.0 + spread, -1.2),
+            (16.0, 1.4),
+            (8.0, -2.2),
+            (0.0, 0.6),
+            (-8.0, -2.2),
+            (-16.5, 1.4),
         ];
         fill_polygon(rt, factory, &local(&hair_pts), hair);
-        // Helai shaggy menjuntai saat titan.
-        if titan > 0.2 {
+        // Helai shaggy menjuntai di kedua sisi saat titan.
+        if titan > 0.15 {
             for side in [-1.0_f32, 1.0_f32] {
-                fill_polygon(
-                    rt,
-                    factory,
-                    &local(&[
-                        (side * (17.0 + grow), -6.0),
-                        (side * (21.0 + grow) + sway, 3.0),
-                        (side * (17.5 + grow), 8.5),
-                        (side * 13.0, 2.0),
-                    ]),
-                    D2D1_COLOR_F {
-                        a: alpha * titan,
-                        ..hair
-                    },
-                );
+                for k in 0..2 {
+                    let fk = k as f32;
+                    let x0 = side * (16.0 + fk * 3.0);
+                    fill_polygon(
+                        rt,
+                        factory,
+                        &local(&[
+                            (x0, -6.0 - fk * 1.6),
+                            (x0 + side * (6.0 + spread * 0.6), 1.5 + fk * 2.0 + sway * 0.4),
+                            (x0 + side * (2.0 + spread * 0.4), 8.5 + fk * 1.5),
+                            (x0 - side * 2.5, 2.0),
+                        ]),
+                        D2D1_COLOR_F {
+                            a: alpha * titan,
+                            ..hair
+                        },
+                    );
+                }
             }
         }
         for chunk in [
-            [(-21.0, -12.0), (-12.0, -10.0), (-17.0, -5.5)],
-            [(-10.0, -16.0), (-2.0, -12.0), (-7.0, -7.0)],
-            [(1.0, -18.0), (5.0, -12.0), (0.0, -7.5)],
-            [(10.0, -16.5), (8.0, -8.0), (2.5, -4.8)],
-            [(19.0, -13.0), (16.0, -6.0), (10.0, -4.4)],
+            [(-20.0, -11.8), (-11.5, -9.8), (-16.5, -5.4)],
+            [(-9.5, -15.8), (-2.0, -11.8), (-7.0, -6.8)],
+            [(1.0, -17.4), (5.0, -11.6), (0.0, -7.2)],
+            [(10.0, -16.0), (8.0, -7.8), (2.5, -4.6)],
+            [(19.0, -12.6), (16.0, -5.8), (10.0, -4.2)],
         ] {
             fill_polygon(rt, factory, &local(&chunk), hair_hi);
         }
@@ -354,21 +378,21 @@ impl IdleCharacter for ErenAttackTitan {
             rt,
             factory,
             &local(&[
-                (-22.0, -2.0),
-                (-24.5, -8.0),
-                (-19.5, -9.0),
-                (-22.5, -15.0),
-                (-14.5, -13.5),
-                (-13.0, -19.5),
-                (-5.0, -16.5),
-                (0.0, -21.0),
-                (5.5, -16.5),
-                (13.5, -19.0),
-                (14.5, -13.0),
-                (21.5, -14.5),
-                (19.0, -8.4),
-                (23.5, -7.0),
-                (21.0, -1.5),
+                (-21.5 - spread, -1.8),
+                (-24.5 - spread, -7.4),
+                (-19.0 - spread * 0.6, -8.6),
+                (-22.5 - spread * 0.7, -14.6),
+                (-14.0, -13.2),
+                (-12.5, -19.4),
+                (-4.5, -16.2),
+                (0.0, -20.6),
+                (5.5, -16.0),
+                (13.5, -18.6),
+                (14.5, -12.6),
+                (21.5 + spread * 0.7, -14.0),
+                (19.0 + spread * 0.6, -8.0),
+                (24.5 + spread, -6.6),
+                (21.0 + spread, -1.2),
             ]),
             D2D1_COLOR_F {
                 a: 0.5 * alpha,
@@ -377,43 +401,93 @@ impl IdleCharacter for ErenAttackTitan {
             0.9,
         );
 
-        // Man-bun + dua poni depan (fase manusia).
-        let bun_a = (1.0 - titan).max(0.0);
-        if bun_a > 0.04 {
+        // ── 3. Man-bun jelas di kanan-atas + poni tengah dahi ──────────────
+        let human = (1.0 - titan).max(0.0);
+        if human > 0.03 {
+            let bun = at(10.5, -17.5);
+            let br = 5.0 * s * (0.72 + 0.28 * human);
             if let Ok(b) = rt.CreateSolidColorBrush(
                 &D2D1_COLOR_F {
-                    a: alpha * bun_a,
-                    ..hair_hi
+                    a: alpha * human,
+                    ..hair_deep
                 },
                 None,
             ) {
                 rt.FillEllipse(
                     &D2D1_ELLIPSE {
-                        point: at(2.5, -18.5),
-                        radiusX: 4.8 * s,
-                        radiusY: 3.8 * s,
+                        point: bun,
+                        radiusX: br,
+                        radiusY: br * 0.88,
                     },
                     &b,
                 );
             }
-            for side in [-1.0_f32, 1.0_f32] {
+            // Highlight bun supaya terbaca sebagai ikatan rambut.
+            if let Ok(b) = rt.CreateSolidColorBrush(
+                &D2D1_COLOR_F {
+                    a: 0.75 * alpha * human,
+                    ..hair_hi
+                },
+                None,
+            ) {
+                rt.DrawEllipse(
+                    &D2D1_ELLIPSE {
+                        point: D2D_POINT_2F {
+                            x: bun.x - br * 0.18,
+                            y: bun.y - br * 0.22,
+                        },
+                        radiusX: br * 0.60,
+                        radiusY: br * 0.52,
+                    },
+                    &b,
+                    0.9,
+                    None,
+                );
+            }
+            // Ikatan rambut.
+            draw_soft_streak(
+                rt,
+                factory,
+                &[
+                    D2D_POINT_2F {
+                        x: bun.x - br * 0.9,
+                        y: bun.y + br * 0.55,
+                    },
+                    D2D_POINT_2F {
+                        x: bun.x + br * 0.1,
+                        y: bun.y + br * 1.05,
+                    },
+                    D2D_POINT_2F {
+                        x: bun.x + br * 0.95,
+                        y: bun.y + br * 0.5,
+                    },
+                ],
+                D2D1_COLOR_F {
+                    a: 0.85 * alpha * human,
+                    ..hair_hi
+                },
+                1.0,
+            );
+
+            // Poni: beberapa helai jatuh di dahi, satu di antara alis.
+            for strand in [
+                [(-10.0, -12.4), (-7.0, -8.0), (-9.4, -3.6)],
+                [(-2.0, -14.2), (0.4, -9.0), (-0.6, -4.2)],
+                [(6.0, -12.8), (5.2, -8.4), (7.4, -4.6)],
+            ] {
                 fill_polygon(
                     rt,
                     factory,
-                    &local(&[
-                        (side * 1.2, -14.0),
-                        (side * 6.4, -12.6),
-                        (side * 3.0 + sway * 0.4, -4.8),
-                    ]),
+                    &local(&strand),
                     D2D1_COLOR_F {
-                        a: alpha * bun_a,
-                        ..hair_dark_tone(hair)
+                        a: alpha * human,
+                        ..hair_deep
                     },
                 );
             }
         }
 
-        // ── 3. Titan marks: soket gelap + garis emas ───────────────────────
+        // ── 4. Titan: garis gelap pipi + celah mata + mulut bergerigi ──────
         let eye_y = base_cy + 5.0 * s;
         if titan > 0.12 {
             let ta = smoothstep(0.12, 0.85, titan) * alpha;
@@ -422,7 +496,7 @@ impl IdleCharacter for ErenAttackTitan {
                     r: 0.035,
                     g: 0.030,
                     b: 0.030,
-                    a: ta * 0.85,
+                    a: ta * 0.8,
                 },
                 None,
             ) {
@@ -433,140 +507,177 @@ impl IdleCharacter for ErenAttackTitan {
                                 x: base_cx + side * 9.0 * s + ctx.look_x * 0.6,
                                 y: eye_y,
                             },
-                            radiusX: 6.6 * s,
-                            radiusY: 7.4 * s,
+                            radiusX: 6.4 * s,
+                            radiusY: 7.2 * s,
                         },
                         &b,
                     );
                 }
             }
+            // Streak gelap vertikal dari mata ke rahang.
             for side in [-1.0_f32, 1.0_f32] {
-                for k in 0..3 {
-                    let bx = base_cx + side * (8.2 + k as f32 * 1.2) * s;
-                    let by = eye_y + 5.6 * s + k as f32 * 0.6;
-                    draw_polyline(
+                for k in 0..2 {
+                    let x0 = base_cx + side * (6.6 + k as f32 * 3.4) * s;
+                    draw_soft_streak(
                         rt,
                         factory,
                         &[
-                            D2D_POINT_2F { x: bx, y: by },
                             D2D_POINT_2F {
-                                x: bx + side * 1.0 * s,
-                                y: by + 3.0 * s,
+                                x: x0,
+                                y: eye_y + 3.0 * s,
+                            },
+                            D2D_POINT_2F {
+                                x: x0 + side * 0.8,
+                                y: eye_y + 7.0 * s,
+                            },
+                            D2D_POINT_2F {
+                                x: x0 + side * 1.6,
+                                y: eye_y + 11.0 * s,
                             },
                         ],
                         D2D1_COLOR_F {
-                            r: 1.0,
-                            g: 0.84,
-                            b: 0.42,
-                            a: ta * 0.8,
+                            r: 0.05,
+                            g: 0.04,
+                            b: 0.04,
+                            a: ta * 0.75,
                         },
-                        0.9,
+                        1.1,
                     );
                 }
             }
+            // Mulut bergerigi (grimace titan).
+            let my = base_cy + 12.2 * s;
+            let mouth = [
+                (-8.6, 0.0),
+                (-4.3, 1.5),
+                (0.0, 2.2),
+                (4.3, 1.5),
+                (8.6, 0.0),
+            ];
+            let mut jaw = Vec::new();
+            for &(x, y) in mouth.iter() {
+                jaw.push(D2D_POINT_2F {
+                    x: base_cx + x * s,
+                    y: my + y * s,
+                });
+            }
+            fill_polygon(
+                rt,
+                factory,
+                &[
+                    D2D_POINT_2F {
+                        x: base_cx - 9.4 * s,
+                        y: my - 1.2 * s,
+                    },
+                    D2D_POINT_2F {
+                        x: base_cx - 4.6 * s,
+                        y: my + 1.4 * s,
+                    },
+                    D2D_POINT_2F {
+                        x: base_cx,
+                        y: my + 2.3 * s,
+                    },
+                    D2D_POINT_2F {
+                        x: base_cx + 4.6 * s,
+                        y: my + 1.4 * s,
+                    },
+                    D2D_POINT_2F {
+                        x: base_cx + 9.4 * s,
+                        y: my - 1.2 * s,
+                    },
+                    D2D_POINT_2F {
+                        x: base_cx + 8.6 * s,
+                        y: my + 4.4 * s,
+                    },
+                    D2D_POINT_2F {
+                        x: base_cx,
+                        y: my + 6.2 * s,
+                    },
+                    D2D_POINT_2F {
+                        x: base_cx - 8.6 * s,
+                        y: my + 4.4 * s,
+                    },
+                ],
+                D2D1_COLOR_F {
+                    r: 0.10,
+                    g: 0.07,
+                    b: 0.07,
+                    a: ta,
+                },
+            );
+            // Gigi: deretan blok pucat.
+            if let Ok(b) = rt.CreateSolidColorBrush(
+                &D2D1_COLOR_F {
+                    a: ta * 0.95,
+                    ..teeth
+                },
+                None,
+            ) {
+                for k in 0..7 {
+                    let fk = k as f32;
+                    let tx = base_cx + (-7.2 + fk * 2.4) * s;
+                    let top = my + (1.9 - (fk - 3.0).abs() * 0.28) * s;
+                    rt.FillRoundedRectangle(
+                        &D2D1_ROUNDED_RECT {
+                            rect: D2D_RECT_F {
+                                left: tx - 0.9 * s,
+                                top,
+                                right: tx + 0.9 * s,
+                                bottom: top + (1.5 + (fk % 2.0) * 0.5) * s,
+                            },
+                            radiusX: 0.5 * s,
+                            radiusY: 0.6 * s,
+                        },
+                        &b,
+                    );
+                }
+            }
+            let _ = jaw;
         }
 
-        // ── 4. Mata: teal tenang -> emerald intens ─────────────────────────
-        let (outer, core_c, glow) = if titan < 0.5 {
-            (teal, teal_core, (0.18, 0.77, 0.57))
-        } else {
-            (emerald, emerald_core, (0.12, 1.0, 0.55))
-        };
+        // ── 5. Mata teal-green menyala (kedua mode) ────────────────────────
         draw_capsule_eyes(
             rt,
             factory,
             base_cx,
             eye_y,
             9.0,
-            outer,
-            core_c,
-            glow,
-            titan * 0.75 + flash * 0.2,
+            teal,
+            teal_core,
+            (0.20, 0.86, 0.62),
+            0.30 + 0.42 * titan,
             alpha,
             ctx,
         );
-
-        // ── 5. Petir emas / uap (kanan) ────────────────────────────────────
-        let gx = base_cx + 34.0 * s;
-        let gy = base_cy + 3.6 * s;
-        if flash > 0.08 {
-            draw_soft_radial_glow(
-                rt,
-                D2D_POINT_2F { x: gx, y: gy },
-                14.0,
-                13.0,
-                1.0,
-                0.86,
-                0.30,
-                0.55 * flash * alpha,
-            );
-            draw_lightning_bolt(
-                rt,
-                factory,
-                &[
-                    D2D_POINT_2F {
-                        x: gx + 4.0 * s,
-                        y: gy - 12.0 * s,
-                    },
-                    D2D_POINT_2F {
-                        x: gx - 1.5 * s,
-                        y: gy - 4.0 * s,
-                    },
-                    D2D_POINT_2F {
-                        x: gx + 3.0 * s,
-                        y: gy - 1.0 * s,
-                    },
-                    D2D_POINT_2F {
-                        x: gx - 3.0 * s,
-                        y: gy + 9.0 * s,
-                    },
-                ],
-                D2D1_COLOR_F {
-                    r: 1.0,
-                    g: 0.84,
-                    b: 0.20,
-                    a: 0.45 * flash * alpha,
+        // Celah gelap vertikal menembus mata saat titan.
+        if titan > 0.4 {
+            let a = alpha * smoothstep(0.4, 0.9, titan) * ctx.open_factor();
+            if let Ok(b) = rt.CreateSolidColorBrush(
+                &D2D1_COLOR_F {
+                    r: 0.03,
+                    g: 0.03,
+                    b: 0.03,
+                    a,
                 },
-                D2D1_COLOR_F {
-                    r: 1.0,
-                    g: 0.98,
-                    b: 0.80,
-                    a: flash * alpha,
-                },
-                1.5,
-            );
-        }
-        if titan > 0.25 {
-            let t = ctx.phase_time;
-            for k in 0..3 {
-                let fk = k as f32;
-                let life = (t * (0.5 + fk * 0.12) + fk * 0.31) % 1.0;
-                draw_soft_circle(
-                    rt,
-                    D2D_POINT_2F {
-                        x: gx + life * 4.0,
-                        y: gy + 5.0 - life * 14.0,
-                    },
-                    3.8 + life * 5.2,
-                    3.0 + life * 3.4,
-                    D2D1_COLOR_F {
-                        r: 0.92,
-                        g: 0.96,
-                        b: 0.94,
-                        a: (1.0 - life) * life * 0.5 * titan * alpha,
-                    },
-                );
+                None,
+            ) {
+                for side in [-1.0_f32, 1.0_f32] {
+                    let ex = base_cx + side * 9.0 + ctx.look_x * 0.65;
+                    rt.FillRoundedRectangle(
+                        &D2D1_ROUNDED_RECT {
+                            rect: D2D_RECT_F {
+                                left: ex - 0.7,
+                                top: eye_y - 3.4,
+                                right: ex + 0.7,
+                                bottom: eye_y + 3.4,
+                            },
+                            radiusX: 0.7,
+                            radiusY: 1.1,
+                        },
+                        &b,
+                    );
+                }
             }
         }
-    }
-}
-
-/// Versi lebih gelap untuk helai poni.
-fn hair_dark_tone(c: D2D1_COLOR_F) -> D2D1_COLOR_F {
-    D2D1_COLOR_F {
-        r: c.r * 0.72,
-        g: c.g * 0.72,
-        b: c.b * 0.72,
-        a: c.a,
     }
 }

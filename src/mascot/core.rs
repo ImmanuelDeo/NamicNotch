@@ -672,3 +672,83 @@ pub unsafe fn hair_lock(
         }
     }
 }
+
+/// Garis mulus dengan lapisan glow lembut (2 pass) — dipakai untuk efek asap,
+/// percikan, dan slash supaya terlihat seperti animasi anime, bukan partikel kaku.
+pub unsafe fn draw_soft_streak(
+    rt: &ID2D1HwndRenderTarget,
+    factory: &ID2D1Factory,
+    pts: &[D2D_POINT_2F],
+    color: D2D1_COLOR_F,
+    width: f32,
+) {
+    if pts.len() < 2 || color.a <= 0.004 {
+        return;
+    }
+    stroke_smooth_curve(
+        rt,
+        factory,
+        pts,
+        D2D1_COLOR_F {
+            a: color.a * 0.22,
+            ..color
+        },
+        width * 3.4,
+    );
+    stroke_smooth_curve(
+        rt,
+        factory,
+        pts,
+        D2D1_COLOR_F {
+            a: color.a * 0.45,
+            ..color
+        },
+        width * 1.9,
+    );
+    stroke_smooth_curve(rt, factory, pts, color, width);
+}
+
+/// Pita mulus yang mengecil ke ujung (ekor asap / speed line).
+pub unsafe fn draw_tapered_streak(
+    rt: &ID2D1HwndRenderTarget,
+    factory: &ID2D1Factory,
+    start: D2D_POINT_2F,
+    end: D2D_POINT_2F,
+    bow: f32,
+    width: f32,
+    color: D2D1_COLOR_F,
+) {
+    let dx = end.x - start.x;
+    let dy = end.y - start.y;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < 0.5 {
+        return;
+    }
+    let (nx, ny) = (-dy / len, dx / len);
+    for k in 0..4 {
+        let f = k as f32 / 3.0;
+        let bend = bow * (1.0 - f);
+        let p0 = D2D_POINT_2F {
+            x: start.x + dx * f * 0.34 + nx * bend,
+            y: start.y + dy * f * 0.34 + ny * bend,
+        };
+        let p1 = D2D_POINT_2F {
+            x: start.x + dx * (0.34 + f * 0.33) + nx * bend * 0.6,
+            y: start.y + dy * (0.34 + f * 0.33) + ny * bend * 0.6,
+        };
+        let p2 = D2D_POINT_2F {
+            x: start.x + dx * (0.67 + f * 0.33),
+            y: start.y + dy * (0.67 + f * 0.33),
+        };
+        draw_soft_streak(
+            rt,
+            factory,
+            &[p0, p1, p2],
+            D2D1_COLOR_F {
+                a: color.a * (1.0 - f * 0.62),
+                ..color
+            },
+            width * (1.0 - f * 0.5),
+        );
+    }
+}

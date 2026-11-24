@@ -121,18 +121,41 @@ impl IdleCharacter for OkarunTurbo {
                 let lx = pill_rect.left + progress * (pw - 24.0);
                 let ly = pill_rect.top + 6.0 + fi * (ph * 0.21);
                 let len = 14.0 + dash * 16.0;
-                let brush = if i % 2 == 0 { &red_b } else { &white_b };
-                rt.DrawLine(
-                    D2D_POINT_2F { x: lx, y: ly },
-                    D2D_POINT_2F {
-                        x: lx + len,
-                        y: ly,
-                    },
-                    brush,
-                    1.15,
-                    stroke.as_ref(),
+                let fade = (progress * (1.0 - progress) * 4.0).min(1.0);
+                let c = if i % 2 == 0 {
+                    D2D1_COLOR_F {
+                        r: 0.96,
+                        g: 0.22,
+                        b: 0.28,
+                        a: (0.25 + 0.55 * dash) * alpha * fade,
+                    }
+                } else {
+                    D2D1_COLOR_F {
+                        r: 0.98,
+                        g: 0.96,
+                        b: 0.98,
+                        a: (0.20 + 0.50 * dash) * alpha * fade,
+                    }
+                };
+                draw_soft_streak(
+                    rt,
+                    factory,
+                    &[
+                        D2D_POINT_2F { x: lx, y: ly },
+                        D2D_POINT_2F {
+                            x: lx + len * 0.55,
+                            y: ly - 1.2,
+                        },
+                        D2D_POINT_2F {
+                            x: lx + len,
+                            y: ly,
+                        },
+                    ],
+                    c,
+                    1.1,
                 );
             }
+            let _ = (&red_b, &white_b, stroke.as_ref());
         }
     }
 
