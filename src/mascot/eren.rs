@@ -7,7 +7,7 @@
 // Environment: asap abu di kanan, petir emas bercabang, gradien hijau-kuning bawah.
 use super::core::*;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_POINT_2F, D2D_RECT_F};
-use windows::Win32::Graphics::Direct2D::{ID2D1Factory, ID2D1HwndRenderTarget, D2D1_ELLIPSE};
+use windows::Win32::Graphics::Direct2D::{ID2D1Factory, ID2D1RenderTarget, D2D1_ELLIPSE};
 
 const SCALE: f32 = 0.78;
 
@@ -36,11 +36,11 @@ impl ErenAttackTitan {
         if titan <= 0.5 || t < 4.8 {
             return 0.0;
         }
-        let cycle = (t - 4.8) % 4.4;
-        if cycle < 0.7 {
-            smoothstep(0.0, 0.7, cycle) * 0.42
-        } else if cycle < 2.0 {
-            (1.0 - smoothstep(0.7, 2.0, cycle)) * 0.42
+        let cycle = (t - 4.8) % 3.8;
+        if cycle < 0.8 {
+            smoothstep(0.0, 0.8, cycle) * 0.9
+        } else if cycle < 2.2 {
+            (1.0 - smoothstep(0.8, 2.2, cycle)) * 0.9
         } else {
             0.0
         }
@@ -73,7 +73,7 @@ impl IdleCharacter for ErenAttackTitan {
 
     unsafe fn draw_aura(
         &self,
-        rt: &ID2D1HwndRenderTarget,
+        rt: &ID2D1RenderTarget,
         factory: &ID2D1Factory,
         pill_rect: D2D_RECT_F,
         alpha: f32,
@@ -132,7 +132,7 @@ impl IdleCharacter for ErenAttackTitan {
                         b: 0.86,
                         a: alpha,
                     },
-                    (0.26 - 0.06 * fk) * titan * alpha,
+                    (0.16 - 0.04 * fk) * titan * alpha,
                     t,
                     fk * 0.43,
                 );
@@ -211,7 +211,7 @@ impl IdleCharacter for ErenAttackTitan {
 
     unsafe fn draw_character(
         &self,
-        rt: &ID2D1HwndRenderTarget,
+        rt: &ID2D1RenderTarget,
         factory: &ID2D1Factory,
         cx: f32,
         cy: f32,
@@ -285,9 +285,9 @@ impl IdleCharacter for ErenAttackTitan {
         // ── 1. Tengkorak: bulat rapi (manusia) -> memanjang (founding titan) ─
         // Wajah: loop mulus. Manusia = rahang pendek; titan = tengkorak panjang
         // dengan dagu meruncing (Founding Titan), bukan kotak yang dipaksa mengecil.
-        let hf = 1.0 + 0.10 * titan;
-        let vt = -10.2 - 2.2 * titan;
-        let vb = 14.4 + 5.6 * titan;
+        let hf = 1.0 - 0.13 * titan;
+        let vt = -10.2 - 7.4 * titan;
+        let vb = 14.4 + 11.5 * titan;
         let span = vb - vt;
         let skin = lerp_color(col(0.80, 0.65, 0.55), col(0.26, 0.19, 0.15), titan);
         let skin_shade = lerp_color(col(0.55, 0.42, 0.36), col(0.12, 0.085, 0.07), titan);
@@ -307,6 +307,31 @@ impl IdleCharacter for ErenAttackTitan {
             (-10.2 * hf, vt + span * 0.13),
         ];
         draw_smooth_face(rt, factory, &local(&face), skin, skin_shade, alpha);
+
+        // Massa surai di belakang kepala (founding titan): dua tirai lebar
+        // yang turun melewati rahang sampai bahu, bukan dua helai tipis.
+        if titan > 0.10 {
+            for side in [-1.0_f32, 1.0_f32] {
+                let a = alpha * titan;
+                fill_polygon(
+                    rt,
+                    factory,
+                    &local(&[
+                        (side * 12.0, -9.5),
+                        (side * 19.5, -7.0),
+                        (side * 20.5 + sway * 0.6, 10.0),
+                        (side * 19.0 + sway * 0.9, 26.0),
+                        (side * 15.0 + sway * 1.2, 38.0),
+                        (side * 11.5, 26.0),
+                        (side * 10.5, 8.0),
+                    ]),
+                    D2D1_COLOR_F {
+                        a,
+                        ..hair_deep
+                    },
+                );
+            }
+        }
 
         // ── 2. Rambut ──────────────────────────────────────────────────────
         let spread = titan * 2.0;
@@ -339,17 +364,17 @@ impl IdleCharacter for ErenAttackTitan {
             for side in [-1.0_f32, 1.0_f32] {
                 for k in 0..4 {
                     let fk = k as f32;
-                    let x0 = side * (14.0 + fk * 2.8);
-                    let drop = 10.0 + fk * 5.0 + titan * 6.0;
+                    let x0 = side * (13.0 + fk * 2.4);
+                    let drop = 13.0 + fk * 7.0 + titan * 9.0;
                     fill_polygon(
                         rt,
                         factory,
                         &local(&[
                             (x0, -8.0 - fk * 1.2),
-                            (x0 + side * (6.0 + fk * 1.4), -1.0 + drop * 0.35 + sway * 0.6),
-                            (x0 + side * (2.4 + fk * 1.1), drop * 0.72 + sway * 0.9),
-                            (x0 + side * (0.6 + fk * 0.8), drop + sway),
-                            (x0 - side * 2.4, 1.0),
+                            (x0 + side * (7.5 + fk * 1.8), -1.0 + drop * 0.32 + sway * 0.6),
+                            (x0 + side * (3.4 + fk * 1.4), drop * 0.68 + sway * 0.9),
+                            (x0 + side * (1.0 + fk * 1.0), drop + sway),
+                            (x0 - side * 3.4, 1.0),
                         ]),
                         D2D1_COLOR_F {
                             a: alpha * titan,

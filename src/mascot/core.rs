@@ -1,11 +1,12 @@
 // src/mascot/core.rs
 // Trait karakter idle + primitif Direct2D bersama (mata kapsul, glow, petir, uap).
+use windows::Win32::Graphics::Direct2D::D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES;
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D1_BEZIER_SEGMENT, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED, D2D1_FIGURE_BEGIN_HOLLOW,
     D2D1_FIGURE_END_CLOSED, D2D1_FIGURE_END_OPEN, D2D1_GRADIENT_STOP, D2D_POINT_2F, D2D_RECT_F,
 };
 use windows::Win32::Graphics::Direct2D::{
-    ID2D1Factory, ID2D1HwndRenderTarget, ID2D1PathGeometry, ID2D1StrokeStyle,
+    ID2D1Factory, ID2D1RenderTarget, ID2D1PathGeometry, ID2D1StrokeStyle,
     D2D1_CAP_STYLE_ROUND, D2D1_ELLIPSE, D2D1_EXTEND_MODE_CLAMP,
     D2D1_GAMMA_2_2, D2D1_LINE_JOIN_ROUND,
     D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES, D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES,
@@ -44,7 +45,7 @@ pub trait IdleCharacter: Send + Sync {
 
     unsafe fn draw_aura(
         &self,
-        rt: &ID2D1HwndRenderTarget,
+        rt: &ID2D1RenderTarget,
         factory: &ID2D1Factory,
         pill_rect: D2D_RECT_F,
         alpha: f32,
@@ -53,7 +54,7 @@ pub trait IdleCharacter: Send + Sync {
 
     unsafe fn draw_character(
         &self,
-        rt: &ID2D1HwndRenderTarget,
+        rt: &ID2D1RenderTarget,
         factory: &ID2D1Factory,
         cx: f32,
         cy: f32,
@@ -95,7 +96,7 @@ pub unsafe fn create_round_stroke(factory: &ID2D1Factory) -> Option<ID2D1StrokeS
 
 /// Iluminasi radial lembut tanpa ring kasar.
 pub unsafe fn draw_soft_radial_glow(
-    rt: &ID2D1HwndRenderTarget,
+    rt: &ID2D1RenderTarget,
     center: D2D_POINT_2F,
     radius_x: f32,
     radius_y: f32,
@@ -166,7 +167,7 @@ pub unsafe fn draw_soft_radial_glow(
 
 /// Sepasang mata kapsul bercahaya + masker kelopak miring saat ekspresi serius.
 pub unsafe fn draw_capsule_eyes(
-    rt: &ID2D1HwndRenderTarget,
+    rt: &ID2D1RenderTarget,
     factory: &ID2D1Factory,
     face_cx: f32,
     eye_y: f32,
@@ -316,7 +317,7 @@ pub unsafe fn draw_capsule_eyes(
 
 /// Poligon tertutup sederhana dari irisan titik.
 pub unsafe fn fill_polygon(
-    rt: &ID2D1HwndRenderTarget,
+    rt: &ID2D1RenderTarget,
     factory: &ID2D1Factory,
     pts: &[D2D_POINT_2F],
     color: D2D1_COLOR_F,
@@ -340,7 +341,7 @@ pub unsafe fn fill_polygon(
 
 /// Kilatan petir dua lapis (outer glow + core terang).
 pub unsafe fn draw_lightning_bolt(
-    rt: &ID2D1HwndRenderTarget,
+    rt: &ID2D1RenderTarget,
     factory: &ID2D1Factory,
     pts: &[D2D_POINT_2F],
     glow_col: D2D1_COLOR_F,
@@ -369,7 +370,7 @@ pub unsafe fn draw_lightning_bolt(
 
 /// Garis polyline dengan ujung membulat (outline rambut, bilah pedang, retakan).
 pub unsafe fn draw_polyline(
-    rt: &ID2D1HwndRenderTarget,
+    rt: &ID2D1RenderTarget,
     factory: &ID2D1Factory,
     pts: &[D2D_POINT_2F],
     color: D2D1_COLOR_F,
@@ -396,7 +397,7 @@ pub unsafe fn draw_polyline(
 /// Berkas sinar melingkar dari sumber cahaya di belakang karakter.
 /// Dipakai untuk aura iluminasi latar (crimson di Asta, emas di Eren, dst).
 pub unsafe fn draw_back_rays(
-    rt: &ID2D1HwndRenderTarget,
+    rt: &ID2D1RenderTarget,
     factory: &ID2D1Factory,
     cx: f32,
     base_y: f32,
@@ -436,7 +437,7 @@ pub unsafe fn draw_back_rays(
 
 /// Partikel naik (bara api, debu anti-magic, uap) tersebar di area aura.
 pub unsafe fn draw_rising_particles(
-    rt: &ID2D1HwndRenderTarget,
+    rt: &ID2D1RenderTarget,
     cx: f32,
     base_y: f32,
     half_width: f32,
@@ -479,7 +480,7 @@ pub unsafe fn draw_rising_particles(
 
 /// Lingkaran lembut (partikel api, uap, telapak tangan).
 pub unsafe fn draw_soft_circle(
-    rt: &ID2D1HwndRenderTarget,
+    rt: &ID2D1RenderTarget,
     center: D2D_POINT_2F,
     rx: f32,
     ry: f32,
@@ -539,7 +540,7 @@ unsafe fn smooth_loop_geometry(
 
 /// Isi siluet mulus; mengembalikan geometry agar bisa di-stroke sebagai rim light.
 pub unsafe fn fill_smooth_shape(
-    rt: &ID2D1HwndRenderTarget,
+    rt: &ID2D1RenderTarget,
     factory: &ID2D1Factory,
     pts: &[D2D_POINT_2F],
     color: D2D1_COLOR_F,
@@ -555,7 +556,7 @@ pub unsafe fn fill_smooth_shape(
 
 /// Garis mulus terbuka lewat `pts` (highlight rambut, retakan, tali).
 pub unsafe fn stroke_smooth_curve(
-    rt: &ID2D1HwndRenderTarget,
+    rt: &ID2D1RenderTarget,
     factory: &ID2D1Factory,
     pts: &[D2D_POINT_2F],
     color: D2D1_COLOR_F,
@@ -599,7 +600,7 @@ pub unsafe fn stroke_smooth_curve(
 /// Satu helai rambut meruncing (pangkal lebar, ujung runcing, melengkung `bend`).
 /// `rim` tipis ditumpuk di atas fill supaya helai punya kilau tepi seperti Asta.
 pub unsafe fn hair_lock(
-    rt: &ID2D1HwndRenderTarget,
+    rt: &ID2D1RenderTarget,
     factory: &ID2D1Factory,
     base: D2D_POINT_2F,
     tip: D2D_POINT_2F,
@@ -676,7 +677,7 @@ pub unsafe fn hair_lock(
 /// Garis mulus dengan lapisan glow lembut (2 pass) — dipakai untuk efek asap,
 /// percikan, dan slash supaya terlihat seperti animasi anime, bukan partikel kaku.
 pub unsafe fn draw_soft_streak(
-    rt: &ID2D1HwndRenderTarget,
+    rt: &ID2D1RenderTarget,
     factory: &ID2D1Factory,
     pts: &[D2D_POINT_2F],
     color: D2D1_COLOR_F,
@@ -710,7 +711,7 @@ pub unsafe fn draw_soft_streak(
 
 /// Pita mulus yang mengecil ke ujung (ekor asap / speed line).
 pub unsafe fn draw_tapered_streak(
-    rt: &ID2D1HwndRenderTarget,
+    rt: &ID2D1RenderTarget,
     factory: &ID2D1Factory,
     start: D2D_POINT_2F,
     end: D2D_POINT_2F,
@@ -753,37 +754,65 @@ pub unsafe fn draw_tapered_streak(
     }
 }
 
-/// Gradien bawah halus (meniru `linear-gradient` di referensi): beberapa band
-/// lembut dengan alfa menurun, tanpa tepi keras.
+/// Gradien vertikal halus memakai linear gradient brush asli Direct2D
+/// (bukan tumpukan band, jadi tidak ada garis cincin).
 pub unsafe fn draw_bottom_gradient(
-    rt: &ID2D1HwndRenderTarget,
+    rt: &ID2D1RenderTarget,
     pill: D2D_RECT_F,
     color: D2D1_COLOR_F,
     height: f32,
     alpha: f32,
 ) {
-    let w = pill.right - pill.left;
-    let cx = (pill.left + pill.right) * 0.5;
-    let bands = 7;
-    for i in 0..bands {
-        let f = i as f32 / (bands - 1) as f32;
-        let y = pill.bottom - height * f * 0.9;
-        draw_soft_circle(
-            rt,
-            D2D_POINT_2F { x: cx, y },
-            w * (0.50 - 0.03 * f),
-            height * 0.20,
-            D2D1_COLOR_F {
-                a: alpha * (0.16 + 0.12 * (1.0 - f)),
+    let stops = [
+        D2D1_GRADIENT_STOP {
+            position: 0.0,
+            color: D2D1_COLOR_F { a: 0.0, ..color },
+        },
+        D2D1_GRADIENT_STOP {
+            position: 0.45,
+            color: D2D1_COLOR_F {
+                a: alpha * 0.34,
                 ..color
             },
-        );
+        },
+        D2D1_GRADIENT_STOP {
+            position: 1.0,
+            color: D2D1_COLOR_F {
+                a: alpha * 0.88,
+                ..color
+            },
+        },
+    ];
+    if let Ok(collection) = rt.CreateGradientStopCollection(&stops, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP) {
+        let brush = D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES {
+            startPoint: D2D_POINT_2F {
+                x: pill.left,
+                y: pill.bottom - height,
+            },
+            endPoint: D2D_POINT_2F {
+                x: pill.left,
+                y: pill.bottom + 28.0,
+            },
+        };
+        if let Ok(gb) = rt.CreateLinearGradientBrush(&brush, None, &collection) {
+            // Kanvas diperluas melewati tepi pill supaya gradien tidak berhenti
+            // dengan garis keras di dalam notch.
+            rt.FillRectangle(
+                &D2D_RECT_F {
+                    left: pill.left - 80.0,
+                    top: pill.top - 140.0,
+                    right: pill.right + 80.0,
+                    bottom: pill.bottom + 70.0,
+                },
+                &gb,
+            );
+        }
     }
 }
 
 /// Asap bergerak: gumpalan lembut tersusun di jalur melengkung, alfa halus.
 pub unsafe fn draw_smoke_wisp(
-    rt: &ID2D1HwndRenderTarget,
+    rt: &ID2D1RenderTarget,
     pill: D2D_RECT_F,
     origin_x: f32,
     rise: f32,
@@ -794,19 +823,20 @@ pub unsafe fn draw_smoke_wisp(
     seed: f32,
 ) {
     let ph = pill.bottom - pill.top;
-    for k in 0..7 {
+    for k in 0..6 {
         let fk = k as f32;
-        let life = ((fk / 7.0) + (t * 0.08 + seed).fract()).fract();
-        let a = (life * (1.0 - life) * 3.8).min(1.0) * alpha;
-        let bend = side * (6.0 + 5.0 * (t * 0.4 + seed * 3.0 + fk * 0.4).sin());
-        let x = origin_x + bend * life + side * life * 10.0;
-        let y = pill.bottom - 4.0 - life * ph * rise;
-        let size = 5.0 + life * 11.0;
+        let life = ((fk / 6.0) + (t * 0.08 + seed).fract()).fract();
+        let a = (life * (1.0 - life) * 3.2).min(1.0) * alpha;
+        let drift = (t * 0.45 + seed * 5.1 + fk * 1.7).sin();
+        let bend = side * (5.0 + 9.0 * drift);
+        let x = origin_x + bend * (0.4 + life) + side * life * 6.0;
+        let y = pill.bottom - 6.0 - life * ph * rise;
+        let size = 8.0 + life * 15.0 + (fk % 3.0) * 1.6;
         draw_soft_circle(
             rt,
             D2D_POINT_2F { x, y },
             size,
-            size * 0.72,
+            size * 0.78,
             D2D1_COLOR_F { a, ..color },
         );
     }
@@ -814,7 +844,7 @@ pub unsafe fn draw_smoke_wisp(
 
 /// Garis kecepatan selebar panel, panjang/alfa bervariasi (motion blur halus).
 pub unsafe fn draw_speed_lines(
-    rt: &ID2D1HwndRenderTarget,
+    rt: &ID2D1RenderTarget,
     factory: &ID2D1Factory,
     pill: D2D_RECT_F,
     color: D2D1_COLOR_F,
@@ -860,7 +890,7 @@ pub unsafe fn draw_speed_lines(
 
 /// Tiga cakar melengkung dengan ujung memudar.
 pub unsafe fn draw_claw_slashes(
-    rt: &ID2D1HwndRenderTarget,
+    rt: &ID2D1RenderTarget,
     factory: &ID2D1Factory,
     base: D2D_POINT_2F,
     color: D2D1_COLOR_F,
@@ -893,7 +923,7 @@ pub unsafe fn draw_claw_slashes(
 
 /// Petir bercabang bergaya anime: inti terang + glow lebar + 2 cabang.
 pub unsafe fn draw_anime_bolt(
-    rt: &ID2D1HwndRenderTarget,
+    rt: &ID2D1RenderTarget,
     factory: &ID2D1Factory,
     top: D2D_POINT_2F,
     bottom: D2D_POINT_2F,
@@ -908,19 +938,37 @@ pub unsafe fn draw_anime_bolt(
     let main = [
         top,
         D2D_POINT_2F {
-            x: mid_x + sway + 3.0,
-            y: top.y + span * 0.24,
+            x: top.x + (mid_x - top.x) * 0.30 + sway * 0.6,
+            y: top.y + span * 0.14,
         },
         D2D_POINT_2F {
-            x: mid_x - sway * 0.6,
-            y: top.y + span * 0.48,
+            x: mid_x + sway * 0.9,
+            y: top.y + span * 0.30,
         },
         D2D_POINT_2F {
-            x: mid_x + sway * 0.4 - 4.0,
-            y: top.y + span * 0.74,
+            x: mid_x - sway * 0.5,
+            y: top.y + span * 0.46,
+        },
+        D2D_POINT_2F {
+            x: mid_x + sway * 0.35,
+            y: top.y + span * 0.62,
+        },
+        D2D_POINT_2F {
+            x: top.x + (mid_x - top.x) * 1.7 + sway * 0.2,
+            y: top.y + span * 0.82,
         },
         bottom,
     ];
+    draw_soft_streak(
+        rt,
+        factory,
+        &main,
+        D2D1_COLOR_F {
+            a: alpha * 0.35,
+            ..color
+        },
+        3.2,
+    );
     draw_soft_streak(
         rt,
         factory,
@@ -971,7 +1019,7 @@ pub unsafe fn draw_anime_bolt(
 /// Bentuk muka organik: satu loop mulus (bukan rounded-rect yang dipaksa),
 /// plus bayangan pipi/rahang lembut supaya terbaca sebagai wajah.
 pub unsafe fn draw_smooth_face(
-    rt: &ID2D1HwndRenderTarget,
+    rt: &ID2D1RenderTarget,
     factory: &ID2D1Factory,
     pts: &[D2D_POINT_2F],
     skin: D2D1_COLOR_F,

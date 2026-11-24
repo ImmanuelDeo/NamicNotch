@@ -6,7 +6,7 @@
 use super::core::*;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_POINT_2F, D2D_RECT_F};
 use windows::Win32::Graphics::Direct2D::{
-    ID2D1Factory, ID2D1HwndRenderTarget, D2D1_ELLIPSE, D2D1_ROUNDED_RECT,
+    ID2D1Factory, ID2D1RenderTarget, D2D1_ELLIPSE, D2D1_ROUNDED_RECT,
 };
 
 const SCALE: f32 = 0.78;
@@ -56,7 +56,7 @@ impl IdleCharacter for OkarunTurbo {
 
     unsafe fn draw_aura(
         &self,
-        rt: &ID2D1HwndRenderTarget,
+        rt: &ID2D1RenderTarget,
         factory: &ID2D1Factory,
         pill_rect: D2D_RECT_F,
         alpha: f32,
@@ -248,7 +248,7 @@ impl IdleCharacter for OkarunTurbo {
 
     unsafe fn draw_character(
         &self,
-        rt: &ID2D1HwndRenderTarget,
+        rt: &ID2D1RenderTarget,
         factory: &ID2D1Factory,
         cx: f32,
         cy: f32,
