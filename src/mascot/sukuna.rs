@@ -1,10 +1,15 @@
 // src/mascot/sukuna.rs
 // Fase 2: Yuji Itadori -> Ryomen Sukuna.
-// Gaya dikunci ke Asta Devil Union: hanya siluet rambut + mata kapsul illuminated +
-// satu gestur di kanan + aura bawah lembut. Tanpa wajah, hidung, atau mulut.
+// Bahasa visual sama dengan Asta Devil Union: basis kepala gelap, rambut berlapis dengan
+// highlight chunk + outline, aksesoris kepala, kerah pakaian, mata illuminated, objek
+// ikonik di kanan.
 use super::core::*;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_POINT_2F, D2D_RECT_F};
-use windows::Win32::Graphics::Direct2D::{ID2D1Factory, ID2D1HwndRenderTarget, D2D1_ELLIPSE};
+use windows::Win32::Graphics::Direct2D::{
+    ID2D1Factory, ID2D1HwndRenderTarget, D2D1_ELLIPSE, D2D1_ROUNDED_RECT,
+};
+
+const SCALE: f32 = 0.78;
 
 pub struct YujiSukuna;
 
@@ -13,17 +18,15 @@ impl YujiSukuna {
         Self
     }
 
-    /// 0.0 = Yuji, 1.0 = Sukuna penuh (transisi 3.2s)
     fn sukuna_factor(t: f32) -> f32 {
-        smoothstep(3.2, 4.4, t)
+        smoothstep(3.0, 4.2, t)
     }
 
-    /// Gestur kanan: fist Divergent Fist (Yuji) -> hand sign Shrine (Sukuna)
     fn shrine_gesture(t: f32) -> f32 {
-        if t < 4.2 {
+        if t < 4.0 {
             0.0
-        } else if t < 5.4 {
-            smoothstep(4.2, 5.4, t)
+        } else if t < 5.2 {
+            smoothstep(4.0, 5.2, t)
         } else {
             1.0
         }
@@ -69,7 +72,6 @@ impl IdleCharacter for YujiSukuna {
         let cx = (pill_rect.left + pill_rect.right) * 0.5;
         let pulse = 0.88 + 0.12 * (ctx.phase_time * 4.0).sin();
 
-        // Cyan Divergent Fist (Yuji) memudar ke crimson-violet (Sukuna)
         draw_soft_radial_glow(
             rt,
             D2D_POINT_2F {
@@ -83,7 +85,6 @@ impl IdleCharacter for YujiSukuna {
             lerp(1.0, 0.34, s),
             (0.30 - 0.10 * s) * pulse * alpha,
         );
-
         if s > 0.05 {
             draw_soft_radial_glow(
                 rt,
@@ -100,7 +101,6 @@ impl IdleCharacter for YujiSukuna {
             );
         }
 
-        // Kilatan tebasan Dismantle/Cleave saat hand sign aktif
         if g > 0.4 {
             let wave = (ctx.phase_time * 13.0).sin();
             if wave > 0.35 {
@@ -115,26 +115,28 @@ impl IdleCharacter for YujiSukuna {
                     },
                     None,
                 ) {
-                    let ox = cx + 40.0;
-                    let oy = pill_rect.top + ph * 0.45;
-                    rt.DrawLine(
-                        D2D_POINT_2F {
-                            x: ox - 11.0,
-                            y: oy - 6.0,
-                        },
-                        D2D_POINT_2F {
-                            x: ox + 11.0,
-                            y: oy + 5.0,
-                        },
-                        &sb,
-                        1.3,
-                        stroke.as_ref(),
-                    );
+                    let ox = cx + 34.0;
+                    let oy = pill_rect.top + ph * 0.40;
+                    for k in 0..2 {
+                        let dx = k as f32 * 5.0;
+                        rt.DrawLine(
+                            D2D_POINT_2F {
+                                x: ox - 9.0 + dx,
+                                y: oy - 6.0,
+                            },
+                            D2D_POINT_2F {
+                                x: ox + 9.0 + dx,
+                                y: oy + 5.0,
+                            },
+                            &sb,
+                            1.2,
+                            stroke.as_ref(),
+                        );
+                    }
                 }
             }
         }
 
-        // Partikel ringan khas karakter
         draw_rising_particles(
             rt,
             cx,
@@ -162,191 +164,293 @@ impl IdleCharacter for YujiSukuna {
         alpha: f32,
         ctx: &MascotContext,
     ) {
-        let s = Self::sukuna_factor(ctx.local_time);
+        let sk = Self::sukuna_factor(ctx.local_time);
         let g = Self::shrine_gesture(ctx.local_time);
-        let face_cx = cx;
-        let eye_y = cy + 1.8;
-
-        let breath = (ctx.phase_time * 1.6).sin() * 0.3;
-        let hair_lift = s * 1.2 + breath * 0.2;
-
-        // 1. Siluet rambut pink salmon dengan spike
-        let pink = D2D1_COLOR_F {
-            r: 0.88,
-            g: 0.60,
-            b: 0.61,
-            a: alpha,
+        let s = SCALE;
+        let base_cx = cx;
+        let base_cy = cy + 2.0;
+        let local = |pts: &[(f32, f32)]| -> Vec<D2D_POINT_2F> {
+            pts.iter()
+                .map(|&(x, y)| D2D_POINT_2F {
+                    x: base_cx + x * s,
+                    y: base_cy + y * s,
+                })
+                .collect()
         };
-        let pink_dark = D2D1_COLOR_F {
-            r: 0.62,
-            g: 0.36,
-            b: 0.39,
-            a: alpha,
+        let at = |x: f32, y: f32| D2D_POINT_2F {
+            x: base_cx + x * s,
+            y: base_cy + y * s,
         };
+        let col = |r: f32, g: f32, b: f32| D2D1_COLOR_F { r, g, b, a: alpha };
+
+        let black = col(0.020, 0.020, 0.026);
+        let hair_pink = lerp_color(col(0.90, 0.58, 0.60), col(0.78, 0.42, 0.46), sk);
+        let hair_hi = lerp_color(col(0.99, 0.78, 0.78), col(0.93, 0.62, 0.65), sk);
+        let hair_deep = col(0.42, 0.20, 0.24);
+        let cyan = col(0.35, 0.93, 1.00);
+        let crimson = col(1.00, 0.14, 0.26);
+        let crimson_core = col(1.00, 0.72, 0.78);
+        let amber = col(0.94, 0.62, 0.24);
+        let amber_core = col(1.00, 0.91, 0.72);
+        let cloth_white = col(0.86, 0.84, 0.80);
+        let cloth_dark = col(0.075, 0.070, 0.090);
+
+        // ── 0. Kerah + bahu ────────────────────────────────────────────────
         fill_polygon(
             rt,
             factory,
-            &[
-                D2D_POINT_2F {
-                    x: face_cx - 17.0,
-                    y: cy - 3.0,
-                },
-                D2D_POINT_2F {
-                    x: face_cx - 15.0,
-                    y: cy - 11.5 - hair_lift,
-                },
-                D2D_POINT_2F {
-                    x: face_cx - 9.0,
-                    y: cy - 8.5 - hair_lift * 0.5,
-                },
-                D2D_POINT_2F {
-                    x: face_cx - 4.5,
-                    y: cy - 13.5 - hair_lift,
-                },
-                D2D_POINT_2F {
-                    x: face_cx,
-                    y: cy - 9.5 - hair_lift * 0.4,
-                },
-                D2D_POINT_2F {
-                    x: face_cx + 4.5,
-                    y: cy - 13.5 - hair_lift,
-                },
-                D2D_POINT_2F {
-                    x: face_cx + 9.0,
-                    y: cy - 8.5 - hair_lift * 0.5,
-                },
-                D2D_POINT_2F {
-                    x: face_cx + 15.0,
-                    y: cy - 11.5 - hair_lift,
-                },
-                D2D_POINT_2F {
-                    x: face_cx + 17.0,
-                    y: cy - 3.0,
-                },
-            ],
-            pink,
+            &local(&[
+                (-27.0, 13.0),
+                (-22.0, 4.5),
+                (-13.0, 7.0),
+                (0.0, 9.5),
+                (13.0, 7.0),
+                (22.0, 4.5),
+                (27.0, 13.0),
+                (0.0, 18.5),
+            ]),
+            cloth_dark,
         );
-        // Undercut gelap di pelipis
+        fill_polygon(
+            rt,
+            factory,
+            &local(&[
+                (-11.0, 6.6),
+                (0.0, 9.2),
+                (11.0, 6.6),
+                (9.0, 9.6),
+                (0.0, 12.2),
+                (-9.0, 9.6),
+            ]),
+            lerp_color(
+                D2D1_COLOR_F {
+                    r: 0.78,
+                    g: 0.10,
+                    b: 0.18,
+                    a: alpha * 0.55,
+                },
+                cloth_white,
+                sk,
+            ),
+        );
+        draw_polyline(
+            rt,
+            factory,
+            &local(&[
+                (-22.0, 4.6),
+                (-13.0, 7.1),
+                (0.0, 9.6),
+                (13.0, 7.1),
+                (22.0, 4.6),
+            ]),
+            if sk > 0.5 { cloth_white } else { crimson },
+            1.0,
+        );
+
+        // ── 1. Basis kepala ────────────────────────────────────────────────
+        if let Ok(b) = rt.CreateSolidColorBrush(&black, None) {
+            rt.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: D2D_RECT_F {
+                        left: base_cx - 20.5 * s,
+                        top: base_cy - 8.5 * s,
+                        right: base_cx + 20.5 * s,
+                        bottom: base_cy + 13.5 * s,
+                    },
+                    radiusX: 10.0 * s,
+                    radiusY: 10.0 * s,
+                },
+                &b,
+            );
+        }
+        let rim = lerp_color(cyan, crimson, sk);
+        draw_soft_radial_glow(
+            rt,
+            at(-19.0, 1.5),
+            9.0,
+            12.0,
+            rim.r,
+            rim.g,
+            rim.b,
+            0.16 * alpha,
+        );
+        draw_soft_radial_glow(
+            rt,
+            at(19.0, 1.5),
+            9.0,
+            12.0,
+            rim.r,
+            rim.g,
+            rim.b,
+            0.16 * alpha,
+        );
+
+        // ── 2. Rambut berlapis ─────────────────────────────────────────────
+        let hair_pts = [
+            (-23.0, -2.5),
+            (-27.5, -8.0),
+            (-21.0, -8.8),
+            (-26.0, -14.5),
+            (-17.5, -12.2),
+            (-19.5, -19.0),
+            (-11.0, -14.6),
+            (-11.0, -20.5),
+            (-4.5, -15.6),
+            (-2.0, -22.0),
+            (2.0, -17.6),
+            (6.0, -21.0),
+            (7.5, -15.4),
+            (14.0, -19.4),
+            (13.0, -13.6),
+            (20.5, -16.6),
+            (17.5, -10.6),
+            (25.5, -11.6),
+            (21.0, -6.4),
+            (26.0, -3.0),
+            (17.0, 0.2),
+            (8.0, -3.2),
+            (0.0, -0.4),
+            (-9.0, -3.4),
+            (-18.0, 0.0),
+        ];
+        fill_polygon(rt, factory, &local(&hair_pts), hair_pink);
+        for chunk in [
+            [(-22.0, -12.0), (-13.5, -9.6), (-18.5, -5.6)],
+            [(-12.0, -16.6), (-3.6, -12.4), (-8.6, -7.4)],
+            [(-1.0, -19.4), (3.2, -13.6), (-0.6, -8.8)],
+            [(8.6, -17.0), (6.4, -8.6), (0.8, -5.4)],
+            [(19.4, -14.0), (15.2, -7.0), (9.4, -5.2)],
+            [(-23.4, -6.6), (-17.0, -3.8), (-19.6, -1.8)],
+        ] {
+            fill_polygon(rt, factory, &local(&chunk), hair_hi);
+        }
         for side in [-1.0_f32, 1.0_f32] {
             fill_polygon(
                 rt,
                 factory,
-                &[
-                    D2D_POINT_2F {
-                        x: face_cx + side * 17.0,
-                        y: cy - 3.2,
-                    },
-                    D2D_POINT_2F {
-                        x: face_cx + side * 10.5,
-                        y: cy - 3.6,
-                    },
-                    D2D_POINT_2F {
-                        x: face_cx + side * 14.0,
-                        y: cy - 9.5 - hair_lift * 0.6,
-                    },
-                ],
-                pink_dark,
+                &local(&[
+                    (side * 24.6, -3.4),
+                    (side * 15.4, -2.6),
+                    (side * 19.4, -9.2),
+                ]),
+                hair_deep,
             );
         }
-
-        // 2. Aksesoris Sukuna: trisula dahi + garis pipi tipis
-        if s > 0.05 {
-            let ink = D2D1_COLOR_F {
-                r: 0.05,
-                g: 0.03,
-                b: 0.06,
-                a: alpha * s,
-            };
-            let ink_halo = D2D1_COLOR_F {
-                r: 0.72,
-                g: 0.08,
-                b: 0.18,
-                a: alpha * s * 0.35,
-            };
-            let mark = |pts: &[(f32, f32)], w: f32| {
-                let world: Vec<D2D_POINT_2F> = pts
-                    .iter()
-                    .map(|&(x, y)| D2D_POINT_2F {
-                        x: face_cx + x,
-                        y: cy + y,
-                    })
-                    .collect();
-                draw_polyline(rt, factory, &world, ink_halo, w + 1.4);
-                draw_polyline(rt, factory, &world, ink, w);
-            };
-            mark(&[(0.0, -11.5), (0.0, -5.2)], 1.1);
-            mark(&[(-3.4, -11.0), (-1.2, -6.6)], 0.9);
-            mark(&[(3.4, -11.0), (1.2, -6.6)], 0.9);
-            mark(&[(-14.0, 0.4), (-12.2, 3.8)], 0.8);
-            mark(&[(14.0, 0.4), (12.2, 3.8)], 0.8);
-        }
-
-        // 3. Mata utama: amber hangat -> crimson menyala
-        let outer = lerp_color(
-            D2D1_COLOR_F {
-                r: 0.91,
-                g: 0.60,
-                b: 0.24,
-                a: 1.0,
-            },
-            D2D1_COLOR_F {
-                r: 1.0,
-                g: 0.14,
-                b: 0.26,
-                a: 1.0,
-            },
-            s,
-        );
-        let core = lerp_color(
-            D2D1_COLOR_F {
-                r: 1.0,
-                g: 0.91,
-                b: 0.71,
-                a: 1.0,
-            },
-            D2D1_COLOR_F {
-                r: 1.0,
-                g: 0.72,
-                b: 0.78,
-                a: 1.0,
-            },
-            s,
-        );
-        draw_capsule_eyes(
+        draw_polyline(
             rt,
             factory,
-            face_cx,
-            eye_y,
-            9.0,
-            outer,
-            core,
-            (1.0, lerp(0.62, 0.14, s), lerp(0.26, 0.28, s)),
-            0.78 * s,
-            alpha,
-            ctx,
+            &local(&[
+                (-23.0, -2.5),
+                (-27.5, -8.0),
+                (-21.0, -8.8),
+                (-26.0, -14.5),
+                (-17.5, -12.2),
+                (-19.5, -19.0),
+                (-11.0, -14.6),
+                (-11.0, -20.5),
+                (-4.5, -15.6),
+                (-2.0, -22.0),
+                (2.0, -17.6),
+                (6.0, -21.0),
+                (7.5, -15.4),
+                (14.0, -19.4),
+                (13.0, -13.6),
+                (20.5, -16.6),
+                (17.5, -10.6),
+                (25.5, -11.6),
+                (21.0, -6.4),
+                (26.0, -3.0),
+            ]),
+            D2D1_COLOR_F {
+                a: 0.55 * alpha,
+                ..hair_hi
+            },
+            0.9,
         );
 
-        // 4. Sepasang mata kecil Sukuna di bawah mata utama
-        let second = smoothstep(0.55, 1.0, s);
-        if second > 0.04 {
-            let a = alpha * second * ctx.open_factor();
+        // ── 3. Tato Sukuna ─────────────────────────────────────────────────
+        if sk > 0.04 {
+            let ink = D2D1_COLOR_F {
+                a: alpha * sk,
+                ..black
+            };
+            let ink_glow = D2D1_COLOR_F {
+                r: 0.85,
+                g: 0.10,
+                b: 0.20,
+                a: 0.30 * alpha * sk,
+            };
+            let mark = |pts: &[(f32, f32)], w: f32| {
+                draw_polyline(rt, factory, &local(pts), ink_glow, w + 1.6);
+                draw_polyline(rt, factory, &local(pts), ink, w);
+            };
+            mark(&[(0.0, -12.6), (0.0, -5.4)], 1.3);
+            mark(&[(-4.6, -12.2), (-1.5, -6.4)], 1.0);
+            mark(&[(4.6, -12.2), (1.5, -6.4)], 1.0);
+            mark(&[(-16.0, 2.6), (-13.4, 6.6)], 0.9);
+            mark(&[(16.0, 2.6), (13.4, 6.6)], 0.9);
+            mark(&[(-9.6, 8.6), (-6.4, 10.4)], 0.8);
+            mark(&[(9.6, 8.6), (6.4, 10.4)], 0.8);
+        }
+
+        // ── 4. Mata ────────────────────────────────────────────────────────
+        let eye_y = base_cy + 5.0 * s;
+        let (outer, core_c, glow) = if sk < 0.5 {
+            (amber, amber_core, (0.94, 0.62, 0.24))
+        } else {
+            (crimson, crimson_core, (1.0, 0.14, 0.26))
+        };
+        draw_capsule_eyes(
+            rt, factory, base_cx, eye_y, 9.0, outer, core_c, glow, 0.78 * sk, alpha, ctx,
+        );
+
+        if sk > 0.35 {
+            let a = alpha * smoothstep(0.35, 0.9, sk) * ctx.open_factor();
+            if let Ok(b) = rt.CreateSolidColorBrush(
+                &D2D1_COLOR_F {
+                    r: 0.02,
+                    g: 0.01,
+                    b: 0.03,
+                    a,
+                },
+                None,
+            ) {
+                for side in [-1.0_f32, 1.0_f32] {
+                    let ex = base_cx + side * 9.0 + ctx.look_x * 0.65;
+                    rt.FillRoundedRectangle(
+                        &D2D1_ROUNDED_RECT {
+                            rect: D2D_RECT_F {
+                                left: ex - 0.85,
+                                top: eye_y - 2.6,
+                                right: ex + 0.85,
+                                bottom: eye_y + 2.6,
+                            },
+                            radiusX: 0.85,
+                            radiusY: 1.2,
+                        },
+                        &b,
+                    );
+                }
+            }
             if let Ok(b) = rt.CreateSolidColorBrush(
                 &D2D1_COLOR_F {
                     r: 1.0,
-                    g: 0.18,
+                    g: 0.20,
                     b: 0.30,
                     a,
                 },
                 None,
             ) {
                 for side in [-1.0_f32, 1.0_f32] {
-                    let sx = face_cx + side * 10.2 + ctx.look_x * 0.4;
-                    let sy = eye_y + 5.6 + ctx.look_y * 0.3;
+                    let ex = base_cx + side * 10.6 + ctx.look_x * 0.5;
                     rt.FillEllipse(
                         &D2D1_ELLIPSE {
-                            point: D2D_POINT_2F { x: sx, y: sy },
-                            radiusX: 2.3,
-                            radiusY: 1.0,
+                            point: D2D_POINT_2F {
+                                x: ex,
+                                y: eye_y + 7.4,
+                            },
+                            radiusX: 2.6,
+                            radiusY: 1.1,
                         },
                         &b,
                     );
@@ -354,90 +458,115 @@ impl IdleCharacter for YujiSukuna {
             }
         }
 
-        // 5. Gestur kanan: fist cyan (Yuji) -> hand sign Shrine (Sukuna)
-        let gx = cx + 37.0;
-        let gy = cy + 2.2;
+        // ── 5. Gestur kanan ────────────────────────────────────────────────
+        let float_y = (ctx.phase_time * 2.4).sin() * 1.2 * (1.0 - g);
+        let sx = base_cx + 34.0 * s;
+        let sy = base_cy + 3.4 * s + float_y;
 
         if g < 0.5 {
-            // Divergent Fist: kepalan kecil berbalut api kutukan cyan
-            let ca = 1.0 - g * 2.0;
-            let cy_glow = 0.45 + 0.35 * (ctx.phase_time * 6.0).sin().abs();
+            let ca = (1.0 - g * 2.0) * alpha;
+            let pulse = 0.55 + 0.35 * (ctx.phase_time * 6.0).sin().abs();
             draw_soft_radial_glow(
                 rt,
-                D2D_POINT_2F { x: gx, y: gy },
-                12.0,
-                10.0,
-                0.0,
-                0.83,
+                D2D_POINT_2F { x: sx, y: sy },
+                13.0,
+                11.0,
+                0.20,
+                0.90,
                 1.0,
-                cy_glow * ca * alpha,
+                pulse * ca,
             );
-            if let Ok(fist) = rt.CreateSolidColorBrush(
-                &D2D1_COLOR_F {
+            fill_polygon(
+                rt,
+                factory,
+                &[
+                    D2D_POINT_2F {
+                        x: sx - 5.2 * s,
+                        y: sy + 5.4 * s,
+                    },
+                    D2D_POINT_2F {
+                        x: sx - 4.4 * s,
+                        y: sy - 4.0 * s,
+                    },
+                    D2D_POINT_2F {
+                        x: sx + 1.2 * s,
+                        y: sy - 5.6 * s,
+                    },
+                    D2D_POINT_2F {
+                        x: sx + 5.4 * s,
+                        y: sy - 0.6 * s,
+                    },
+                    D2D_POINT_2F {
+                        x: sx + 3.6 * s,
+                        y: sy + 5.2 * s,
+                    },
+                ],
+                D2D1_COLOR_F {
                     r: 0.10,
                     g: 0.09,
                     b: 0.12,
-                    a: alpha * ca,
+                    a: ca,
                 },
-                None,
-            ) {
-                rt.FillRoundedRectangle(
-                    &windows::Win32::Graphics::Direct2D::D2D1_ROUNDED_RECT {
-                        rect: D2D_RECT_F {
-                            left: gx - 4.6,
-                            top: gy - 4.4,
-                            right: gx + 4.6,
-                            bottom: gy + 4.4,
-                        },
-                        radiusX: 3.2,
-                        radiusY: 3.2,
-                    },
-                    &fist,
-                );
-            }
+            );
             draw_polyline(
                 rt,
                 factory,
                 &[
                     D2D_POINT_2F {
-                        x: gx - 3.4,
-                        y: gy - 5.2,
+                        x: sx - 3.6 * s,
+                        y: sy - 4.6 * s,
                     },
                     D2D_POINT_2F {
-                        x: gx - 1.2,
-                        y: gy - 9.4,
+                        x: sx - 1.4 * s,
+                        y: sy - 10.0 * s,
                     },
                     D2D_POINT_2F {
-                        x: gx + 1.6,
-                        y: gy - 5.0,
+                        x: sx + 1.8 * s,
+                        y: sy - 4.4 * s,
+                    },
+                    D2D_POINT_2F {
+                        x: sx + 4.4 * s,
+                        y: sy - 8.6 * s,
                     },
                 ],
                 D2D1_COLOR_F {
-                    r: 0.35,
-                    g: 0.93,
+                    r: 0.42,
+                    g: 0.95,
                     b: 1.0,
-                    a: ca * alpha,
+                    a: ca,
                 },
-                1.2,
+                1.3,
             );
+            for k in 0..3 {
+                let fk = k as f32;
+                let ph = (ctx.phase_time * 3.4 + fk * 0.6) % 1.0;
+                draw_soft_circle(
+                    rt,
+                    D2D_POINT_2F {
+                        x: sx + (fk - 1.0) * 5.0 + ph * 2.0,
+                        y: sy - 8.0 - ph * 7.0,
+                    },
+                    1.4 * (1.0 - ph),
+                    1.4 * (1.0 - ph),
+                    D2D1_COLOR_F {
+                        r: 0.5,
+                        g: 0.95,
+                        b: 1.0,
+                        a: (1.0 - ph) * ca * 0.8,
+                    },
+                );
+            }
         } else {
-            // Hand sign Malevolent Shrine: dua telapak menyatu
-            let gg = (g - 0.5) * 2.0;
-            let skin = D2D1_COLOR_F {
-                r: 0.92,
-                g: 0.79,
-                b: 0.71,
-                a: alpha * gg,
-            };
+            let gg = ((g - 0.5) * 2.0) * alpha;
             draw_soft_radial_glow(
                 rt,
-                D2D_POINT_2F { x: gx, y: gy },
-                13.0,
-                11.0,
-                0.80,
+                D2D_POINT_2F { x: sx, y: sy },
+                14.0,
+                12.0,
+                0.85,
                 0.10,
                 0.22,
-                0.34 * gg * alpha,
+                0.35 * gg,
             );
             for side in [-1.0_f32, 1.0_f32] {
                 fill_polygon(
@@ -445,27 +574,78 @@ impl IdleCharacter for YujiSukuna {
                     factory,
                     &[
                         D2D_POINT_2F {
-                            x: gx + side * 0.8,
-                            y: gy - 8.0,
+                            x: sx + side * 1.0 * s,
+                            y: sy - 9.0 * s,
                         },
                         D2D_POINT_2F {
-                            x: gx + side * 3.6,
-                            y: gy - 1.2,
+                            x: sx + side * 4.2 * s,
+                            y: sy - 1.6 * s,
                         },
                         D2D_POINT_2F {
-                            x: gx + side * 6.8,
-                            y: gy + 5.0,
+                            x: sx + side * 7.4 * s,
+                            y: sy + 5.4 * s,
                         },
                         D2D_POINT_2F {
-                            x: gx + side * 3.8,
-                            y: gy + 6.4,
+                            x: sx + side * 4.0 * s,
+                            y: sy + 7.0 * s,
                         },
                         D2D_POINT_2F {
-                            x: gx + side * 1.2,
-                            y: gy + 0.8,
+                            x: sx + side * 1.4 * s,
+                            y: sy + 0.8 * s,
                         },
                     ],
-                    skin,
+                    D2D1_COLOR_F {
+                        r: 0.86,
+                        g: 0.72,
+                        b: 0.66,
+                        a: gg,
+                    },
+                );
+                draw_polyline(
+                    rt,
+                    factory,
+                    &[
+                        D2D_POINT_2F {
+                            x: sx + side * 1.0 * s,
+                            y: sy - 9.0 * s,
+                        },
+                        D2D_POINT_2F {
+                            x: sx + side * 4.2 * s,
+                            y: sy - 1.6 * s,
+                        },
+                        D2D_POINT_2F {
+                            x: sx + side * 7.4 * s,
+                            y: sy + 5.4 * s,
+                        },
+                    ],
+                    D2D1_COLOR_F {
+                        r: 1.0,
+                        g: 0.30,
+                        b: 0.38,
+                        a: 0.55 * gg,
+                    },
+                    0.9,
+                );
+            }
+            let stroke = create_round_stroke(factory);
+            if let Ok(rb) = rt.CreateSolidColorBrush(
+                &D2D1_COLOR_F {
+                    r: 1.0,
+                    g: 0.18,
+                    b: 0.30,
+                    a: 0.42 * gg,
+                },
+                None,
+            ) {
+                rt.DrawEllipse(
+                    &D2D1_ELLIPSE {
+                        point: D2D_POINT_2F { x: sx, y: sy },
+                        radiusX: 12.0 * s,
+                        radiusY: 12.0 * s,
+                    },
+                    &rb,
+                    0.9,
+                    stroke.as_ref(),
                 );
             }
         }
