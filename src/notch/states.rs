@@ -1185,7 +1185,10 @@ impl NotchController {
         };
         unsafe {
             if let Ok(state) = windows::Win32::UI::Shell::SHQueryUserNotificationState() {
-                if state.0 >= 3 {
+                // Hanya D3D exclusive (3) dan presentation mode (4) yang benar-benar
+                // menutup layar. QUNS 5 (desktop normal), 6 (quiet time) dan 7 (app)
+                // bukan fullscreen; nilai itu dulu membuat notch menyembunyikan diri.
+                if matches!(state.0 as i32, 3 | 4) {
                     return true;
                 }
             }

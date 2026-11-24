@@ -355,6 +355,7 @@ impl NotchApp {
         // hints and pixels from exclusive-fullscreen rendering). Reappear the
         // moment the desktop is back.
         if self.controller.fullscreen_active && !self.fs_hidden {
+            crate::utils::boot_log("fullscreen detected -> hide notch");
             self.fs_hidden = true;
             self.controller.is_hovered = false;
             self.controller.note_input_active = false;
@@ -364,6 +365,7 @@ impl NotchApp {
                 let _ = ShowWindow(self.hwnd, SW_HIDE);
             }
         } else if !self.controller.fullscreen_active && self.fs_hidden {
+            crate::utils::boot_log("fullscreen cleared -> show notch");
             self.fs_hidden = false;
             self.controller.is_hovered = false;
             self.controller.transition_to(NotchState::Pet);

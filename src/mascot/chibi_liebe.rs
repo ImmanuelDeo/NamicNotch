@@ -6,6 +6,8 @@ use windows::Win32::Graphics::Direct2D::{
     ID2D1Factory, ID2D1HwndRenderTarget, D2D1_ELLIPSE, D2D1_ROUNDED_RECT,
 };
 
+use super::core::{fill_smooth_shape, hair_lock, stroke_smooth_curve};
+
 use crate::notch::states::NotchState;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -235,50 +237,103 @@ impl ChibiLiebe {
             };
             rt.FillEllipse(&head_ellipse, &skin_brush);
 
-            // 4. Rambut Runcing Ash-Silver Khas Liebe
-            if let Ok(hair_geom) = factory.CreatePathGeometry() {
-                if let Ok(sink) = hair_geom.Open() {
-                    sink.BeginFigure(
-                        D2D_POINT_2F { x: cx - 9.5, y: cy - 3.0 },
-                        D2D1_FIGURE_BEGIN_FILLED,
-                    );
-                    sink.AddLines(&[
-                        D2D_POINT_2F { x: cx - 11.5, y: cy - 7.5 },
-                        D2D_POINT_2F { x: cx - 6.5, y: cy - 8.5 },
-                        D2D_POINT_2F { x: cx - 4.0, y: cy - 12.0 },
-                        D2D_POINT_2F { x: cx, y: cy - 9.5 },
-                        D2D_POINT_2F { x: cx + 4.0, y: cy - 12.0 },
-                        D2D_POINT_2F { x: cx + 6.5, y: cy - 8.5 },
-                        D2D_POINT_2F { x: cx + 11.5, y: cy - 7.5 },
-                        D2D_POINT_2F { x: cx + 9.5, y: cy - 3.0 },
-                        D2D_POINT_2F { x: cx + 4.5, y: cy - 5.5 },
-                        D2D_POINT_2F { x: cx, y: cy - 3.5 },
-                        D2D_POINT_2F { x: cx - 4.5, y: cy - 5.5 },
-                    ]);
-                    sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-                    let _ = sink.Close();
-                    rt.FillGeometry(&hair_geom, &hair_brush, None);
-                }
+            // 4. Rambut ash-silver: massa mulus + helai meruncing melengkung.
+            let _ = fill_smooth_shape(
+                rt,
+                factory,
+                &[
+                    D2D_POINT_2F { x: cx - 9.4, y: cy - 3.2 },
+                    D2D_POINT_2F { x: cx - 10.6, y: cy - 7.4 },
+                    D2D_POINT_2F { x: cx - 6.4, y: cy - 9.4 },
+                    D2D_POINT_2F { x: cx - 0.6, y: cy - 10.2 },
+                    D2D_POINT_2F { x: cx + 6.0, y: cy - 9.6 },
+                    D2D_POINT_2F { x: cx + 10.4, y: cy - 7.0 },
+                    D2D_POINT_2F { x: cx + 9.4, y: cy - 3.0 },
+                    D2D_POINT_2F { x: cx + 4.6, y: cy - 5.4 },
+                    D2D_POINT_2F { x: cx - 0.4, y: cy - 4.2 },
+                    D2D_POINT_2F { x: cx - 5.0, y: cy - 5.6 },
+                ],
+                ash_silver_hair,
+            );
+            // Helai: (base, tip, bend, width)
+            for &(bx, by, tx, ty, bend, w) in &[
+                (-8.6, -6.0, -12.8, -10.4, 1.1, 3.4),
+                (-5.0, -8.6, -6.2, -13.6, -0.9, 3.2),
+                (-0.4, -9.2, 1.4, -14.2, 1.0, 3.2),
+                (5.0, -8.4, 7.6, -13.0, -1.0, 3.2),
+                (9.0, -5.8, 13.0, -9.0, 1.0, 3.2),
+            ] {
+                hair_lock(
+                    rt,
+                    factory,
+                    D2D_POINT_2F { x: cx + bx, y: cy + by },
+                    D2D_POINT_2F { x: cx + tx, y: cy + ty },
+                    bend,
+                    w,
+                    ash_silver_hair,
+                    slate_outline,
+                );
             }
+            stroke_smooth_curve(
+                rt,
+                factory,
+                &[
+                    D2D_POINT_2F { x: cx - 7.6, y: cy - 7.0 },
+                    D2D_POINT_2F { x: cx - 1.2, y: cy - 9.2 },
+                    D2D_POINT_2F { x: cx + 5.6, y: cy - 8.0 },
+                ],
+                D2D1_COLOR_F {
+                    r: 0.86,
+                    g: 0.90,
+                    b: 0.98,
+                    a: alpha * 0.7,
+                },
+                0.8,
+            );
 
-            // 5. Sepasang Tanduk Melengkung di Kepala
+            // 5. Tanduk melengkung (meruncing, bukan segitiga kaku)
             for side in [-1.0_f32, 1.0_f32] {
-                if let Ok(horn_geom) = factory.CreatePathGeometry() {
-                    if let Ok(sink) = horn_geom.Open() {
-                        sink.BeginFigure(
-                            D2D_POINT_2F { x: cx + side * 4.5, y: cy - 8.5 },
-                            D2D1_FIGURE_BEGIN_FILLED,
-                        );
-                        sink.AddLines(&[
-                            D2D_POINT_2F { x: cx + side * 9.5, y: cy - 15.5 },
-                            D2D_POINT_2F { x: cx + side * 7.5, y: cy - 8.0 },
-                        ]);
-                        sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-                        let _ = sink.Close();
-                        rt.FillGeometry(&horn_geom, &horn_brush, None);
-                        rt.DrawGeometry(&horn_geom, &outline_brush, 0.8, None);
-                    }
-                }
+                hair_lock(
+                    rt,
+                    factory,
+                    D2D_POINT_2F {
+                        x: cx + side * 4.4,
+                        y: cy - 8.2,
+                    },
+                    D2D_POINT_2F {
+                        x: cx + side * 9.2,
+                        y: cy - 15.4,
+                    },
+                    side * 2.2,
+                    3.6,
+                    horn_dark,
+                    slate_outline,
+                );
+                stroke_smooth_curve(
+                    rt,
+                    factory,
+                    &[
+                        D2D_POINT_2F {
+                            x: cx + side * 5.0,
+                            y: cy - 9.0,
+                        },
+                        D2D_POINT_2F {
+                            x: cx + side * 6.8,
+                            y: cy - 11.6,
+                        },
+                        D2D_POINT_2F {
+                            x: cx + side * 8.2,
+                            y: cy - 14.2,
+                        },
+                    ],
+                    D2D1_COLOR_F {
+                        r: 0.52,
+                        g: 0.30,
+                        b: 0.34,
+                        a: alpha * 0.6,
+                    },
+                    0.7,
+                );
             }
 
             // 6. Mata Deadpan/Smug & Garis Pipi Khas Liebe

@@ -1,12 +1,13 @@
 // src/mascot/core.rs
 // Trait karakter idle + primitif Direct2D bersama (mata kapsul, glow, petir, uap).
 use windows::Win32::Graphics::Direct2D::Common::{
-    D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED, D2D1_FIGURE_BEGIN_HOLLOW, D2D1_FIGURE_END_CLOSED,
-    D2D1_FIGURE_END_OPEN, D2D1_GRADIENT_STOP, D2D_POINT_2F, D2D_RECT_F,
+    D2D1_BEZIER_SEGMENT, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED, D2D1_FIGURE_BEGIN_HOLLOW,
+    D2D1_FIGURE_END_CLOSED, D2D1_FIGURE_END_OPEN, D2D1_GRADIENT_STOP, D2D_POINT_2F, D2D_RECT_F,
 };
 use windows::Win32::Graphics::Direct2D::{
-    ID2D1Factory, ID2D1HwndRenderTarget, ID2D1StrokeStyle, D2D1_CAP_STYLE_ROUND, D2D1_ELLIPSE,
-    D2D1_EXTEND_MODE_CLAMP, D2D1_GAMMA_2_2, D2D1_LINE_JOIN_ROUND,
+    ID2D1Factory, ID2D1HwndRenderTarget, ID2D1PathGeometry, ID2D1StrokeStyle,
+    D2D1_CAP_STYLE_ROUND, D2D1_ELLIPSE, D2D1_EXTEND_MODE_CLAMP,
+    D2D1_GAMMA_2_2, D2D1_LINE_JOIN_ROUND,
     D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES, D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES,
 };
 
@@ -496,5 +497,178 @@ pub unsafe fn draw_soft_circle(
             },
             &b,
         );
+    }
+}
+
+// ── Primitif kurva halus (gaya rambut anime, bukan poligon kaku) ────────────
+
+/// Loop tertutup mulus lewat `pts` (Catmull-Rom → cubic bezier).
+unsafe fn smooth_loop_geometry(
+    factory: &ID2D1Factory,
+    pts: &[D2D_POINT_2F],
+) -> Option<ID2D1PathGeometry> {
+    if pts.len() < 3 {
+        return None;
+    }
+    let path = factory.CreatePathGeometry().ok()?;
+    let sink = path.Open().ok()?;
+    let n = pts.len();
+    sink.BeginFigure(pts[0], D2D1_FIGURE_BEGIN_FILLED);
+    for i in 0..n {
+        let p0 = pts[(i + n - 1) % n];
+        let p1 = pts[i];
+        let p2 = pts[(i + 1) % n];
+        let p3 = pts[(i + 2) % n];
+        let seg = D2D1_BEZIER_SEGMENT {
+            point1: D2D_POINT_2F {
+                x: p1.x + (p2.x - p0.x) / 6.0,
+                y: p1.y + (p2.y - p0.y) / 6.0,
+            },
+            point2: D2D_POINT_2F {
+                x: p2.x - (p3.x - p1.x) / 6.0,
+                y: p2.y - (p3.y - p1.y) / 6.0,
+            },
+            point3: p2,
+        };
+        let _ = sink.AddBezier(&seg);
+    }
+    sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+    let _ = sink.Close();
+    Some(path)
+}
+
+/// Isi siluet mulus; mengembalikan geometry agar bisa di-stroke sebagai rim light.
+pub unsafe fn fill_smooth_shape(
+    rt: &ID2D1HwndRenderTarget,
+    factory: &ID2D1Factory,
+    pts: &[D2D_POINT_2F],
+    color: D2D1_COLOR_F,
+) -> Option<ID2D1PathGeometry> {
+    let path = smooth_loop_geometry(factory, pts)?;
+    if color.a > 0.004 {
+        if let Ok(brush) = rt.CreateSolidColorBrush(&color, None) {
+            rt.FillGeometry(&path, &brush, None);
+        }
+    }
+    Some(path)
+}
+
+/// Garis mulus terbuka lewat `pts` (highlight rambut, retakan, tali).
+pub unsafe fn stroke_smooth_curve(
+    rt: &ID2D1HwndRenderTarget,
+    factory: &ID2D1Factory,
+    pts: &[D2D_POINT_2F],
+    color: D2D1_COLOR_F,
+    width: f32,
+) {
+    if pts.len() < 2 || color.a <= 0.004 {
+        return;
+    }
+    let Ok(path) = factory.CreatePathGeometry() else {
+        return;
+    };
+    let Ok(sink) = path.Open() else { return };
+    let n = pts.len();
+    sink.BeginFigure(pts[0], D2D1_FIGURE_BEGIN_HOLLOW);
+    for i in 0..n - 1 {
+        let p0 = pts[i.saturating_sub(1)];
+        let p1 = pts[i];
+        let p2 = pts[i + 1];
+        let p3 = pts[(i + 2).min(n - 1)];
+        let seg = D2D1_BEZIER_SEGMENT {
+            point1: D2D_POINT_2F {
+                x: p1.x + (p2.x - p0.x) / 6.0,
+                y: p1.y + (p2.y - p0.y) / 6.0,
+            },
+            point2: D2D_POINT_2F {
+                x: p2.x - (p3.x - p1.x) / 6.0,
+                y: p2.y - (p3.y - p1.y) / 6.0,
+            },
+            point3: p2,
+        };
+        let _ = sink.AddBezier(&seg);
+    }
+    sink.EndFigure(D2D1_FIGURE_END_OPEN);
+    let _ = sink.Close();
+    if let Ok(brush) = rt.CreateSolidColorBrush(&color, None) {
+        let stroke = create_round_stroke(factory);
+        rt.DrawGeometry(&path, &brush, width, stroke.as_ref());
+    }
+}
+
+/// Satu helai rambut meruncing (pangkal lebar, ujung runcing, melengkung `bend`).
+/// `rim` tipis ditumpuk di atas fill supaya helai punya kilau tepi seperti Asta.
+pub unsafe fn hair_lock(
+    rt: &ID2D1HwndRenderTarget,
+    factory: &ID2D1Factory,
+    base: D2D_POINT_2F,
+    tip: D2D_POINT_2F,
+    bend: f32,
+    width: f32,
+    color: D2D1_COLOR_F,
+    rim: D2D1_COLOR_F,
+) {
+    let dx = tip.x - base.x;
+    let dy = tip.y - base.y;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < 0.4 {
+        return;
+    }
+    let (ux, uy) = (dx / len, dy / len);
+    let (nx, ny) = (-uy, ux);
+    let half = width * 0.5;
+
+    let l = D2D_POINT_2F {
+        x: base.x + nx * half,
+        y: base.y + ny * half,
+    };
+    let r = D2D_POINT_2F {
+        x: base.x - nx * half,
+        y: base.y - ny * half,
+    };
+    // Titik kontrol mengecil di 2/3 jalur → helai melengkung, ujung tajam.
+    let mid_l = D2D_POINT_2F {
+        x: lerp(l.x, tip.x, 0.45) + nx * bend * 0.55,
+        y: lerp(l.y, tip.y, 0.45) + ny * bend * 0.55,
+    };
+    let mid_r = D2D_POINT_2F {
+        x: lerp(r.x, tip.x, 0.45) + nx * bend * 0.55,
+        y: lerp(r.y, tip.y, 0.45) + ny * bend * 0.55,
+    };
+
+    let Ok(path) = factory.CreatePathGeometry() else {
+        return;
+    };
+    let Ok(sink) = path.Open() else { return };
+    sink.BeginFigure(l, D2D1_FIGURE_BEGIN_FILLED);
+    let _ = sink.AddBezier(&D2D1_BEZIER_SEGMENT {
+        point1: mid_l,
+        point2: D2D_POINT_2F {
+            x: lerp(l.x, tip.x, 0.88),
+            y: lerp(l.y, tip.y, 0.88),
+        },
+        point3: tip,
+    });
+    let _ = sink.AddBezier(&D2D1_BEZIER_SEGMENT {
+        point1: D2D_POINT_2F {
+            x: lerp(r.x, tip.x, 0.88),
+            y: lerp(r.y, tip.y, 0.88),
+        },
+        point2: mid_r,
+        point3: r,
+    });
+    sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+    let _ = sink.Close();
+
+    if color.a > 0.004 {
+        if let Ok(brush) = rt.CreateSolidColorBrush(&color, None) {
+            rt.FillGeometry(&path, &brush, None);
+        }
+    }
+    if rim.a > 0.004 {
+        if let Ok(brush) = rt.CreateSolidColorBrush(&rim, None) {
+            let stroke = create_round_stroke(factory);
+            rt.DrawGeometry(&path, &brush, 0.9, stroke.as_ref());
+        }
     }
 }

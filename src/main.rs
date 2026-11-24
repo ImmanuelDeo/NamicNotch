@@ -25,10 +25,12 @@ use windows::Win32::Foundation::HINSTANCE;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 
 fn main() -> Result<()> {
+    utils::boot_log("--- start ---");
     // 1. Single instance check
     let instance = SingleInstance::new("NamicNotch_SingleInstance_Mutex")
         .map_err(|error| anyhow::anyhow!("Cannot acquire instance mutex: {error}"))?;
     if !instance.is_single() {
+        utils::boot_log("another instance already running; exit");
         return Ok(());
     }
     // Keep the mutex guard alive until main returns, including worker shutdown.
@@ -73,8 +75,12 @@ fn main() -> Result<()> {
     });
 
     // 6. Run GUI on Main Thread (Win32 requirement)
+    utils::boot_log("workers started; creating UI");
     let hinstance: HINSTANCE = unsafe { GetModuleHandleW(None)? }.into();
-    notch::run_ui(hinstance, notch_rx, settings)?;
+    if let Err(err) = notch::run_ui(hinstance, notch_rx, settings) {
+        utils::boot_log(&format!("run_ui failed: {err:?}"));
+        return Err(err);
+    }
 
     Ok(())
 }

@@ -12,6 +12,23 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use anyhow::Result;
 
+/// Append satu baris ke `%LOCALAPPDATA%\NamicNotch\boot.log`.
+/// Dipakai untuk melacak kegagalan start pada build `windows_subsystem` yang
+/// tidak punya konsol. Aman dipanggil kapan saja; gagal tulis diabaikan.
+pub fn boot_log(msg: &str) {
+    use std::io::Write;
+    let base = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".to_string());
+    let dir = std::path::Path::new(&base).join("NamicNotch");
+    let _ = std::fs::create_dir_all(&dir);
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("boot.log"))
+    {
+        let _ = writeln!(f, "{msg}");
+    }
+}
+
 /// Get the monitor work area for a window
 pub fn get_monitor_work_area(hwnd: HWND) -> Result<RECT> {
     unsafe {
