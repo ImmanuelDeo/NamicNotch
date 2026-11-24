@@ -12,7 +12,8 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_CAP_STYLE_ROUND, D2D1_DASH_STYLE_DASH, D2D1_ELLIPSE, D2D1_FACTORY_TYPE_SINGLE_THREADED,
     D2D1_FEATURE_LEVEL_DEFAULT, D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_LINE_JOIN_ROUND,
     D2D1_PRESENT_OPTIONS_IMMEDIATELY, D2D1_RENDER_TARGET_PROPERTIES,
-    D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT,
+    D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_TYPE_SOFTWARE,
+    D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT,
     D2D1_STROKE_STYLE_PROPERTIES,
 };
 use windows::Win32::Graphics::DirectWrite::{
@@ -95,7 +96,44 @@ impl NotchRenderer {
                 presentOptions: D2D1_PRESENT_OPTIONS_IMMEDIATELY,
             };
 
-            let rt = factory.CreateHwndRenderTarget(&rt_props, &hwnd_props)?;
+            // DXGI 0x887A0022 (WAS_STILL_DRAWING) muncul transien saat GPU driver
+            // belum siap (autostart saat login / GPU busy). Retry dulu sebelum menyerah,
+            // karena sekali gagal di sini seluruh UI mati dan notch tak pernah tampil.
+            let mut attempt = 0u32;
+            let rt = loop {
+                attempt += 1;
+                match factory.CreateHwndRenderTarget(&rt_props, &hwnd_props) {
+                    Ok(rt) => {
+                        crate::utils::boot_log(&format!("render target: hardware (try {attempt})"));
+                        break rt;
+                    }
+                    Err(hw_err) => {
+                        // Hardware/DXGI tidak selalu tersedia (RDP, VM, sesi non-interaktif).
+                        // Fallback ke software renderer supaya notch tetap tampil.
+                        let sw_props = D2D1_RENDER_TARGET_PROPERTIES {
+                            r#type: D2D1_RENDER_TARGET_TYPE_SOFTWARE,
+                            ..rt_props
+                        };
+                        match factory.CreateHwndRenderTarget(&sw_props, &hwnd_props) {
+                            Ok(rt) => {
+                                crate::utils::boot_log(&format!(
+                                    "render target: software (try {attempt})"
+                                ));
+                                break rt;
+                            }
+                            Err(sw_err) => {
+                                crate::utils::boot_log(&format!(
+                                    "render target failed try {attempt}/20 hw={hw_err:?} sw={sw_err:?}"
+                                ));
+                                if attempt >= 20 {
+                                    return Err(sw_err.into());
+                                }
+                                std::thread::sleep(std::time::Duration::from_millis(250));
+                            }
+                        }
+                    }
+                }
+            };
             let dwrite: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
 
             let font_family: Vec<u16> = "Segoe UI\0".encode_utf16().collect();
