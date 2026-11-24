@@ -95,15 +95,39 @@ impl IdleCharacter for KatsukiBakugo {
         );
 
         // Lidah api: pita mulus yang membara naik dan memudar.
+        // Haze panas: dua lapis blob lembut yang bernapas.
+        for k in 0..2 {
+            let fk = k as f32;
+            let breathe = 0.85 + 0.15 * (ctx.phase_time * 0.6 + fk).sin();
+            draw_soft_circle(
+                rt,
+                D2D_POINT_2F {
+                    x: cx + (fk - 0.5) * pw * 0.30,
+                    y: pill_rect.bottom - 7.0,
+                },
+                pw * 0.24 * breathe,
+                ph * 0.18 * breathe,
+                D2D1_COLOR_F {
+                    r: 1.0,
+                    g: 0.52,
+                    b: 0.14,
+                    a: (0.09 + 0.06 * blast) * alpha,
+                },
+            );
+        }
         for i in 0..5 {
             let fi = i as f32;
-            let life = (ctx.phase_time * (0.24 + fi * 0.04) + fi * 0.21) % 1.0;
+            let life = ((ctx.phase_time * (0.20 + fi * 0.03))
+                + (ctx.phase_time * 0.08 + fi * 1.3).sin() * 0.05
+                + fi * 0.19)
+                % 1.0;
             let a = (life * (1.0 - life) * 3.4).min(1.0)
                 * alpha
-                * (0.42 + 0.45 * blast);
+                * (0.38 + 0.42 * blast);
             let ex = pill_rect.left + pw * (0.18 + 0.62 * ((fi * 0.31 + 0.11) % 1.0));
             let ey = pill_rect.bottom - 3.0;
-            let bow = (life * 4.2 + fi).sin() * 4.0;
+            let bow = (ctx.phase_time * 0.7 + fi * 1.5).sin() * 4.6
+                + (ctx.phase_time * 0.26 + fi).cos() * 2.0;
             draw_tapered_streak(
                 rt,
                 factory,
@@ -559,6 +583,16 @@ impl IdleCharacter for KatsukiBakugo {
                 y: by + ang.sin() * rad,
             };
         }
+        draw_soft_radial_glow(
+            rt,
+            D2D_POINT_2F { x: bx, y: by },
+            12.0 * burst,
+            12.0 * burst,
+            1.0,
+            0.92,
+            0.62,
+            (0.16 + 0.30 * blast) * alpha,
+        );
         fill_polygon(
             rt,
             factory,
@@ -567,7 +601,7 @@ impl IdleCharacter for KatsukiBakugo {
                 r: 1.0,
                 g: 0.72,
                 b: 0.24,
-                a: (0.42 + 0.50 * blast) * alpha,
+                a: (0.34 + 0.44 * blast) * alpha,
             },
         );
         fill_polygon(

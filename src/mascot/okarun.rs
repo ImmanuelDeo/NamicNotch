@@ -94,6 +94,29 @@ impl IdleCharacter for OkarunTurbo {
             (0.14 + 0.22 * dash) * alpha,
         );
 
+        // Haze kecepatan: blob lembut di dasar aura.
+        for (col_r, col_g, col_b, off) in [
+            (0.94, 0.18, 0.24, -0.14),
+            (0.96, 0.94, 0.96, 0.16),
+        ] {
+            let drift = (ctx.phase_time * 0.32 + off * 9.0).sin() * pw * 0.04;
+            draw_soft_circle(
+                rt,
+                D2D_POINT_2F {
+                    x: cx + pw * off + drift,
+                    y: pill_rect.bottom - 6.0,
+                },
+                pw * 0.20,
+                ph * 0.15,
+                D2D1_COLOR_F {
+                    r: col_r,
+                    g: col_g,
+                    b: col_b,
+                    a: (0.07 + 0.06 * dash) * alpha,
+                },
+            );
+        }
+
         let stroke = create_round_stroke(factory);
         if let (Ok(red_b), Ok(white_b)) = (
             rt.CreateSolidColorBrush(

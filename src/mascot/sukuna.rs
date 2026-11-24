@@ -158,13 +158,37 @@ impl IdleCharacter for YujiSukuna {
             b: lerp(1.00, 0.36, s),
             a: alpha,
         };
+        // Haze lembut di dasar aura (dua blob melayang lambat).
+        for k in 0..2 {
+            let fk = k as f32;
+            let drift = (ctx.phase_time * 0.28 + fk * 1.7).sin() * pw * 0.05;
+            draw_soft_circle(
+                rt,
+                D2D_POINT_2F {
+                    x: cx + (fk - 0.5) * pw * 0.26 + drift,
+                    y: pill_rect.bottom - 6.0,
+                },
+                pw * 0.22,
+                ph * 0.16,
+                D2D1_COLOR_F {
+                    r: lerp(0.20, 0.90, s),
+                    g: lerp(0.80, 0.16, s),
+                    b: lerp(1.00, 0.30, s),
+                    a: 0.10 * alpha,
+                },
+            );
+        }
         for k in 0..4 {
             let fk = k as f32;
-            let life = (ctx.phase_time * (0.26 + fk * 0.05) + fk * 0.23) % 1.0;
-            let a = (life * (1.0 - life) * 3.2).min(1.0) * 0.34 * alpha;
+            let life = ((ctx.phase_time * (0.22 + fk * 0.035))
+                + (ctx.phase_time * 0.09 + fk).sin() * 0.05
+                + fk * 0.21)
+                % 1.0;
+            let a = (life * (1.0 - life) * 3.2).min(1.0) * 0.30 * alpha;
             let bx = cx + pw * (0.18 + 0.20 * ((fk * 0.37) % 1.0));
             let by = pill_rect.bottom - 3.0;
-            let bow = (life * 4.6 + fk).sin() * 4.4;
+            let bow = (ctx.phase_time * 0.65 + fk * 1.6).sin() * 4.4
+                + (ctx.phase_time * 0.23 + fk).cos() * 2.2;
             draw_tapered_streak(
                 rt,
                 factory,
