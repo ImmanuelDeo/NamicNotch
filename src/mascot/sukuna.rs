@@ -210,9 +210,9 @@ impl IdleCharacter for YujiSukuna {
                 (-9.6, -8.4),
             ]),
             D2D1_COLOR_F {
-                r: 0.055,
-                g: 0.052,
-                b: 0.062,
+                r: 0.088,
+                g: 0.084,
+                b: 0.098,
                 a: alpha * 0.92,
             },
         );

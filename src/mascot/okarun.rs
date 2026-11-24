@@ -213,9 +213,9 @@ impl IdleCharacter for OkarunTurbo {
                 (-9.6, -8.4),
             ]),
             D2D1_COLOR_F {
-                r: 0.052,
-                g: 0.052,
-                b: 0.058,
+                r: 0.084,
+                g: 0.084,
+                b: 0.094,
                 a: alpha * 0.92,
             },
         );

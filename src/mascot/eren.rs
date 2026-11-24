@@ -205,9 +205,9 @@ impl IdleCharacter for ErenAttackTitan {
                 (-9.6, -8.4),
             ]),
             D2D1_COLOR_F {
-                r: 0.045,
-                g: 0.04,
-                b: 0.036,
+                r: 0.066,
+                g: 0.058,
+                b: 0.052,
                 a: alpha * 0.92,
             },
         );
