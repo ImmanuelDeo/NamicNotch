@@ -8,6 +8,7 @@ use windows::Win32::Graphics::Direct2D::Common::{
     D2D1_FIGURE_END_CLOSED, D2D1_PIXEL_FORMAT, D2D_POINT_2F, D2D_RECT_F, D2D_SIZE_U,
 };
 use windows::Win32::Graphics::Direct2D::{
+    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
     D2D1CreateFactory, ID2D1Factory, ID2D1HwndRenderTarget, ID2D1PathGeometry, ID2D1StrokeStyle,
     D2D1_CAP_STYLE_ROUND, D2D1_DASH_STYLE_DASH, D2D1_ELLIPSE, D2D1_FACTORY_TYPE_SINGLE_THREADED,
     D2D1_FEATURE_LEVEL_DEFAULT, D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_LINE_JOIN_ROUND,
@@ -472,6 +473,9 @@ impl NotchRenderer {
             } else {
                 // ID2D1HwndRenderTarget deref ke ID2D1RenderTarget, jadi bisa
                 // dipakai langsung oleh modul maskot.
+                // Clip ke bentuk pill: aura memakai gradient yang sengaja
+                // diperluas, tanpa clip warnanya bocor ke desktop.
+                self.rt.PushAxisAlignedClip(&pill_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
                 ctrl.devil_eyes.draw_idle_aura_background(
                     &self.rt,
                     &self.factory,
@@ -481,6 +485,7 @@ impl NotchRenderer {
                 let cx = (pill_rect.left + pill_rect.right) * 0.5;
                 let cy = (pill_rect.top + pill_rect.bottom) * 0.5;
                 ctrl.devil_eyes.draw(&self.rt, &self.factory, cx, cy, alpha);
+                self.rt.PopAxisAlignedClip();
             }
         } else {
             let content_rect = self.draw_clean_nusa_shell(ctrl, pill_rect, alpha);

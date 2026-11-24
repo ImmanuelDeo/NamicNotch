@@ -301,7 +301,7 @@ impl IdleCharacter for ErenAttackTitan {
                 for k in 0..4 {
                     let fk = k as f32;
                     let x0 = side * (13.0 + fk * 2.4);
-                    let drop = 13.0 + fk * 7.0 + titan * 9.0;
+                    let drop = 10.0 + fk * 4.2 + titan * 4.0;
                     fill_polygon(
                         rt,
                         factory,
