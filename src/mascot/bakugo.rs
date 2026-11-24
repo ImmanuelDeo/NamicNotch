@@ -66,113 +66,90 @@ impl IdleCharacter for KatsukiBakugo {
         let pw = pill_rect.right - pill_rect.left;
         let ph = pill_rect.bottom - pill_rect.top;
         let cx = (pill_rect.left + pill_rect.right) * 0.5;
+        let t = ctx.phase_time;
 
+        // Glow amber di belakang kepala.
         draw_soft_radial_glow(
             rt,
             D2D_POINT_2F {
                 x: cx,
-                y: pill_rect.bottom - 1.0,
+                y: pill_rect.top + ph * 0.50,
             },
-            pw * 0.46,
-            ph * 0.70,
+            pw * 0.32,
+            ph * 0.54,
             1.0,
-            0.42,
-            0.08,
-            (0.30 + 0.24 * blast) * alpha,
+            0.55,
+            0.16,
+            (0.22 + 0.12 * blast) * alpha,
         );
-        draw_soft_radial_glow(
+        // Gradien bawah oranye.
+        draw_bottom_gradient(
             rt,
-            D2D_POINT_2F {
-                x: cx + pw * 0.24,
-                y: pill_rect.bottom - 3.0,
+            pill_rect,
+            D2D1_COLOR_F {
+                r: 1.0,
+                g: 0.46,
+                b: 0.10,
+                a: alpha,
             },
-            pw * 0.26,
-            ph * 0.52,
-            1.0,
-            0.76,
-            0.28,
-            (0.14 + 0.34 * blast) * alpha,
+            ph * 0.44,
+            (0.60 + 0.20 * blast) * alpha,
         );
 
-        // Lidah api: pita mulus yang membara naik dan memudar.
-        // Haze panas: dua lapis blob lembut yang bernapas.
-        for k in 0..2 {
-            let fk = k as f32;
-            let breathe = 0.85 + 0.15 * (ctx.phase_time * 0.6 + fk).sin();
+        // Ember melayang: ukuran & alfa bervariasi, gerak dua harmonisa.
+        for i in 0..12 {
+            let fi = i as f32;
+            let seed = (fi * 0.371).fract();
+            let life = ((t * (0.10 + 0.06 * seed)) + seed * 3.1) % 1.0;
+            let a = (life * (1.0 - life) * 4.0).min(1.0) * alpha * (0.20 + 0.35 * seed);
+            let ex = pill_rect.left + pw * (0.10 + 0.80 * ((fi * 0.271 + 0.07) % 1.0))
+                + (t * 0.35 + fi * 1.7).sin() * 5.0;
+            let ey = pill_rect.bottom - 4.0 - life * ph * 0.90;
+            let size = 0.7 + seed * 1.5;
             draw_soft_circle(
                 rt,
-                D2D_POINT_2F {
-                    x: cx + (fk - 0.5) * pw * 0.30,
-                    y: pill_rect.bottom - 7.0,
-                },
-                pw * 0.24 * breathe,
-                ph * 0.18 * breathe,
-                D2D1_COLOR_F {
-                    r: 1.0,
-                    g: 0.52,
-                    b: 0.14,
-                    a: (0.09 + 0.06 * blast) * alpha,
-                },
-            );
-        }
-        for i in 0..5 {
-            let fi = i as f32;
-            let life = ((ctx.phase_time * (0.20 + fi * 0.03))
-                + (ctx.phase_time * 0.08 + fi * 1.3).sin() * 0.05
-                + fi * 0.19)
-                % 1.0;
-            let a = (life * (1.0 - life) * 3.4).min(1.0)
-                * alpha
-                * (0.38 + 0.42 * blast);
-            let ex = pill_rect.left + pw * (0.18 + 0.62 * ((fi * 0.31 + 0.11) % 1.0));
-            let ey = pill_rect.bottom - 3.0;
-            let bow = (ctx.phase_time * 0.7 + fi * 1.5).sin() * 4.6
-                + (ctx.phase_time * 0.26 + fi).cos() * 2.0;
-            draw_tapered_streak(
-                rt,
-                factory,
                 D2D_POINT_2F { x: ex, y: ey },
-                D2D_POINT_2F {
-                    x: ex + bow,
-                    y: ey - ph * (0.36 + 0.34 * life),
-                },
-                bow * 0.6,
-                2.0,
+                size,
+                size,
                 D2D1_COLOR_F {
                     r: 1.0,
-                    g: 0.62,
-                    b: 0.18,
+                    g: 0.66 + 0.20 * seed,
+                    b: 0.22,
                     a,
                 },
             );
         }
 
+        // Gelombang kejut lembut saat meledak.
         if blast > 0.08 {
             let stroke = create_round_stroke(factory);
             if let Ok(rb) = rt.CreateSolidColorBrush(
                 &D2D1_COLOR_F {
                     r: 1.0,
-                    g: 0.76,
-                    b: 0.32,
-                    a: blast * alpha * 0.45,
+                    g: 0.78,
+                    b: 0.36,
+                    a: blast * alpha * 0.32,
                 },
                 None,
             ) {
-                let bx = cx + 32.0;
-                let grow = 1.0 + (1.0 - blast) * 2.2;
-                rt.DrawEllipse(
-                    &D2D1_ELLIPSE {
-                        point: D2D_POINT_2F {
-                            x: bx,
-                            y: pill_rect.top + ph * 0.42,
+                let bx = cx + 28.0;
+                let grow = 1.0 + (1.0 - blast) * 2.4;
+                for k in 0..2 {
+                    let fk = k as f32;
+                    rt.DrawEllipse(
+                        &D2D1_ELLIPSE {
+                            point: D2D_POINT_2F {
+                                x: bx,
+                                y: pill_rect.top + ph * 0.42,
+                            },
+                            radiusX: (6.0 + fk * 4.0) * grow,
+                            radiusY: (4.6 + fk * 3.0) * grow,
                         },
-                        radiusX: 7.0 * grow,
-                        radiusY: 5.5 * grow,
-                    },
-                    &rb,
-                    0.9,
-                    stroke.as_ref(),
-                );
+                        &rb,
+                        0.8 - 0.2 * fk,
+                        stroke.as_ref(),
+                    );
+                }
             }
         }
     }

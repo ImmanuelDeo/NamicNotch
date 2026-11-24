@@ -66,120 +66,102 @@ impl IdleCharacter for OkarunTurbo {
         let pw = pill_rect.right - pill_rect.left;
         let ph = pill_rect.bottom - pill_rect.top;
         let cx = (pill_rect.left + pill_rect.right) * 0.5;
+        let t = ctx.phase_time;
 
+        // Glow merah di belakang kepala.
         draw_soft_radial_glow(
             rt,
             D2D_POINT_2F {
-                x: cx - pw * 0.10,
-                y: pill_rect.bottom - 1.0,
+                x: cx,
+                y: pill_rect.top + ph * 0.50,
             },
-            pw * 0.44,
-            ph * 0.70,
-            0.94,
-            0.16,
-            0.22,
-            (0.28 + 0.24 * dash) * alpha,
-        );
-        draw_soft_radial_glow(
-            rt,
-            D2D_POINT_2F {
-                x: cx + pw * 0.20,
-                y: pill_rect.bottom - 2.0,
-            },
-            pw * 0.30,
-            ph * 0.58,
-            0.94,
-            0.92,
+            pw * 0.32,
+            ph * 0.54,
             0.96,
-            (0.14 + 0.22 * dash) * alpha,
+            0.20,
+            0.24,
+            (0.20 + 0.16 * dash) * alpha,
+        );
+        // Gradien bawah putih -> merah.
+        draw_bottom_gradient(
+            rt,
+            pill_rect,
+            D2D1_COLOR_F {
+                r: 0.98,
+                g: 0.34,
+                b: 0.36,
+                a: alpha,
+            },
+            ph * 0.42,
+            (0.55 + 0.22 * dash) * alpha,
         );
 
-        // Haze kecepatan: blob lembut di dasar aura.
-        for (col_r, col_g, col_b, off) in [
-            (0.94, 0.18, 0.24, -0.14),
-            (0.96, 0.94, 0.96, 0.16),
-        ] {
-            let drift = (ctx.phase_time * 0.32 + off * 9.0).sin() * pw * 0.04;
-            draw_soft_circle(
-                rt,
-                D2D_POINT_2F {
-                    x: cx + pw * off + drift,
-                    y: pill_rect.bottom - 6.0,
-                },
-                pw * 0.20,
-                ph * 0.15,
-                D2D1_COLOR_F {
-                    r: col_r,
-                    g: col_g,
-                    b: col_b,
-                    a: (0.07 + 0.06 * dash) * alpha,
-                },
-            );
-        }
+        // Garis kecepatan selebar panel.
+        draw_speed_lines(
+            rt,
+            factory,
+            pill_rect,
+            D2D1_COLOR_F {
+                r: 0.98,
+                g: 0.96,
+                b: 0.98,
+                a: alpha,
+            },
+            (0.26 + 0.34 * dash) * alpha,
+            t,
+            9,
+        );
+        draw_speed_lines(
+            rt,
+            factory,
+            pill_rect,
+            D2D1_COLOR_F {
+                r: 0.96,
+                g: 0.22,
+                b: 0.30,
+                a: alpha,
+            },
+            (0.20 + 0.38 * dash) * alpha,
+            t * 1.25 + 0.37,
+            6,
+        );
 
-        let stroke = create_round_stroke(factory);
-        if let (Ok(red_b), Ok(white_b)) = (
-            rt.CreateSolidColorBrush(
-                &D2D1_COLOR_F {
-                    r: 0.96,
-                    g: 0.22,
-                    b: 0.28,
-                    a: (0.25 + 0.55 * dash) * alpha,
-                },
-                None,
-            ),
-            rt.CreateSolidColorBrush(
-                &D2D1_COLOR_F {
-                    r: 0.98,
-                    g: 0.96,
-                    b: 0.98,
-                    a: (0.20 + 0.50 * dash) * alpha,
-                },
-                None,
-            ),
-        ) {
-            for i in 0..4 {
-                let fi = i as f32;
-                let progress = (ctx.phase_time * (2.6 + fi * 0.5) + fi * 0.31) % 1.0;
-                let lx = pill_rect.left + progress * (pw - 24.0);
-                let ly = pill_rect.top + 6.0 + fi * (ph * 0.21);
-                let len = 14.0 + dash * 16.0;
-                let fade = (progress * (1.0 - progress) * 4.0).min(1.0);
-                let c = if i % 2 == 0 {
-                    D2D1_COLOR_F {
-                        r: 0.96,
-                        g: 0.22,
-                        b: 0.28,
-                        a: (0.25 + 0.55 * dash) * alpha * fade,
-                    }
-                } else {
-                    D2D1_COLOR_F {
-                        r: 0.98,
-                        g: 0.96,
-                        b: 0.98,
-                        a: (0.20 + 0.50 * dash) * alpha * fade,
-                    }
-                };
-                draw_soft_streak(
-                    rt,
-                    factory,
-                    &[
-                        D2D_POINT_2F { x: lx, y: ly },
-                        D2D_POINT_2F {
-                            x: lx + len * 0.55,
-                            y: ly - 1.2,
-                        },
-                        D2D_POINT_2F {
-                            x: lx + len,
-                            y: ly,
-                        },
-                    ],
-                    c,
-                    1.1,
-                );
-            }
-            let _ = (&red_b, &white_b, stroke.as_ref());
-        }
+        // Cakar spektral di kanan.
+        draw_claw_slashes(
+            rt,
+            factory,
+            D2D_POINT_2F {
+                x: cx + pw * 0.30,
+                y: pill_rect.top + ph * 0.48,
+            },
+            D2D1_COLOR_F {
+                r: 0.98,
+                g: 0.46,
+                b: 0.50,
+                a: alpha,
+            },
+            (0.30 + 0.45 * dash) * alpha,
+            t,
+            1.0,
+        );
+
+        // Kabut tipis di kaki aura.
+        draw_smoke_wisp(
+            rt,
+            pill_rect,
+            cx + pw * 0.10,
+            0.55,
+            1.0,
+            D2D1_COLOR_F {
+                r: 0.95,
+                g: 0.90,
+                b: 0.90,
+                a: alpha,
+            },
+            (0.06 + 0.08 * dash) * alpha,
+            t * 1.6,
+            0.23,
+        );
     }
 
     unsafe fn draw_character(

@@ -752,3 +752,218 @@ pub unsafe fn draw_tapered_streak(
         );
     }
 }
+
+/// Gradien bawah halus (meniru `linear-gradient` di referensi): beberapa band
+/// lembut dengan alfa menurun, tanpa tepi keras.
+pub unsafe fn draw_bottom_gradient(
+    rt: &ID2D1HwndRenderTarget,
+    pill: D2D_RECT_F,
+    color: D2D1_COLOR_F,
+    height: f32,
+    alpha: f32,
+) {
+    let w = pill.right - pill.left;
+    let cx = (pill.left + pill.right) * 0.5;
+    let bands = 7;
+    for i in 0..bands {
+        let f = i as f32 / (bands - 1) as f32;
+        let y = pill.bottom - height * f * 0.9;
+        draw_soft_circle(
+            rt,
+            D2D_POINT_2F { x: cx, y },
+            w * (0.50 - 0.03 * f),
+            height * 0.20,
+            D2D1_COLOR_F {
+                a: alpha * (0.16 + 0.12 * (1.0 - f)),
+                ..color
+            },
+        );
+    }
+}
+
+/// Asap bergerak: gumpalan lembut tersusun di jalur melengkung, alfa halus.
+pub unsafe fn draw_smoke_wisp(
+    rt: &ID2D1HwndRenderTarget,
+    pill: D2D_RECT_F,
+    origin_x: f32,
+    rise: f32,
+    side: f32,
+    color: D2D1_COLOR_F,
+    alpha: f32,
+    t: f32,
+    seed: f32,
+) {
+    let ph = pill.bottom - pill.top;
+    for k in 0..7 {
+        let fk = k as f32;
+        let life = ((fk / 7.0) + (t * 0.08 + seed).fract()).fract();
+        let a = (life * (1.0 - life) * 3.8).min(1.0) * alpha;
+        let bend = side * (6.0 + 5.0 * (t * 0.4 + seed * 3.0 + fk * 0.4).sin());
+        let x = origin_x + bend * life + side * life * 10.0;
+        let y = pill.bottom - 4.0 - life * ph * rise;
+        let size = 5.0 + life * 11.0;
+        draw_soft_circle(
+            rt,
+            D2D_POINT_2F { x, y },
+            size,
+            size * 0.72,
+            D2D1_COLOR_F { a, ..color },
+        );
+    }
+}
+
+/// Garis kecepatan selebar panel, panjang/alfa bervariasi (motion blur halus).
+pub unsafe fn draw_speed_lines(
+    rt: &ID2D1HwndRenderTarget,
+    factory: &ID2D1Factory,
+    pill: D2D_RECT_F,
+    color: D2D1_COLOR_F,
+    alpha: f32,
+    t: f32,
+    count: usize,
+) {
+    let w = pill.right - pill.left;
+    let h = pill.bottom - pill.top;
+    for i in 0..count {
+        let fi = i as f32;
+        let speed = 1.65 + (fi * 0.31).fract() * 1.5;
+        let progress = ((t * speed * 0.32) + fi * 0.37).fract();
+        let len = w * (0.10 + 0.22 * (fi * 0.27).fract());
+        let x0 = pill.left + progress * (w + len) - len;
+        let y = pill.top + h * (0.10 + 0.80 * ((fi * 0.19).fract()));
+        let fade = (progress * (1.0 - progress) * 4.0).min(1.0);
+        draw_soft_streak(
+            rt,
+            factory,
+            &[
+                D2D_POINT_2F {
+                    x: x0,
+                    y: y + (fi * 1.7).sin() * 0.8,
+                },
+                D2D_POINT_2F {
+                    x: x0 + len * 0.5,
+                    y,
+                },
+                D2D_POINT_2F {
+                    x: x0 + len,
+                    y: y - (fi * 1.3).cos() * 0.8,
+                },
+            ],
+            D2D1_COLOR_F {
+                a: alpha * fade * (0.45 + 0.55 * (fi * 0.41).fract()),
+                ..color
+            },
+            1.0 + (fi * 0.23).fract() * 0.8,
+        );
+    }
+}
+
+/// Tiga cakar melengkung dengan ujung memudar.
+pub unsafe fn draw_claw_slashes(
+    rt: &ID2D1HwndRenderTarget,
+    factory: &ID2D1Factory,
+    base: D2D_POINT_2F,
+    color: D2D1_COLOR_F,
+    alpha: f32,
+    t: f32,
+    scale: f32,
+) {
+    for k in 0..3 {
+        let fk = k as f32;
+        let wob = (t * 1.2 + fk * 1.1).sin() * 1.6 * scale;
+        let ox = base.x + (fk - 1.0) * 5.0 * scale;
+        let oy = base.y + (fk - 1.0) * 2.4 * scale;
+        draw_tapered_streak(
+            rt,
+            factory,
+            D2D_POINT_2F {
+                x: ox - 9.0 * scale,
+                y: oy + 6.0 * scale,
+            },
+            D2D_POINT_2F {
+                x: ox + 9.0 * scale + wob,
+                y: oy - 7.0 * scale,
+            },
+            3.0 * scale * (fk - 1.0),
+            1.5,
+            D2D1_COLOR_F { a: alpha, ..color },
+        );
+    }
+}
+
+/// Petir bercabang bergaya anime: inti terang + glow lebar + 2 cabang.
+pub unsafe fn draw_anime_bolt(
+    rt: &ID2D1HwndRenderTarget,
+    factory: &ID2D1Factory,
+    top: D2D_POINT_2F,
+    bottom: D2D_POINT_2F,
+    color: D2D1_COLOR_F,
+    core_color: D2D1_COLOR_F,
+    alpha: f32,
+    t: f32,
+) {
+    let span = bottom.y - top.y;
+    let sway = (t * 1.7).sin() * 2.4 + (t * 0.7).cos() * 1.4;
+    let mid_x = top.x + (bottom.x - top.x) * 0.5;
+    let main = [
+        top,
+        D2D_POINT_2F {
+            x: mid_x + sway + 3.0,
+            y: top.y + span * 0.24,
+        },
+        D2D_POINT_2F {
+            x: mid_x - sway * 0.6,
+            y: top.y + span * 0.48,
+        },
+        D2D_POINT_2F {
+            x: mid_x + sway * 0.4 - 4.0,
+            y: top.y + span * 0.74,
+        },
+        bottom,
+    ];
+    draw_soft_streak(
+        rt,
+        factory,
+        &main,
+        D2D1_COLOR_F { a: alpha, ..color },
+        1.5,
+    );
+    draw_soft_streak(
+        rt,
+        factory,
+        &main,
+        D2D1_COLOR_F {
+            a: alpha * 0.9,
+            ..core_color
+        },
+        0.7,
+    );
+    for k in 0..2 {
+        let fk = k as f32;
+        let by = top.y + span * (0.36 + fk * 0.26);
+        let dir = if k == 0 { 1.0 } else { -1.0 };
+        draw_soft_streak(
+            rt,
+            factory,
+            &[
+                D2D_POINT_2F {
+                    x: mid_x + dir * (1.0 + fk * 2.0),
+                    y: by,
+                },
+                D2D_POINT_2F {
+                    x: mid_x + dir * (9.0 + fk * 3.0),
+                    y: by + span * 0.08,
+                },
+                D2D_POINT_2F {
+                    x: mid_x + dir * (6.0 + fk * 2.0),
+                    y: by + span * 0.20,
+                },
+            ],
+            D2D1_COLOR_F {
+                a: alpha * 0.6,
+                ..color
+            },
+            0.9,
+        );
+    }
+}

@@ -65,130 +65,71 @@ impl IdleCharacter for YujiSukuna {
         alpha: f32,
         ctx: &MascotContext,
     ) {
-        let s = Self::sukuna_factor(ctx.local_time);
+        let sk = Self::sukuna_factor(ctx.local_time);
         let g = Self::shrine_gesture(ctx.local_time);
         let pw = pill_rect.right - pill_rect.left;
         let ph = pill_rect.bottom - pill_rect.top;
         let cx = (pill_rect.left + pill_rect.right) * 0.5;
-        let pulse = 0.88 + 0.12 * (ctx.phase_time * 4.0).sin();
+        let t = ctx.phase_time;
 
+        // Glow inti: cyan (Yuji) -> merah (Sukuna).
         draw_soft_radial_glow(
             rt,
             D2D_POINT_2F {
                 x: cx,
-                y: pill_rect.bottom - 1.0,
+                y: pill_rect.top + ph * 0.50,
             },
-            pw * 0.40,
-            ph * 0.68,
-            lerp(0.0, 0.92, s),
-            lerp(0.83, 0.10, s),
-            lerp(1.0, 0.34, s),
-            (0.30 - 0.10 * s) * pulse * alpha,
+            pw * 0.30,
+            ph * 0.52,
+            lerp(0.20, 0.95, sk),
+            lerp(0.80, 0.14, sk),
+            lerp(1.00, 0.22, sk),
+            (0.20 + 0.14 * sk) * alpha,
         );
-        if s > 0.05 {
-            draw_soft_radial_glow(
-                rt,
-                D2D_POINT_2F {
-                    x: cx + pw * 0.20,
-                    y: pill_rect.bottom - 2.0,
-                },
-                pw * 0.28,
-                ph * 0.60,
-                0.55,
-                0.10,
-                0.70,
-                0.28 * s * pulse * alpha,
-            );
-        }
 
-        if g > 0.4 {
-            let wave = (ctx.phase_time * 13.0).sin();
-            if wave > 0.35 {
-                let sa = ((wave - 0.35) / 0.65) * g * alpha;
-                let stroke = create_round_stroke(factory);
-                if let Ok(sb) = rt.CreateSolidColorBrush(
-                    &D2D1_COLOR_F {
-                        r: 1.0,
-                        g: 0.34,
-                        b: 0.42,
-                        a: sa * 0.85,
-                    },
-                    None,
-                ) {
-                    let ox = cx + 34.0;
-                    let oy = pill_rect.top + ph * 0.40;
-                    for k in 0..2 {
-                        let dx = k as f32 * 5.0;
-                        draw_soft_streak(
-                            rt,
-                            factory,
-                            &[
-                                D2D_POINT_2F {
-                                    x: ox - 9.0 + dx,
-                                    y: oy - 6.0,
-                                },
-                                D2D_POINT_2F {
-                                    x: ox + 1.0 + dx,
-                                    y: oy - 0.8,
-                                },
-                                D2D_POINT_2F {
-                                    x: ox + 9.0 + dx,
-                                    y: oy + 5.0,
-                                },
-                            ],
-                            D2D1_COLOR_F {
-                                r: 1.0,
-                                g: 0.50,
-                                b: 0.56,
-                                a: sa * 0.9,
-                            },
-                            1.1,
-                        );
-                    }
-                    let _ = &sb;
-                    let _ = stroke;
-                }
-            }
-        }
+        // Gradien bawah: cyan -> ungu-magenta.
+        draw_bottom_gradient(
+            rt,
+            pill_rect,
+            D2D1_COLOR_F {
+                r: lerp(0.20, 0.62, sk),
+                g: lerp(0.78, 0.16, sk),
+                b: lerp(1.00, 0.92, sk),
+                a: alpha,
+            },
+            ph * 0.46,
+            (0.55 + 0.25 * sk) * alpha,
+        );
 
-        // Wisp cursed energy: pita mulus mengalir naik, alfa halus.
-        let wisp = D2D1_COLOR_F {
-            r: lerp(0.30, 0.98, s),
-            g: lerp(0.86, 0.28, s),
-            b: lerp(1.00, 0.36, s),
+        // Asap ungu-magenta di kiri & kanan kepala.
+        let smoke = D2D1_COLOR_F {
+            r: lerp(0.34, 0.72, sk),
+            g: lerp(0.72, 0.18, sk),
+            b: lerp(1.00, 0.94, sk),
             a: alpha,
         };
-        // Haze lembut di dasar aura (dua blob melayang lambat).
-        for k in 0..2 {
-            let fk = k as f32;
-            let drift = (ctx.phase_time * 0.28 + fk * 1.7).sin() * pw * 0.05;
-            draw_soft_circle(
+        for side in [-1.0_f32, 1.0_f32] {
+            draw_smoke_wisp(
                 rt,
-                D2D_POINT_2F {
-                    x: cx + (fk - 0.5) * pw * 0.26 + drift,
-                    y: pill_rect.bottom - 6.0,
-                },
-                pw * 0.22,
-                ph * 0.16,
-                D2D1_COLOR_F {
-                    r: lerp(0.20, 0.90, s),
-                    g: lerp(0.80, 0.16, s),
-                    b: lerp(1.00, 0.30, s),
-                    a: 0.10 * alpha,
-                },
+                pill_rect,
+                cx + side * pw * 0.24,
+                0.86,
+                side,
+                smoke,
+                (0.22 + 0.08 * sk) * alpha,
+                t,
+                side * 0.31 + 0.17,
             );
         }
-        for k in 0..4 {
+
+        // Wisp cursed energy tipis di depan (mengalir naik).
+        for k in 0..3 {
             let fk = k as f32;
-            let life = ((ctx.phase_time * (0.22 + fk * 0.035))
-                + (ctx.phase_time * 0.09 + fk).sin() * 0.05
-                + fk * 0.21)
-                % 1.0;
-            let a = (life * (1.0 - life) * 3.2).min(1.0) * 0.30 * alpha;
-            let bx = cx + pw * (0.18 + 0.20 * ((fk * 0.37) % 1.0));
+            let life = ((t * (0.20 + fk * 0.03)) + (t * 0.08 + fk).sin() * 0.05 + fk * 0.23) % 1.0;
+            let a = (life * (1.0 - life) * 3.2).min(1.0) * 0.26 * alpha;
+            let bx = cx + pw * (0.14 + 0.24 * ((fk * 0.37) % 1.0));
             let by = pill_rect.bottom - 3.0;
-            let bow = (ctx.phase_time * 0.65 + fk * 1.6).sin() * 4.4
-                + (ctx.phase_time * 0.23 + fk).cos() * 2.2;
+            let bow = (t * 0.6 + fk * 1.6).sin() * 4.4 + (t * 0.22 + fk).cos() * 2.2;
             draw_tapered_streak(
                 rt,
                 factory,
@@ -199,8 +140,51 @@ impl IdleCharacter for YujiSukuna {
                 },
                 bow * 0.7,
                 2.2,
-                D2D1_COLOR_F { a, ..wisp },
+                D2D1_COLOR_F {
+                    r: lerp(0.30, 0.98, sk),
+                    g: lerp(0.88, 0.26, sk),
+                    b: lerp(1.00, 0.34, sk),
+                    a,
+                },
             );
+        }
+
+        // Kilatan Dismantle/Cleave saat hand sign aktif.
+        if g > 0.4 {
+            let wave = (t * 13.0).sin();
+            if wave > 0.35 {
+                let sa = ((wave - 0.35) / 0.65) * g * alpha;
+                let ox = cx + 30.0;
+                let oy = pill_rect.top + ph * 0.40;
+                for k in 0..2 {
+                    let dx = k as f32 * 5.0;
+                    draw_soft_streak(
+                        rt,
+                        factory,
+                        &[
+                            D2D_POINT_2F {
+                                x: ox - 9.0 + dx,
+                                y: oy - 6.0,
+                            },
+                            D2D_POINT_2F {
+                                x: ox + 1.0 + dx,
+                                y: oy - 0.8,
+                            },
+                            D2D_POINT_2F {
+                                x: ox + 9.0 + dx,
+                                y: oy + 5.0,
+                            },
+                        ],
+                        D2D1_COLOR_F {
+                            r: 1.0,
+                            g: 0.50,
+                            b: 0.56,
+                            a: sa * 0.9,
+                        },
+                        1.1,
+                    );
+                }
+            }
         }
     }
 
