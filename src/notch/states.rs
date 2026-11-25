@@ -1366,26 +1366,26 @@ pub fn handle_panel_click(&mut self, lx: f32, ly: f32, pill_w: f32) -> bool {
             }
             NotchState::Music => {
                 if self.show_side_lyrics {
-                    if (36.0..=58.0).contains(&ly) && lx > right - 70.0 {
+                    if (34.0..=56.0).contains(&ly) && lx > right - 70.0 {
                         self.show_side_lyrics = false;
                         return true;
                     }
-                    if (34.0..=58.0).contains(&ly) {
-                        if lx > cx - 44.0 && lx < cx - 16.0 {
+                    if (34.0..=56.0).contains(&ly) {
+                        if lx > left + 30.0 && lx < left + 54.0 {
                             Self::send_system_media_command("prev");
                             return true;
                         }
-                        if lx >= cx - 14.0 && lx <= cx + 14.0 {
+                        if lx >= left + 56.0 && lx <= left + 80.0 {
                             Self::send_system_media_command("toggle");
                             self.media_playing = !self.media_playing;
                             return true;
                         }
-                        if lx > cx + 16.0 && lx <= cx + 44.0 {
+                        if lx > left + 82.0 && lx <= left + 106.0 {
                             Self::send_system_media_command("next");
                             return true;
                         }
                     }
-                    if (144.0..=153.0).contains(&ly) {
+                    if (146.0..=155.0).contains(&ly) {
                         let ratio = ((lx - left) / w).clamp(0.0, 1.0);
                         self.media_progress = ratio;
                         self.media_elapsed_exact = ratio * self.media_total_secs;
@@ -1433,7 +1433,7 @@ pub fn handle_panel_click(&mut self, lx: f32, ly: f32, pill_w: f32) -> bool {
                     let y0 = 44.0 + row as f32 * 42.0;
                     if (y0..=y0 + 30.0).contains(&ly) {
                         let is_volume = row == 0;
-                        if lx < left + 54.0 {
+                        if lx < left + 78.0 {
                             if is_volume {
                                 let next = if self.volume_level == 0 { 40 } else { 0 };
                                 self.volume_level = next;
@@ -1511,8 +1511,8 @@ pub fn handle_panel_click(&mut self, lx: f32, ly: f32, pill_w: f32) -> bool {
     /// Hitung level dari posisi kursor di dalam track slider, lalu terapkan.
     fn apply_slider_at(&mut self, lx: f32, pill_w: f32, is_volume: bool) {
         use crate::notch::renderer::glass;
-        let track_l = glass::PAD + 54.0;
-        let track_r = pill_w - glass::PAD - 46.0;
+        let track_l = glass::PAD + 78.0;
+        let track_r = pill_w - glass::PAD - 58.0;
         if track_r <= track_l {
             return;
         }
