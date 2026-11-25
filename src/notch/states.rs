@@ -3,6 +3,7 @@ use std::os::windows::process::CommandExt;
 use std::sync::{Arc, Mutex};
 use chrono::{Datelike, Local, Timelike};
 use windows::core::PCWSTR;
+use windows::core::Interface;
 use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSessionManager,
     GlobalSystemMediaTransportControlsSessionPlaybackStatus,
@@ -103,7 +104,9 @@ pub struct LiveMediaSnapshot {
     pub raw_gsmtc_pos: f32,          // -1.0 = GSMTC beku, pakai clock lokal
     pub total_secs: f32,
     pub timed_lyrics: Vec<(f32, String)>,
-    pub has_real_lyrics: bool,       // true hanya jika LRC asli (synced/plain) ketemu
+    pub has_real_lyrics: bool,
+    /// Thumbnail GSMTC (bytes PNG/JPEG).
+    pub artwork: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -202,6 +205,8 @@ pub struct NotchController {
     pub lyric_anim_progress: f32,
     pub lyric_line_progress: f32,   // 0..1 progres di dalam bait lirik aktif (karaoke)
     pub has_real_lyrics: bool,      // false = placeholder, jangan tampilkan sebagai lirik asli
+    /// Thumbnail album dari media yang diputar (bytes PNG/JPEG).
+    pub media_art: Option<Vec<u8>>,
     pub is_dragging_track_bar: bool,
     pub playback_rate: f64,
     live_media_arc: Arc<Mutex<Option<LiveMediaSnapshot>>>,
@@ -298,6 +303,7 @@ impl NotchController {
             media_total_secs: 280.0,
             // Mode 2A (track + transport) sebagai default; 2B hanya saat toggle Lyrics.
             show_side_lyrics: false,
+            media_art: None,
             timed_lyrics: vec![
                 (0.0, String::from("♪ Putar lagu di Spotify / YouTube")),
                 (6.0, String::from("Timeline & Lirik bergerak mulus real-time")),
@@ -364,7 +370,8 @@ impl NotchController {
     fn spawn_gsmtc_media_poller(shared: Arc<Mutex<Option<LiveMediaSnapshot>>>) {
         std::thread::spawn(move || {
             let mut last_fetched_title = String::new();
-            let mut cached_lyrics: Vec<(f32, String)> = Vec::new();
+            let mut cached_art: Option<Vec<u8>> = None;
+        let mut cached_lyrics: Vec<(f32, String)> = Vec::new();
             let mut cached_real = false;
             let mut last_pos = -1.0_f32;
             let mut stall_polls = 0_u32;
@@ -407,6 +414,7 @@ impl NotchController {
                             let (lyrics, real) = Self::fetch_timed_lrclib(&title, &artist, total_secs);
                             cached_lyrics = lyrics;
                             cached_real = real;
+                            cached_art = Self::read_thumbnail(&props);
                         }
 
                         // GSMTC bisa membeku di satu posisi (mis. saat browser di-background).
@@ -433,6 +441,7 @@ impl NotchController {
                                     total_secs,
                                     timed_lyrics: cached_lyrics.clone(),
                                     has_real_lyrics: cached_real,
+                                    artwork: cached_art.clone(),
                                 });
                             }
                         }
@@ -545,7 +554,37 @@ impl NotchController {
     }
 
     /// Kembalikan (lirik, punya_lirik_asli). Flag penting supaya placeholder
-    /// tidak ikut ber-animasi karaoke seolah-olah lirik asli.
+    /// Baca thumbnail GSMTC jadi bytes PNG/JPEG (dipakai renderer sebagai cover).
+    fn read_thumbnail(
+        props: &windows::Media::Control::GlobalSystemMediaTransportControlsSessionMediaProperties,
+    ) -> Option<Vec<u8>> {
+        use windows::Storage::Streams::{DataReader, IInputStream};
+        unsafe {
+            let thumb = props.Thumbnail().ok()?;
+            let raw = thumb.OpenReadAsync().ok()?.get().ok()?;
+            let stream: IInputStream = match raw.cast() {
+                Ok(s) => s,
+                Err(_) => return None,
+            };
+            let reader = DataReader::CreateDataReader(&stream).ok()?;
+            match reader.LoadAsync(8 * 1024 * 1024) {
+                Ok(op) => {
+                    if op.get().is_err() {
+                        return None;
+                    }
+                }
+                Err(_) => return None,
+            }
+            let len = reader.UnconsumedBufferLength().unwrap_or(0) as usize;
+            if len == 0 || len > 8 * 1024 * 1024 {
+                return None;
+            }
+            let mut buf = vec![0u8; len];
+            reader.ReadBytes(&mut buf).ok()?;
+            Some(buf)
+        }
+    }
+
     fn fetch_timed_lrclib(raw_title: &str, raw_artist: &str, total_secs: f32) -> (Vec<(f32, String)>, bool) {
         let (title, artist) = Self::clean_music_title_and_artist(raw_title, raw_artist);
         let client = reqwest::blocking::Client::builder()
@@ -917,8 +956,13 @@ impl NotchController {
                     }
                 }
 
+                if snap.artwork.is_some() && (title_changed || self.media_art.is_none()) {
+                    self.media_art = snap.artwork.clone();
+                }
                 if !snap.timed_lyrics.is_empty()
-                    && (title_changed || self.timed_lyrics.len() <= 4 || self.has_real_lyrics != snap.has_real_lyrics)
+                    && (title_changed
+                        || self.timed_lyrics.len() != snap.timed_lyrics.len()
+                        || self.has_real_lyrics != snap.has_real_lyrics)
                 {
                     self.timed_lyrics = snap.timed_lyrics;
                     self.has_real_lyrics = snap.has_real_lyrics;
@@ -939,7 +983,7 @@ impl NotchController {
             self.media_progress =
                 (self.media_elapsed_exact / self.media_total_secs).clamp(0.0, 1.0);
 
-            if self.has_real_lyrics && !self.timed_lyrics.is_empty() {
+            if !self.timed_lyrics.is_empty() {
                 let mut found_idx = 0;
                 for (i, (ts, _)) in self.timed_lyrics.iter().enumerate() {
                     if *ts <= self.media_elapsed_exact + 0.15 {
@@ -1345,10 +1389,9 @@ pub fn handle_panel_click(&mut self, lx: f32, ly: f32, pill_w: f32) -> bool {
         let in_header = (8.0..=32.0).contains(&ly);
         let cx = pill_w * 0.5;
 
-        // Tab strip 6 section (selebar konten; area status hanya ada di Hub).
-        let strip_right = if self.state == NotchState::Hub { right - 150.0 } else { right };
-        if in_header && lx >= left && lx <= strip_right {
-            let slot = ((strip_right - left) / 6.0).max(30.0);
+        // Tab strip 6 section selebar konten (sama dengan yang digambar).
+        if in_header && lx >= left && lx <= right {
+            let slot = ((right - left) / 6.0).max(30.0);
             let idx = (((lx - left) / slot).floor() as usize).min(5);
             let tabs = Self::ordered_tabs();
             if tabs[idx] != self.state {

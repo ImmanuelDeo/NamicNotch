@@ -5,12 +5,12 @@ use windows::core::{Interface, PCWSTR};
 use windows::Foundation::Numerics::Matrix3x2;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Direct2D::Common::{
-    D2D_SIZE_F, D2D1_FIGURE_BEGIN_HOLLOW, D2D1_FIGURE_END_OPEN, D2D1_GRADIENT_STOP,
+    D2D_SIZE_F, D2D_SIZE_U, D2D1_FIGURE_BEGIN_HOLLOW, D2D1_FIGURE_END_OPEN, D2D1_GRADIENT_STOP,
     D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_BEZIER_SEGMENT, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED,
-    D2D1_FIGURE_END_CLOSED, D2D1_PIXEL_FORMAT, D2D_POINT_2F, D2D_RECT_F, D2D_SIZE_U,
+    D2D1_FIGURE_END_CLOSED, D2D1_PIXEL_FORMAT, D2D_POINT_2F, D2D_RECT_F,
 };
 use windows::Win32::Graphics::Direct2D::{
-    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_BITMAP_PROPERTIES, ID2D1Bitmap,
     D2D1CreateFactory, ID2D1Factory, ID2D1Geometry, ID2D1GeometrySink, ID2D1HwndRenderTarget,
     ID2D1PathGeometry,
     ID2D1StrokeStyle, D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_LARGE, D2D1_ARC_SIZE_SMALL,
@@ -2435,6 +2435,11 @@ impl NotchRenderer {
                 Some(glass::col(1.0, 1.0, 1.0, 0.10 * alpha)),
                 0.8,
             );
+            self.draw_cover(
+                ctrl.media_art.as_ref(),
+                D2D_RECT_F { left: left + 1.0, top: hy - 9.0, right: left + 19.0, bottom: hy + 9.0 },
+                alpha,
+            );
             let glyph = |this: &Self, text: &str, x: f32, a: f32| {
                 this.draw_text_centered(
                     text,
@@ -2549,6 +2554,16 @@ impl NotchRenderer {
             glass::col(0.10, 0.12, 0.18, 0.95 * alpha),
             Some(glass::col(1.0, 1.0, 1.0, 0.12 * alpha)),
             0.8,
+        );
+        self.draw_cover(
+            ctrl.media_art.as_ref(),
+            D2D_RECT_F {
+                left: thumb.left + 2.0,
+                top: thumb.top + 2.0,
+                right: thumb.right - 2.0,
+                bottom: thumb.bottom - 2.0,
+            },
+            alpha,
         );
         self.draw_text_left(
             &title,
@@ -3029,6 +3044,22 @@ impl NotchRenderer {
         }
     }
 
+
+    unsafe fn draw_cover(&self, bytes: Option<&Vec<u8>>, rect: D2D_RECT_F, alpha: f32) {
+        if let Some(data) = bytes {
+            if let Some(bmp) = cover_bitmap(&self.rt, data) {
+                self.rt.DrawBitmap(
+                    &bmp,
+                    Some(&rect),
+                    alpha.clamp(0.0, 1.0),
+                    windows::Win32::Graphics::Direct2D::D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
+                    None,
+                );
+                return;
+            }
+        }
+    }
+
     unsafe fn draw_glass_panel(&self, ctrl: &NotchController, pill: D2D_RECT_F, alpha: f32) {
         match ctrl.state {
             NotchState::Hub => self.draw_hub_glass(ctrl, pill, alpha),
@@ -3040,4 +3071,61 @@ impl NotchRenderer {
             _ => {}
         }
     }
+}
+
+
+thread_local! {
+    static COVER_CACHE: std::cell::RefCell<Option<(u64, ID2D1Bitmap)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Decode thumbnail GSMTC jadi bitmap D2D, cache per hash isi.
+unsafe fn cover_bitmap(
+    rt: &windows::Win32::Graphics::Direct2D::ID2D1RenderTarget,
+    bytes: &[u8],
+) -> Option<ID2D1Bitmap> {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    let key = hasher.finish();
+    if let Some((k, bmp)) = COVER_CACHE.with(|c| c.borrow().clone()) {
+        if k == key {
+            return Some(bmp);
+        }
+    }
+    let img = image::load_from_memory(bytes).ok()?.to_rgba8();
+    let (w, h) = (img.width(), img.height());
+    if w == 0 || h == 0 {
+        return None;
+    }
+    // image = RGBA, D2D = BGRA premultiplied.
+    let mut buf = Vec::with_capacity((w * h * 4) as usize);
+    for px in img.pixels() {
+        let a = px[3] as u32;
+        let r = (px[0] as u32 * a / 255) as u8;
+        let g = (px[1] as u32 * a / 255) as u8;
+        let b = (px[2] as u32 * a / 255) as u8;
+        buf.extend_from_slice(&[b, g, r, a as u8]);
+    }
+    let props = D2D1_BITMAP_PROPERTIES {
+        pixelFormat: D2D1_PIXEL_FORMAT {
+            format: DXGI_FORMAT_B8G8R8A8_UNORM,
+            alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
+        },
+        dpiX: 96.0,
+        dpiY: 96.0,
+    };
+    let bmp = rt
+        .CreateBitmap(
+            D2D_SIZE_U {
+                width: w,
+                height: h,
+            },
+            Some(buf.as_ptr() as *const core::ffi::c_void),
+            w * 4,
+            &props,
+        )
+        .ok()?;
+    COVER_CACHE.with(|c| *c.borrow_mut() = Some((key, bmp.clone())));
+    Some(bmp)
 }
