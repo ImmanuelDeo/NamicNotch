@@ -5,7 +5,7 @@ use windows::core::{Interface, PCWSTR};
 use windows::Foundation::Numerics::Matrix3x2;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Direct2D::Common::{
-    D2D_SIZE_F, D2D1_FIGURE_BEGIN_HOLLOW, D2D1_FIGURE_END_OPEN,
+    D2D_SIZE_F, D2D1_FIGURE_BEGIN_HOLLOW, D2D1_FIGURE_END_OPEN, D2D1_GRADIENT_STOP,
     D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_BEZIER_SEGMENT, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED,
     D2D1_FIGURE_END_CLOSED, D2D1_PIXEL_FORMAT, D2D_POINT_2F, D2D_RECT_F, D2D_SIZE_U,
 };
@@ -16,6 +16,8 @@ use windows::Win32::Graphics::Direct2D::{
     ID2D1StrokeStyle, D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_LARGE, D2D1_ARC_SIZE_SMALL,
     D2D1_LAYER_OPTIONS_NONE,
     D2D1_LAYER_PARAMETERS, D2D1_SWEEP_DIRECTION_CLOCKWISE,
+    D2D1_EXTEND_MODE_CLAMP, D2D1_GAMMA_2_2, D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES,
+    D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES, ID2D1LinearGradientBrush, ID2D1SolidColorBrush,
     D2D1_CAP_STYLE_ROUND, D2D1_DASH_STYLE_DASH, D2D1_ELLIPSE, D2D1_FACTORY_TYPE_SINGLE_THREADED,
     D2D1_FEATURE_LEVEL_DEFAULT, D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_LINE_JOIN_ROUND,
     D2D1_PRESENT_OPTIONS_IMMEDIATELY, D2D1_RENDER_TARGET_PROPERTIES,
@@ -596,16 +598,10 @@ impl NotchRenderer {
                 ctrl.devil_eyes.draw(&self.rt, &self.factory, cx, cy, alpha);
             }
         } else {
-            let content_rect = self.draw_clean_nusa_shell(ctrl, pill_rect, alpha);
-            match ctrl.state {
-                NotchState::Hub => self.draw_hub_panel(ctrl, content_rect, alpha),
-                NotchState::Music => self.draw_music_panel(ctrl, content_rect, alpha),
-                NotchState::Control => self.draw_control_panel(ctrl, content_rect, alpha),
-                NotchState::Pomo => self.draw_pomo_panel(ctrl, content_rect, alpha),
-                NotchState::Shelf => self.draw_shelf_panel(ctrl, content_rect, alpha),
-                NotchState::Clips => self.draw_clips_panel(ctrl, content_rect, alpha),
-                _ => {}
-            }
+            // Tema Solid Liquid Glass + layout rapat 6 section.
+            self.draw_glass_surface(ctrl, pill_rect, alpha);
+            self.draw_glass_nav(ctrl, pill_rect, alpha);
+            self.draw_glass_panel(ctrl, pill_rect, alpha);
         }
 
         if ctrl.clip_flash_timer > 0.0 && ctrl.height.value > 55.0 {
@@ -1972,4 +1968,1042 @@ impl NotchRenderer {
         }
     }
 
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Solid Liquid Glass theme + compact 6-section layout
+// ─────────────────────────────────────────────────────────────────────────────
+
+pub mod glass {
+    use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_POINT_2F};
+
+    pub const PAD: f32 = 14.0;
+    pub const HDR_TOP: f32 = 11.0;
+    pub const HDR_BOT: f32 = 29.0;
+    pub const BODY_TOP: f32 = 36.0;
+    pub const BODY_BOT: f32 = 142.0;
+    pub const DOTS_TOP: f32 = 150.0;
+
+    pub fn col(r: f32, g: f32, b: f32, a: f32) -> D2D1_COLOR_F {
+        D2D1_COLOR_F { r, g, b, a }
+    }
+
+    pub fn pt(x: f32, y: f32) -> D2D_POINT_2F {
+        D2D_POINT_2F { x, y }
+    }
+
+    /// Aksen ambient per section: cyan (Hub/Control), indigo (Music),
+    /// amber (Focus), emerald saat charging.
+    pub fn accent_for(state: crate::notch::states::NotchState, charging: bool) -> (f32, f32, f32) {
+        use crate::notch::states::NotchState;
+        if charging && state == NotchState::Control {
+            return (0.18, 0.86, 0.52);
+        }
+        match state {
+            NotchState::Music => (0.42, 0.42, 0.98),
+            NotchState::Pomo => (0.98, 0.68, 0.26),
+            NotchState::Clips => (0.36, 0.62, 0.96),
+            NotchState::Shelf => (0.32, 0.80, 0.86),
+            _ => (0.24, 0.72, 0.98),
+        }
+    }
+}
+
+impl NotchRenderer {
+    unsafe fn grad(
+        &self,
+        p0: D2D_POINT_2F,
+        p1: D2D_POINT_2F,
+        stops: &[(f32, D2D1_COLOR_F)],
+    ) -> Option<ID2D1LinearGradientBrush> {
+        let gstops: Vec<_> = stops
+            .iter()
+            .map(|(p, c)| D2D1_GRADIENT_STOP {
+                position: *p,
+                color: *c,
+            })
+            .collect();
+        let sc = self
+            .rt
+            .CreateGradientStopCollection(&gstops, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP)
+            .ok()?;
+        let props = D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES {
+            startPoint: p0,
+            endPoint: p1,
+        };
+        self.rt.CreateLinearGradientBrush(&props, None, &sc).ok()
+    }
+
+    unsafe fn radial(
+        &self,
+        center: D2D_POINT_2F,
+        rx: f32,
+        ry: f32,
+        stops: &[(f32, D2D1_COLOR_F)],
+    ) -> Option<windows::Win32::Graphics::Direct2D::ID2D1RadialGradientBrush> {
+        let gstops: Vec<_> = stops
+            .iter()
+            .map(|(p, c)| D2D1_GRADIENT_STOP {
+                position: *p,
+                color: *c,
+            })
+            .collect();
+        let sc = self
+            .rt
+            .CreateGradientStopCollection(&gstops, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP)
+            .ok()?;
+        let props = D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES {
+            center,
+            gradientOriginOffset: glass::pt(0.0, 0.0),
+            radiusX: rx,
+            radiusY: ry,
+        };
+        self.rt.CreateRadialGradientBrush(&props, None, &sc).ok()
+    }
+
+    /// Permukaan Solid Liquid Glass: base gradient, kilau atas, ambient tint, rim kaca.
+    unsafe fn draw_glass_surface(
+        &self,
+        ctrl: &NotchController,
+        pill: D2D_RECT_F,
+        alpha: f32,
+    ) {
+        let radius = ctrl.corner_radius.value.clamp(7.0, 34.0);
+        let rr = D2D1_ROUNDED_RECT {
+            rect: pill,
+            radiusX: radius,
+            radiusY: radius,
+        };
+
+        let base = [
+            (0.0, glass::col(0.020, 0.024, 0.035, 0.97 * alpha)),
+            (0.55, glass::col(0.039, 0.051, 0.078, 0.95 * alpha)),
+            (1.0, glass::col(0.051, 0.071, 0.114, 0.96 * alpha)),
+        ];
+        if let Some(b) = self.grad(
+            glass::pt(pill.left, pill.top),
+            glass::pt(pill.left, pill.bottom),
+            &base,
+        ) {
+            self.rt.FillRoundedRectangle(&rr, &b);
+        }
+
+        // Top specular sheen 26 dip.
+        let sheen_bottom = (pill.top + 26.0).min(pill.bottom);
+        let sheen = D2D_RECT_F {
+            left: pill.left + 1.0,
+            top: pill.top,
+            right: pill.right - 1.0,
+            bottom: sheen_bottom,
+        };
+        if let Some(b) = self.grad(
+            glass::pt(0.0, sheen.top),
+            glass::pt(0.0, sheen.bottom),
+            &[
+                (0.0, glass::col(1.0, 1.0, 1.0, 0.08 * alpha)),
+                (1.0, glass::col(1.0, 1.0, 1.0, 0.0)),
+            ],
+        ) {
+            self.rt.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect: sheen,
+                    radiusX: radius * 0.8,
+                    radiusY: radius * 0.8,
+                },
+                &b,
+            );
+        }
+
+        // Dynamic ambient tint mengikuti section aktif.
+        let (ar, ag, ab) = glass::accent_for(ctrl.state, ctrl.is_charging);
+        let cx = (pill.left + pill.right) * 0.5;
+        let pw = pill.right - pill.left;
+        let ph = pill.bottom - pill.top;
+        if let Some(b) = self.radial(
+            glass::pt(cx, pill.bottom - 4.0),
+            pw * 0.58,
+            ph * 0.80,
+            &[
+                (0.0, glass::col(ar, ag, ab, 0.13 * alpha)),
+                (0.55, glass::col(ar, ag, ab, 0.045 * alpha)),
+                (1.0, glass::col(0.0, 0.0, 0.0, 0.0)),
+            ],
+        ) {
+            self.rt.FillRoundedRectangle(&rr, &b);
+        }
+
+        // Liquid glass rim: diagonal gradient stroke.
+        if let Some(b) = self.grad(
+            glass::pt(pill.left, pill.top),
+            glass::pt(pill.right, pill.bottom),
+            &[
+                (0.0, glass::col(1.0, 1.0, 1.0, 0.24 * alpha)),
+                (0.52, glass::col(0.47, 0.82, 1.0, 0.14 * alpha)),
+                (1.0, glass::col(1.0, 1.0, 1.0, 0.07 * alpha)),
+            ],
+        ) {
+            self.rt.DrawRoundedRectangle(&rr, &b, 1.15, None);
+        }
+    }
+
+    /// Header tiap section: judul kiri, baterai + jam/tanggal kanan.
+    unsafe fn draw_glass_header(
+        &self,
+        ctrl: &NotchController,
+        pill: D2D_RECT_F,
+        title: &str,
+        alpha: f32,
+    ) {
+        let x = pill.left + glass::PAD;
+        let y = pill.top + glass::HDR_TOP;
+        self.draw_text_left(
+            title,
+            &self.fmt_title,
+            D2D_RECT_F {
+                left: x,
+                top: y - 2.0,
+                right: x + 130.0,
+                bottom: y + 18.0,
+            },
+            glass::col(0.62, 0.66, 0.72, alpha),
+        );
+
+        let now = Local::now();
+        let stamp = now.format("%H:%M · %a %d %b").to_string();
+        self.draw_text_right(
+            &stamp,
+            &self.fmt_caption,
+            D2D_RECT_F {
+                left: pill.right - glass::PAD - 150.0,
+                top: y,
+                right: pill.right - glass::PAD,
+                bottom: y + 16.0,
+            },
+            glass::col(0.62, 0.68, 0.78, alpha * 0.9),
+        );
+        self.draw_nusa_ring_battery(
+            pill.right - glass::PAD - 160.0,
+            y + 7.0,
+            ctrl.battery_percent,
+            ctrl.is_charging,
+            alpha,
+        );
+    }
+
+    /// Navigasi: chevron kiri/kanan + 6 pager dots di bawah tengah.
+    unsafe fn draw_glass_nav(&self, ctrl: &NotchController, pill: D2D_RECT_F, alpha: f32) {
+        let cy = (pill.top + pill.bottom) * 0.5;
+        for (side, label) in [(-1.0_f32, "<"), (1.0_f32, ">")] {
+            let cx = if side < 0.0 {
+                pill.left + 12.0
+            } else {
+                pill.right - 12.0
+            };
+            if let Ok(b) = self.rt.CreateSolidColorBrush(
+                &glass::col(1.0, 1.0, 1.0, if ctrl.is_hovered { 0.10 } else { 0.06 } * alpha),
+                None,
+            ) {
+                self.rt.FillEllipse(
+                    &D2D1_ELLIPSE {
+                        point: glass::pt(cx, cy),
+                        radiusX: 11.0,
+                        radiusY: 11.0,
+                    },
+                    &b,
+                );
+            }
+            self.draw_text_centered(
+                label,
+                &self.fmt_caption,
+                D2D_RECT_F {
+                    left: cx - 11.0,
+                    top: cy - 8.0,
+                    right: cx + 11.0,
+                    bottom: cy + 8.0,
+                },
+                glass::col(0.80, 0.84, 0.90, alpha * 0.85),
+            );
+        }
+
+        let tabs = NotchController::ordered_tabs();
+        let active = tabs.iter().position(|&s| s == ctrl.state).unwrap_or(0);
+        let dot_y = pill.bottom - 9.0;
+        let spacing = 11.0;
+        let start = (pill.left + pill.right) * 0.5 - spacing * 2.5;
+        for i in 0..6 {
+            let on = i == active;
+            let cx = start + spacing * i as f32;
+            if let Ok(b) = self.rt.CreateSolidColorBrush(
+                &glass::col(
+                    1.0,
+                    1.0,
+                    1.0,
+                    if on { 0.92 } else { 0.22 } * alpha,
+                ),
+                None,
+            ) {
+                if on {
+                    self.rt.FillRoundedRectangle(
+                        &D2D1_ROUNDED_RECT {
+                            rect: D2D_RECT_F {
+                                left: cx - 7.0,
+                                top: dot_y - 2.0,
+                                right: cx + 7.0,
+                                bottom: dot_y + 2.0,
+                            },
+                            radiusX: 2.0,
+                            radiusY: 2.0,
+                        },
+                        &b,
+                    );
+                } else {
+                    self.rt.FillEllipse(
+                        &D2D1_ELLIPSE {
+                            point: glass::pt(cx, dot_y),
+                            radiusX: 2.0,
+                            radiusY: 2.0,
+                        },
+                        &b,
+                    );
+                }
+            }
+        }
+    }
+
+    unsafe fn hairline(&self, x0: f32, x1: f32, y: f32, alpha: f32) {
+        if let Ok(b) = self.rt.CreateSolidColorBrush(&glass::col(1.0, 1.0, 1.0, 0.08 * alpha), None) {
+            self.rt.FillRectangle(
+                &D2D_RECT_F {
+                    left: x0,
+                    top: y,
+                    right: x1,
+                    bottom: y + 1.0,
+                },
+                &b,
+            );
+        }
+    }
+
+    unsafe fn glass_pill(
+        &self,
+        rect: D2D_RECT_F,
+        radius: f32,
+        fill: D2D1_COLOR_F,
+        stroke: Option<D2D1_COLOR_F>,
+        stroke_w: f32,
+    ) {
+        if let Ok(b) = self.rt.CreateSolidColorBrush(&fill, None) {
+            self.rt.FillRoundedRectangle(
+                &D2D1_ROUNDED_RECT {
+                    rect,
+                    radiusX: radius,
+                    radiusY: radius,
+                },
+                &b,
+            );
+        }
+        if let Some(sc) = stroke {
+            if let Ok(b) = self.rt.CreateSolidColorBrush(&sc, None) {
+                self.rt.DrawRoundedRectangle(
+                    &D2D1_ROUNDED_RECT {
+                        rect,
+                        radiusX: radius,
+                        radiusY: radius,
+                    },
+                    &b,
+                    stroke_w,
+                    None,
+                );
+            }
+        }
+    }
+
+    // ── Section 1: Hub ──────────────────────────────────────────────────────
+    unsafe fn draw_hub_glass(&self, ctrl: &NotchController, pill: D2D_RECT_F, alpha: f32) {
+        self.draw_glass_header(ctrl, pill, "Hub", alpha);
+
+        let left = pill.left + glass::PAD;
+        let top = pill.top + glass::BODY_TOP;
+        let mid_x = left + (pill.right - pill.left - glass::PAD * 2.0) * 0.40;
+        let bottom = pill.top + glass::BODY_BOT;
+
+        let now = Local::now();
+        self.draw_text_left(
+            &now.format("%H:%M").to_string(),
+            &self.fmt_clock_hero,
+            D2D_RECT_F {
+                left,
+                top: top + 4.0,
+                right: mid_x - 12.0,
+                bottom: top + 62.0,
+            },
+            glass::col(1.0, 1.0, 1.0, alpha),
+        );
+        self.draw_text_left(
+            &now.format("%A · %d %B").to_string(),
+            &self.fmt_caption,
+            D2D_RECT_F {
+                left: left + 2.0,
+                top: top + 62.0,
+                right: mid_x - 8.0,
+                bottom: top + 80.0,
+            },
+            glass::col(0.56, 0.62, 0.72, alpha),
+        );
+
+        // Pemisah vertikal 1px.
+        if let Ok(b) = self.rt.CreateSolidColorBrush(&glass::col(1.0, 1.0, 1.0, 0.08 * alpha), None)
+        {
+            self.rt.FillRectangle(
+                &D2D_RECT_F {
+                    left: mid_x,
+                    top: top + 2.0,
+                    right: mid_x + 1.0,
+                    bottom: bottom - 10.0,
+                },
+                &b,
+            );
+        }
+
+        let quote = ctrl.current_quote();
+        self.draw_text_left(
+            quote.quote,
+            &self.fmt_body,
+            D2D_RECT_F {
+                left: mid_x + glass::PAD,
+                top: top + 2.0,
+                right: pill.right - glass::PAD,
+                bottom: top + 62.0,
+            },
+            glass::col(0.85, 0.87, 0.91, alpha),
+        );
+        self.draw_text_left(
+            quote.author,
+            &self.fmt_caption,
+            D2D_RECT_F {
+                left: mid_x + glass::PAD,
+                top: top + 64.0,
+                right: pill.right - glass::PAD,
+                bottom: top + 80.0,
+            },
+            glass::col(0.48, 0.51, 0.57, alpha),
+        );
+    }
+
+    // ── Section 2: Music (2A info, 2B lyrics) ───────────────────────────────
+    unsafe fn draw_music_glass(&self, ctrl: &NotchController, pill: D2D_RECT_F, alpha: f32) {
+        self.draw_glass_header(ctrl, pill, "Music", alpha);
+        let left = pill.left + glass::PAD;
+        let right = pill.right - glass::PAD;
+
+        if ctrl.show_side_lyrics {
+            // 2B. Mini header + 3 baris lirik + progress tipis.
+            let mini_y = pill.top + 34.0;
+            self.glass_pill(
+                D2D_RECT_F {
+                    left: left,
+                    top: mini_y,
+                    right: left + 22.0,
+                    bottom: mini_y + 22.0,
+                },
+                6.0,
+                glass::col(0.10, 0.12, 0.18, 0.9 * alpha),
+                Some(glass::col(1.0, 1.0, 1.0, 0.10 * alpha)),
+                0.8,
+            );
+            self.draw_text_left(
+                &format!("{} · {}", ctrl.media_title, ctrl.media_artist),
+                &self.fmt_caption,
+                D2D_RECT_F {
+                    left: left + 30.0,
+                    top: mini_y + 2.0,
+                    right: right - 62.0,
+                    bottom: mini_y + 20.0,
+                },
+                glass::col(0.82, 0.84, 0.88, alpha),
+            );
+            // Prev / Play / Next kompak + tombol Lyrics aktif.
+            let by = mini_y + 11.0;
+            for (dx, label) in [(-46.0_f32, "⏮"), (-24.0, if ctrl.media_playing { "⏸" } else { "⏵" }), (0.0, "⏭")] {
+                self.draw_text_centered(
+                    label,
+                    &self.fmt_caption,
+                    D2D_RECT_F {
+                        left: right + dx - 10.0,
+                        top: by - 10.0,
+                        right: right + dx + 10.0,
+                        bottom: by + 10.0,
+                    },
+                    glass::col(0.92, 0.94, 0.98, alpha),
+                );
+            }
+            self.glass_pill(
+                D2D_RECT_F {
+                    left: right - 30.0,
+                    top: mini_y,
+                    right: right,
+                    bottom: mini_y + 22.0,
+                },
+                11.0,
+                glass::col(0.55, 0.85, 1.0, 0.22 * alpha),
+                Some(glass::col(0.60, 0.88, 1.0, 0.45 * alpha)),
+                0.9,
+            );
+
+            let stage_top = pill.top + 62.0;
+            let prev_line = if ctrl.active_lyric_idx > 0 {
+                ctrl.timed_lyrics
+                    .get(ctrl.active_lyric_idx - 1)
+                    .map(|(_, t)| t.clone())
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            let cur_line = ctrl
+                .timed_lyrics
+                .get(ctrl.active_lyric_idx)
+                .map(|(_, t)| t.clone())
+                .unwrap_or_else(|| "No synced lyrics available".to_string());
+            let next_line = ctrl
+                .timed_lyrics
+                .get(ctrl.active_lyric_idx + 1)
+                .map(|(_, t)| t.clone())
+                .unwrap_or_default();
+
+            self.draw_text_centered(
+                &prev_line,
+                &self.fmt_caption,
+                D2D_RECT_F {
+                    left: left,
+                    top: stage_top,
+                    right: right,
+                    bottom: stage_top + 18.0,
+                },
+                glass::col(0.42, 0.45, 0.50, alpha * 0.75),
+            );
+            self.draw_text_centered(
+                &cur_line,
+                &self.fmt_title,
+                D2D_RECT_F {
+                    left: left,
+                    top: stage_top + 24.0,
+                    right: right,
+                    bottom: stage_top + 62.0,
+                },
+                glass::col(1.0, 1.0, 1.0, alpha),
+            );
+            self.draw_text_centered(
+                &next_line,
+                &self.fmt_caption,
+                D2D_RECT_F {
+                    left: left,
+                    top: stage_top + 66.0,
+                    right: right,
+                    bottom: stage_top + 84.0,
+                },
+                glass::col(0.61, 0.64, 0.70, alpha * 0.8),
+            );
+
+            // Slim progress 2.5 dip (interaktif).
+            let py = pill.top + 146.0;
+            self.glass_pill(
+                D2D_RECT_F {
+                    left: left,
+                    top: py,
+                    right: right,
+                    bottom: py + 2.5,
+                },
+                1.25,
+                glass::col(1.0, 1.0, 1.0, 0.12 * alpha),
+                None,
+                0.0,
+            );
+            let fill_r = left + (right - left) * ctrl.media_progress.clamp(0.0, 1.0);
+            self.glass_pill(
+                D2D_RECT_F {
+                    left: left,
+                    top: py,
+                    right: fill_r.max(left + 2.0),
+                    bottom: py + 2.5,
+                },
+                1.25,
+                glass::col(0.62, 0.86, 1.0, 0.95 * alpha),
+                None,
+                0.0,
+            );
+            return;
+        }
+
+        // 2A. Track row.
+        let thumb_y = pill.top + 36.0;
+        self.glass_pill(
+            D2D_RECT_F {
+                left: left,
+                top: thumb_y,
+                right: left + 48.0,
+                bottom: thumb_y + 48.0,
+            },
+            10.0,
+            glass::col(0.09, 0.11, 0.16, 0.95 * alpha),
+            Some(glass::col(1.0, 1.0, 1.0, 0.12 * alpha)),
+            0.8,
+        );
+        self.draw_text_left(
+            &ctrl.media_title,
+            &self.fmt_title,
+            D2D_RECT_F {
+                left: left + 58.0,
+                top: thumb_y + 2.0,
+                right: right - 56.0,
+                bottom: thumb_y + 24.0,
+            },
+            glass::col(1.0, 1.0, 1.0, alpha),
+        );
+        self.draw_text_left(
+            &ctrl.media_artist,
+            &self.fmt_caption,
+            D2D_RECT_F {
+                left: left + 58.0,
+                top: thumb_y + 24.0,
+                right: right - 56.0,
+                bottom: thumb_y + 42.0,
+            },
+            glass::col(0.60, 0.64, 0.70, alpha),
+        );
+        // Toggle Lyrics.
+        self.glass_pill(
+            D2D_RECT_F {
+                left: right - 44.0,
+                top: thumb_y + 2.0,
+                right: right,
+                bottom: thumb_y + 22.0,
+            },
+            10.0,
+            glass::col(1.0, 1.0, 1.0, 0.10 * alpha),
+            Some(glass::col(1.0, 1.0, 1.0, 0.16 * alpha)),
+            0.8,
+        );
+        self.draw_text_centered(
+            "Lyrics",
+            &self.fmt_caption,
+            D2D_RECT_F {
+                left: right - 44.0,
+                top: thumb_y + 3.0,
+                right: right,
+                bottom: thumb_y + 21.0,
+            },
+            glass::col(0.86, 0.92, 1.0, alpha),
+        );
+
+        // Seek bar.
+        let bar_y = pill.top + 104.0;
+        let bar_l = left + 42.0;
+        let bar_r = right - 42.0;
+        self.draw_text_left(
+            &format!("{:02}:{:02}", (ctrl.media_elapsed_exact as u32) / 60, (ctrl.media_elapsed_exact as u32) % 60),
+            &self.fmt_caption,
+            D2D_RECT_F { left, top: bar_y - 8.0, right: left + 40.0, bottom: bar_y + 8.0 },
+            glass::col(0.55, 0.60, 0.68, alpha),
+        );
+        let remain = (ctrl.media_total_secs - ctrl.media_elapsed_exact).max(0.0) as u32;
+        self.draw_text_right(
+            &format!("-{:02}:{:02}", remain / 60, remain % 60),
+            &self.fmt_caption,
+            D2D_RECT_F { left: right - 42.0, top: bar_y - 8.0, right, bottom: bar_y + 8.0 },
+            glass::col(0.55, 0.60, 0.68, alpha),
+        );
+        self.glass_pill(
+            D2D_RECT_F { left: bar_l, top: bar_y - 2.0, right: bar_r, bottom: bar_y + 2.0 },
+            2.0,
+            glass::col(1.0, 1.0, 1.0, 0.12 * alpha),
+            None,
+            0.0,
+        );
+        let fx = bar_l + (bar_r - bar_l) * ctrl.media_progress.clamp(0.0, 1.0);
+        self.glass_pill(
+            D2D_RECT_F { left: bar_l, top: bar_y - 2.0, right: fx.max(bar_l + 2.0), bottom: bar_y + 2.0 },
+            2.0,
+            glass::col(0.92, 0.96, 1.0, 0.95 * alpha),
+            None,
+            0.0,
+        );
+        if let Ok(b) = self.rt.CreateSolidColorBrush(&glass::col(1.0, 1.0, 1.0, alpha), None) {
+            self.rt.FillEllipse(
+                &D2D1_ELLIPSE { point: glass::pt(fx, bar_y), radiusX: 4.0, radiusY: 4.0 },
+                &b,
+            );
+        }
+
+        // Controls: prev / play / next, rapat 24 dip.
+        let ctrl_y = pill.top + 130.0;
+        let cx = (pill.left + pill.right) * 0.5;
+        self.glass_pill(
+            D2D_RECT_F { left: cx - 16.0, top: ctrl_y - 16.0, right: cx + 16.0, bottom: ctrl_y + 16.0 },
+            16.0,
+            glass::col(1.0, 1.0, 1.0, 0.12 * alpha),
+            Some(glass::col(0.70, 0.90, 1.0, 0.30 * alpha)),
+            1.0,
+        );
+        self.draw_text_centered(
+            if ctrl.media_playing { "⏸" } else { "⏵" },
+            &self.fmt_title,
+            D2D_RECT_F { left: cx - 14.0, top: ctrl_y - 11.0, right: cx + 14.0, bottom: ctrl_y + 11.0 },
+            glass::col(1.0, 1.0, 1.0, alpha),
+        );
+        for (dx, label) in [(-40.0_f32, "⏮"), (40.0, "⏭")] {
+            self.draw_text_centered(
+                label,
+                &self.fmt_title,
+                D2D_RECT_F {
+                    left: cx + dx - 14.0,
+                    top: ctrl_y - 11.0,
+                    right: cx + dx + 14.0,
+                    bottom: ctrl_y + 11.0,
+                },
+                glass::col(0.86, 0.90, 0.96, alpha * 0.9),
+            );
+        }
+    }
+
+
+    // ── Section 3: Control ─────────────────────────────────────────────────
+    unsafe fn draw_control_glass(&self, ctrl: &NotchController, pill: D2D_RECT_F, alpha: f32) {
+        self.draw_glass_header(ctrl, pill, "Control", alpha);
+        let left = pill.left + glass::PAD;
+        let right = pill.right - glass::PAD;
+        let w = right - left;
+
+        for (i, (icon, pct, warm)) in [
+            ("🔊", ctrl.volume_level, false),
+            ("🔆", ctrl.brightness_level, true),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let y = pill.top + 46.0 + i as f32 * 46.0;
+            let row = D2D_RECT_F {
+                left,
+                top: y,
+                right,
+                bottom: y + 32.0,
+            };
+            self.glass_pill(
+                row,
+                16.0,
+                glass::col(1.0, 1.0, 1.0, 0.08 * alpha),
+                Some(glass::col(1.0, 1.0, 1.0, 0.12 * alpha)),
+                0.8,
+            );
+            let fill_w = w * (*pct as f32 / 100.0);
+            let (fr, fg, fb) = if *warm {
+                (1.0, 0.86, 0.62)
+            } else {
+                (0.72, 0.92, 1.0)
+            };
+            if fill_w > 8.0 {
+                self.glass_pill(
+                    D2D_RECT_F {
+                        left: left + 1.0,
+                        top: y + 1.0,
+                        right: (left + fill_w).min(right - 1.0),
+                        bottom: y + 31.0,
+                    },
+                    15.0,
+                    glass::col(fr, fg, fb, 0.16 * alpha),
+                    None,
+                    0.0,
+                );
+            }
+            self.draw_text_left(
+                icon,
+                &self.fmt_title,
+                D2D_RECT_F {
+                    left: left + 10.0,
+                    top: y + 5.0,
+                    right: left + 40.0,
+                    bottom: y + 28.0,
+                },
+                glass::col(0.92, 0.95, 1.0, alpha),
+            );
+            self.draw_text_right(
+                &format!("{}%", pct),
+                &self.fmt_title,
+                D2D_RECT_F {
+                    left: right - 62.0,
+                    top: y + 5.0,
+                    right: right - 10.0,
+                    bottom: y + 28.0,
+                },
+                glass::col(0.95, 0.97, 1.0, alpha),
+            );
+        }
+
+        self.draw_text_left(
+            &format!("Vol {}%  ·  Bright {}%", ctrl.volume_level, ctrl.brightness_level),
+            &self.fmt_caption,
+            D2D_RECT_F {
+                left,
+                top: pill.top + 136.0,
+                right,
+                bottom: pill.top + 150.0,
+            },
+            glass::col(0.48, 0.52, 0.60, alpha),
+        );
+    }
+
+    // ── Section 4: Focus (Pomodoro) ────────────────────────────────────────
+    unsafe fn draw_focus_glass(&self, ctrl: &NotchController, pill: D2D_RECT_F, alpha: f32) {
+        self.draw_glass_header(ctrl, pill, "Focus", alpha);
+        let left = pill.left + glass::PAD;
+        let right = pill.right - glass::PAD;
+
+        // Segmented toggle 25m / 5m.
+        let seg = D2D_RECT_F {
+            left: right - 132.0,
+            top: pill.top + 8.0,
+            right,
+            bottom: pill.top + 32.0,
+        };
+        self.glass_pill(
+            seg,
+            12.0,
+            glass::col(1.0, 1.0, 1.0, 0.08 * alpha),
+            Some(glass::col(1.0, 1.0, 1.0, 0.10 * alpha)),
+            0.8,
+        );
+        let half = (seg.right - seg.left) * 0.5;
+        let active_x = if ctrl.pomo_is_break { seg.left + half } else { seg.left };
+        self.glass_pill(
+            D2D_RECT_F {
+                left: active_x + 1.0,
+                top: seg.top + 1.0,
+                right: active_x + half - 1.0,
+                bottom: seg.bottom - 1.0,
+            },
+            11.0,
+            glass::col(0.62, 0.86, 1.0, 0.28 * alpha),
+            None,
+            0.0,
+        );
+        self.draw_text_centered(
+            "25m Focus",
+            &self.fmt_caption,
+            D2D_RECT_F { left: seg.left, top: seg.top + 2.0, right: seg.left + half, bottom: seg.bottom - 1.0 },
+            glass::col(1.0, 1.0, 1.0, if ctrl.pomo_is_break { alpha * 0.55 } else { alpha }),
+        );
+        self.draw_text_centered(
+            "5m Break",
+            &self.fmt_caption,
+            D2D_RECT_F { left: seg.left + half, top: seg.top + 2.0, right: seg.right, bottom: seg.bottom - 1.0 },
+            glass::col(1.0, 1.0, 1.0, if ctrl.pomo_is_break { alpha } else { alpha * 0.55 }),
+        );
+
+        let mins = ctrl.pomo_remaining_secs / 60;
+        let secs = ctrl.pomo_remaining_secs % 60;
+        self.draw_text_left(
+            &format!("{:02}:{:02}", mins, secs),
+            &self.fmt_clock_hero,
+            D2D_RECT_F {
+                left,
+                top: pill.top + 44.0,
+                right: right - 96.0,
+                bottom: pill.top + 106.0,
+            },
+            glass::col(1.0, 1.0, 1.0, alpha),
+        );
+
+        let btn_y = pill.top + 74.0;
+        self.glass_pill(
+            D2D_RECT_F { left: right - 76.0, top: btn_y - 18.0, right: right - 40.0, bottom: btn_y + 18.0 },
+            18.0,
+            glass::col(0.62, 0.86, 1.0, 0.20 * alpha),
+            Some(glass::col(0.70, 0.90, 1.0, 0.35 * alpha)),
+            1.0,
+        );
+        self.draw_text_centered(
+            if ctrl.pomo_running { "⏸" } else { "⏵" },
+            &self.fmt_title,
+            D2D_RECT_F { left: right - 76.0, top: btn_y - 12.0, right: right - 40.0, bottom: btn_y + 12.0 },
+            glass::col(1.0, 1.0, 1.0, alpha),
+        );
+        self.glass_pill(
+            D2D_RECT_F { left: right - 34.0, top: btn_y - 16.0, right: right - 2.0, bottom: btn_y + 16.0 },
+            16.0,
+            glass::col(1.0, 1.0, 1.0, 0.07 * alpha),
+            Some(glass::col(1.0, 1.0, 1.0, 0.12 * alpha)),
+            0.8,
+        );
+        self.draw_text_centered(
+            "↺",
+            &self.fmt_title,
+            D2D_RECT_F { left: right - 34.0, top: btn_y - 12.0, right: right - 2.0, bottom: btn_y + 12.0 },
+            glass::col(0.90, 0.93, 0.98, alpha),
+        );
+
+        // Progress line bawah.
+        let py = pill.top + 128.0;
+        let ratio = if ctrl.pomo_total_secs > 0 {
+            1.0 - (ctrl.pomo_remaining_secs as f32 / ctrl.pomo_total_secs as f32)
+        } else {
+            0.0
+        }
+        .clamp(0.0, 1.0);
+        self.glass_pill(
+            D2D_RECT_F { left, top: py, right, bottom: py + 3.5 },
+            1.75,
+            glass::col(1.0, 1.0, 1.0, 0.12 * alpha),
+            None,
+            0.0,
+        );
+        let fx = left + (right - left) * ratio;
+        self.glass_pill(
+            D2D_RECT_F { left, top: py, right: fx.max(left + 2.0), bottom: py + 3.5 },
+            1.75,
+            glass::col(1.0, 0.80, 0.45, 0.95 * alpha),
+            None,
+            0.0,
+        );
+    }
+
+    // ── Section 5: Shelf ───────────────────────────────────────────────────
+    unsafe fn draw_shelf_glass(&self, ctrl: &NotchController, pill: D2D_RECT_F, alpha: f32) {
+        self.draw_glass_header(ctrl, pill, "Shelf", alpha);
+        let left = pill.left + glass::PAD;
+        let right = pill.right - glass::PAD;
+        let top = pill.top + 38.0;
+        let bottom = pill.top + glass::BODY_BOT;
+
+        if ctrl.shelf_files.is_empty() {
+            // Dashed dropzone bersih.
+            if let Ok(style) = self.rt.CreateSolidColorBrush(&glass::col(1.0, 1.0, 1.0, 0.18 * alpha), None)
+            {
+                let _ = style;
+            }
+            self.glass_pill(
+                D2D_RECT_F { left, top, right, bottom },
+                14.0,
+                glass::col(1.0, 1.0, 1.0, 0.03 * alpha),
+                Some(glass::col(1.0, 1.0, 1.0, 0.16 * alpha)),
+                1.0,
+            );
+            self.draw_text_centered(
+                "Drop files here",
+                &self.fmt_title,
+                D2D_RECT_F { left, top: top + 32.0, right, bottom: top + 56.0 },
+                glass::col(0.92, 0.95, 1.0, alpha),
+            );
+            self.draw_text_centered(
+                "Drag out anytime · Click to open",
+                &self.fmt_caption,
+                D2D_RECT_F { left, top: top + 58.0, right, bottom: top + 74.0 },
+                glass::col(0.52, 0.56, 0.63, alpha),
+            );
+            return;
+        }
+
+        // Chip baris, maks 4 per baris.
+        let mut x = left;
+        let mut y = top;
+        let chip_w = ((right - left) * 0.5) - 6.0;
+        for (name, size, _path) in ctrl.shelf_files.iter().take(6) {
+            if x + chip_w > right {
+                x = left;
+                y += 36.0;
+            }
+            self.glass_pill(
+                D2D_RECT_F { left: x, top: y, right: x + chip_w, bottom: y + 30.0 },
+                10.0,
+                glass::col(1.0, 1.0, 1.0, 0.07 * alpha),
+                Some(glass::col(1.0, 1.0, 1.0, 0.10 * alpha)),
+                0.8,
+            );
+            self.draw_text_left(
+                name,
+                &self.fmt_caption,
+                D2D_RECT_F { left: x + 10.0, top: y + 3.0, right: x + chip_w - 8.0, bottom: y + 18.0 },
+                glass::col(0.92, 0.94, 0.98, alpha),
+            );
+            self.draw_text_left(
+                size,
+                &self.fmt_caption,
+                D2D_RECT_F { left: x + 10.0, top: y + 16.0, right: x + chip_w - 8.0, bottom: y + 29.0 },
+                glass::col(0.52, 0.56, 0.63, alpha),
+            );
+            x += chip_w + 12.0;
+        }
+    }
+
+    // ── Section 6: Clips (clipboard + quick notes) ─────────────────────────
+    unsafe fn draw_clips_glass(&self, ctrl: &NotchController, pill: D2D_RECT_F, alpha: f32) {
+        self.draw_glass_header(ctrl, pill, "Clips", alpha);
+        let left = pill.left + glass::PAD;
+        let right = pill.right - glass::PAD;
+        let mut y = pill.top + 38.0;
+
+        // Tombol + Note / riwayat.
+        self.glass_pill(
+            D2D_RECT_F { left: right - 58.0, top: pill.top + 8.0, right, bottom: pill.top + 30.0 },
+            11.0,
+            glass::col(1.0, 1.0, 1.0, 0.09 * alpha),
+            Some(glass::col(1.0, 1.0, 1.0, 0.14 * alpha)),
+            0.8,
+        );
+        self.draw_text_centered(
+            if ctrl.clips_view_notes { "History" } else { "+ Note" },
+            &self.fmt_caption,
+            D2D_RECT_F { left: right - 58.0, top: pill.top + 10.0, right, bottom: pill.top + 28.0 },
+            glass::col(0.88, 0.94, 1.0, alpha),
+        );
+
+        if ctrl.note_input_active {
+            self.glass_pill(
+                D2D_RECT_F { left, top: y, right, bottom: y + 26.0 },
+                9.0,
+                glass::col(1.0, 1.0, 1.0, 0.06 * alpha),
+                Some(glass::col(0.62, 0.86, 1.0, 0.35 * alpha)),
+                1.0,
+            );
+            self.draw_text_left(
+                if ctrl.note_input.is_empty() { "Type a note, Enter to save" } else { &ctrl.note_input },
+                &self.fmt_caption,
+                D2D_RECT_F { left: left + 10.0, top: y + 4.0, right: right - 10.0, bottom: y + 23.0 },
+                glass::col(0.88, 0.92, 1.0, alpha),
+            );
+            y += 34.0;
+        }
+
+        let rows = ctrl.clips_rows();
+        if rows.is_empty() {
+            self.draw_text_centered(
+                if ctrl.clips_view_notes { "No notes yet" } else { "Clipboard is empty" },
+                &self.fmt_caption,
+                D2D_RECT_F { left, top: y + 24.0, right, bottom: y + 48.0 },
+                glass::col(0.50, 0.54, 0.61, alpha),
+            );
+        }
+
+        let max_rows = 3;
+        for (i, row) in rows.iter().enumerate().skip(ctrl.clips_scroll).take(max_rows) {
+            let ry = y + (i - ctrl.clips_scroll) as f32 * 32.0;
+            self.draw_text_left(
+                row,
+                &self.fmt_caption,
+                D2D_RECT_F { left: left + 4.0, top: ry + 6.0, right: right - 22.0, bottom: ry + 24.0 },
+                glass::col(0.86, 0.88, 0.92, alpha),
+            );
+            self.hairline(left, right, ry + 30.0, alpha * 0.9);
+        }
+    }
+
+    unsafe fn draw_glass_panel(&self, ctrl: &NotchController, pill: D2D_RECT_F, alpha: f32) {
+        match ctrl.state {
+            NotchState::Hub => self.draw_hub_glass(ctrl, pill, alpha),
+            NotchState::Music => self.draw_music_glass(ctrl, pill, alpha),
+            NotchState::Control => self.draw_control_glass(ctrl, pill, alpha),
+            NotchState::Pomo => self.draw_focus_glass(ctrl, pill, alpha),
+            NotchState::Shelf => self.draw_shelf_glass(ctrl, pill, alpha),
+            NotchState::Clips => self.draw_clips_glass(ctrl, pill, alpha),
+            _ => {}
+        }
+    }
 }

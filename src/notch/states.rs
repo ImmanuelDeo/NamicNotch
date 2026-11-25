@@ -714,16 +714,16 @@ impl NotchController {
             return (110.0, 6.0, 3.0);
         }
 
+        // Expanded notch seragam: 450x168 dip, radius 24 (Solid Liquid Glass).
         match state {
             NotchState::Pet => (156.0, 34.0, 15.0),
             NotchState::Idle => (168.0, 34.0, 15.0),
-            // Lebih lapang saat hover: konten tidak mepet, masih muat di window 540x220.
-            NotchState::Hub => (470.0, 172.0, 22.0),
-            NotchState::Music => (500.0, 188.0, 22.0),
-            NotchState::Control => (470.0, 170.0, 22.0),
-            NotchState::Pomo => (470.0, 174.0, 22.0),
-            NotchState::Shelf => (470.0, 174.0, 22.0),
-            NotchState::Clips => (500.0, 192.0, 22.0),
+            NotchState::Hub
+            | NotchState::Music
+            | NotchState::Control
+            | NotchState::Pomo
+            | NotchState::Shelf
+            | NotchState::Clips => (450.0, 168.0, 24.0),
         }
     }
 
@@ -1337,230 +1337,175 @@ impl NotchController {
 
     /// Menangani klik pada konten section (koordinat relatif terhadap area konten `left: 34.0, top: 26.0`)
     pub fn handle_panel_click(&mut self, lx: f32, ly: f32, pill_w: f32) -> bool {
-        let content_l = 26.0;
-        let content_t = 26.0;
-        let content_w = pill_w - 52.0;
-        let content_h = (self.height.value - 34.0).max(60.0);
-
-        let cx = lx - content_l;
-        let cy = ly - content_t;
-        if cx < 0.0 || cy < 0.0 || cx > content_w || cy > content_h {
-            return false;
-        }
+        use crate::notch::renderer::glass;
+        let left = glass::PAD;
+        let right = pill_w - glass::PAD;
+        let w = (right - left).max(40.0);
+        let in_header = (8.0..=34.0).contains(&ly);
 
         match self.state {
             NotchState::Hub => {
-                if cx >= 122.0 {
+                if ly >= glass::BODY_TOP && lx > left + w * 0.42 {
                     self.quote_offset = (self.quote_offset + 1) % MOTIVATIONAL_QUOTES.len();
                     return true;
                 }
             }
             NotchState::Music => {
-                // Layout selaras draw_music_panel (cy relatif area.top):
-                // bar_y = content_h - 64, kontrol cy = content_h - 24.
-                let right_limit = if self.show_side_lyrics {
-                    content_w * 0.57
-                } else {
-                    content_w - 4.0
-                };
-
-                let bar_y = content_h - 64.0;
-                let track_l = 10.0;
-                let track_r = (right_limit - 10.0).max(track_l + 30.0);
-
-                // 1. Track bar + label waktu (rewind/ff 5s di ujung)
-                if (bar_y - 8.0..=bar_y + 24.0).contains(&cy) && cx <= right_limit {
-                    if cx < track_l && cy > bar_y {
-                        let new_secs = (self.media_elapsed_exact - 5.0).max(0.0);
-                        self.media_elapsed_exact = new_secs;
-                        self.media_progress = (new_secs / self.media_total_secs.max(1.0)).clamp(0.0, 1.0);
-                        Self::seek_system_media(new_secs);
+                if self.show_side_lyrics {
+                    // Tombol Lyrics aktif -> kembali ke mode 2A.
+                    if in_header && lx > right - 70.0 {
+                        self.show_side_lyrics = false;
                         return true;
                     }
-                    if cx > track_r && cy > bar_y {
-                        let new_secs = (self.media_elapsed_exact + 5.0).min(self.media_total_secs);
-                        self.media_elapsed_exact = new_secs;
-                        self.media_progress = (new_secs / self.media_total_secs.max(1.0)).clamp(0.0, 1.0);
-                        Self::seek_system_media(new_secs);
-                        return true;
+                    // Mini controls di header baris kedua.
+                    let by = 45.0;
+                    if (by - 13.0..=by + 13.0).contains(&ly) {
+                        if lx > right - 58.0 && lx < right - 34.0 {
+                            Self::send_system_media_command("prev");
+                            return true;
+                        }
+                        if lx >= right - 34.0 && lx <= right - 10.0 {
+                            Self::send_system_media_command("toggle");
+                            self.media_playing = !self.media_playing;
+                            return true;
+                        }
+                        if lx > right - 10.0 && lx <= right + 6.0 {
+                            Self::send_system_media_command("next");
+                            return true;
+                        }
                     }
-                    if cx >= track_l - 4.0 && cx <= track_r + 4.0 && cy <= bar_y + 6.0 {
-                        let ratio = ((cx - track_l) / (track_r - track_l)).clamp(0.0, 1.0);
+                    // Progress tipis 146 dip.
+                    if (140.0..=152.0).contains(&ly) {
+                        let ratio = ((lx - left) / w).clamp(0.0, 1.0);
                         self.media_progress = ratio;
                         self.media_elapsed_exact = ratio * self.media_total_secs;
-                        let seek_secs = self.media_elapsed_exact;
-                        Self::seek_system_media(seek_secs);
+                        Self::seek_system_media(self.media_elapsed_exact);
+                        return true;
+                    }
+                    return false;
+                }
+
+                // Toggle Lyrics di kanan track row.
+                if (36.0..=58.0).contains(&ly) && lx > right - 48.0 {
+                    self.show_side_lyrics = true;
+                    return true;
+                }
+                // Seek bar.
+                if (94.0..=114.0).contains(&ly) {
+                    let bl = left + 42.0;
+                    let br = right - 42.0;
+                    if lx >= bl - 6.0 && lx <= br + 6.0 {
+                        let ratio = ((lx - bl) / (br - bl)).clamp(0.0, 1.0);
+                        self.media_progress = ratio;
+                        self.media_elapsed_exact = ratio * self.media_total_secs;
+                        Self::seek_system_media(self.media_elapsed_exact);
                         self.is_dragging_track_bar = true;
                         return true;
                     }
                 }
-
-                // 2. Baris kontrol: 💬 | ⏮ | ▶ bulat | ⏭ | speed pill
-                let ctrl_cy = content_h - 24.0;
-                if (ctrl_cy - 16.0..=ctrl_cy + 16.0).contains(&cy) && cx <= right_limit {
-                    let mid = right_limit * 0.5;
-                    if cx < mid - 58.0 {
-                        self.show_side_lyrics = !self.show_side_lyrics;
-                        return true;
-                    } else if cx >= mid - 54.0 && cx < mid - 20.0 {
+                // Controls.
+                if (112.0..=148.0).contains(&ly) {
+                    let cx = pill_w * 0.5;
+                    if lx < cx - 24.0 {
                         Self::send_system_media_command("prev");
                         self.media_elapsed_exact = 0.0;
                         self.media_progress = 0.0;
                         return true;
-                    } else if cx >= mid - 20.0 && cx <= mid + 20.0 {
+                    }
+                    if lx <= cx + 24.0 {
                         Self::send_system_media_command("toggle");
                         self.media_playing = !self.media_playing;
                         return true;
-                    } else if cx > mid + 20.0 && cx <= mid + 56.0 {
+                    }
+                    if lx <= cx + 60.0 {
                         Self::send_system_media_command("next");
                         self.media_elapsed_exact = 0.0;
                         self.media_progress = 0.0;
                         return true;
-                    } else if cx > mid + 56.0 && cx <= mid + 100.0 {
-                        self.playback_rate = match (self.playback_rate * 100.0).round() as i32 {
-                            100 => 1.25,
-                            125 => 1.50,
-                            150 => 2.00,
-                            200 => 0.75,
-                            _ => 1.00,
-                        };
-                        Self::change_system_playback_rate(self.playback_rate);
-                        return true;
                     }
-                }
-
-                // 3. Side lyrics: klik = lompat ke bait berikutnya (karaoke seek)
-                if self.show_side_lyrics && cx > right_limit && !self.timed_lyrics.is_empty() {
-                    let next_idx = (self.active_lyric_idx + 1) % self.timed_lyrics.len();
-                    if let Some((ts, _)) = self.timed_lyrics.get(next_idx) {
-                        self.active_lyric_idx = next_idx;
-                        self.media_elapsed_exact = *ts;
-                        self.media_progress = (*ts / self.media_total_secs.max(1.0)).clamp(0.0, 1.0);
-                        Self::seek_system_media(*ts);
-                    }
-                    return true;
                 }
             }
             NotchState::Control => {
-                let track_l = 96.0;
-                let track_r = (content_w - 44.0).max(track_l + 20.0);
-                if cx >= track_l - 8.0 && cx <= track_r + 8.0 {
-                    let pct = (((cx - track_l) / (track_r - track_l)).clamp(0.0, 1.0) * 100.0)
-                        .round() as u8;
-                    if cy < content_h * 0.5 {
-                        self.volume_level = pct;
+                for row in 0..2 {
+                    let y0 = 46.0 + row as f32 * 46.0;
+                    if (y0..=y0 + 32.0).contains(&ly) {
+                        let is_volume = row == 0;
+                        if lx < left + 40.0 {
+                            if is_volume {
+                                let next = if self.volume_level == 0 { 40 } else { 0 };
+                                self.volume_level = next;
+                                self.volume_poll_suppress = 1.5;
+                                Self::apply_system_volume(next);
+                            }
+                            return true;
+                        }
+                        let pct = (((lx - left) / w).clamp(0.0, 1.0) * 100.0).round() as u8;
                         self.volume_poll_suppress = 1.5;
-                        Self::apply_system_volume(pct);
-                    } else {
-                        self.brightness_level = pct;
-                        self.volume_poll_suppress = 1.5;
-                        Self::apply_system_brightness(pct);
+                        if is_volume {
+                            self.volume_level = pct;
+                            Self::apply_system_volume(pct);
+                        } else {
+                            self.brightness_level = pct;
+                            Self::apply_system_brightness(pct);
+                        }
+                        return true;
                     }
-                    return true;
                 }
             }
             NotchState::Pomo => {
-                // Geometri selaras draw_pomo_panel (relatif area):
-                // kolom kanan mulai div_x+14 = content_w*0.42+20; blok center vertikal.
-                let right_l = content_w * 0.42 + 20.0;
-                let right_r = content_w - 8.0;
-                let right_w = right_r - right_l;
-                let gap = 10.0;
-                let pill_w = (right_w - gap) * 0.5;
-                let pill_h = 30.0;
-                let btn_h = 40.0;
-                let block_h = pill_h + 12.0 + btn_h;
-                let mid_y = content_h * 0.5;
-                let block_top = mid_y - block_h * 0.5;
-
-                // Pill mode (baris atas blok kanan)
-                if (block_top..=block_top + pill_h).contains(&cy) && cx >= right_l {
-                    if cx <= right_l + pill_w {
-                        self.set_pomo_mode(false);
-                        return true;
-                    } else if cx >= right_l + pill_w + gap {
-                        self.set_pomo_mode(true);
-                        return true;
-                    }
+                // Segmented 25m / 5m.
+                if in_header && lx >= right - 132.0 {
+                    let mid = right - 66.0;
+                    self.set_pomo_mode(lx > mid);
+                    return true;
                 }
-                // Start/Pause + Reset (baris bawah blok kanan)
-                let btn_top = block_top + pill_h + 12.0;
-                let start_w = (right_w - gap) * 0.58;
-                if (btn_top..=btn_top + btn_h).contains(&cy) && cx >= right_l {
-                    if cx <= right_l + start_w {
+                // Play / Reset.
+                if (56.0..=92.0).contains(&ly) {
+                    if lx >= right - 78.0 && lx <= right - 38.0 {
                         self.pomo_running = !self.pomo_running;
                         return true;
-                    } else if cx >= right_l + start_w + gap {
+                    }
+                    if lx >= right - 36.0 {
                         self.pomo_running = false;
                         self.pomo_remaining_secs = self.pomo_total_secs;
                         return true;
                     }
                 }
             }
-            NotchState::Clips => {
-                // Header buttons (cy 0..22): History | Notes | Clear
-                if (0.0..=22.0).contains(&cy) {
-                    if cx < 80.0 {
-                        self.clips_view_notes = false;
-                        self.clips_scroll = 0;
-                        return true;
-                    } else if cx < 164.0 {
-                        self.clips_view_notes = true;
-                        self.clips_scroll = 0;
-                        return true;
-                    } else if cx >= content_w - 70.0 {
-                        if !self.clips_view_notes {
-                            self.clip_store.clear_history();
-                            let _ = self.clip_store.save();
-                            self.clips_scroll = 0;
-                            self.flash_message("History cleared");
-                        }
-                        return true;
-                    }
-                }
-                // Note input row (notes view): renderer area.top+27..49; cy = y - area.top.
-                if self.clips_view_notes && (27.0..=49.0).contains(&cy) {
-                    self.note_input_active = !self.note_input_active;
-                    return true;
-                }
-                // Rows — pitch 30, selaras dengan renderer (cy = y - area.top)
-                let row_top = if self.clips_view_notes { 53.0 } else { 30.0 };
-                let footer = (self.height.value - 34.0).max(60.0) - 18.0;
-                if cy >= row_top && cy < footer {
-                    let row = ((cy - row_top) / 30.0).floor() as usize;
-                    let idx = self.clips_scroll + row;
-                    let rows = self.clips_rows().len();
-                    if idx < rows {
-                        if self.clips_view_notes {
-                            if cx >= content_w - 30.0 {
-                                self.clip_store.remove_note(idx);
-                                let _ = self.clip_store.save();
-                                self.flash_message("Note removed");
-                            } else if let Some(note) = self.clip_store.notes.get(idx).cloned() {
-                                if let Ok(seq) = crate::clipboard::win::write_clipboard_text(&note) {
-                                    self.clip_store.last_own_seq = seq;
-                                    let _ = self.clip_store.save();
-                                    self.flash_message("Note copied");
-                                }
-                            }
-                        } else {
-                            self.copy_clip_entry(idx);
-                        }
+            NotchState::Shelf => {
+                if ly >= 38.0 && !self.shelf_files.is_empty() {
+                    let idx = if lx < (left + right) * 0.5 { 0 } else { 1 };
+                    if idx < self.shelf_files.len() {
+                        let path = self.shelf_files[idx].2.clone();
+                        Self::open_target_url_or_path(&path);
                         return true;
                     }
                 }
             }
-            NotchState::Shelf => {
-                if !self.shelf_files.is_empty() {
-                    let slot_w = (content_w - 20.0) * 0.5;
-                    let idx = if cx < 6.0 + slot_w { 0 } else { 1 };
-                    if idx < self.shelf_files.len() {
-                        let item_r = 6.0 + (idx as f32 + 1.0) * slot_w + idx as f32 * 8.0;
-                        if cx >= item_r - 22.0 && cy <= 44.0 {
-                            self.shelf_files.remove(idx);
+            NotchState::Clips => {
+                if in_header && lx > right - 60.0 {
+                    self.clips_view_notes = !self.clips_view_notes;
+                    if self.clips_view_notes && self.clip_store.notes.is_empty() {
+                        self.note_input_active = true;
+                    }
+                    return true;
+                }
+                if self.note_input_active && (38.0..=64.0).contains(&ly) {
+                    return true;
+                }
+                let row_top = if self.note_input_active { 72.0 } else { 38.0 };
+                if ly >= row_top {
+                    let idx = (((ly - row_top) / 32.0).floor() as usize) + self.clips_scroll;
+                    if idx < self.clips_rows().len() {
+                        if self.clips_view_notes {
+                            let note = self.clip_store.notes.get(idx).cloned().unwrap_or_default();
+                            if let Ok(seq) = crate::clipboard::win::write_clipboard_text(&note) {
+                                self.clip_store.last_own_seq = seq;
+                                let _ = self.clip_store.save();
+                                self.flash_message("Note copied");
+                            }
                         } else {
-                            let path = self.shelf_files[idx].2.clone();
-                            Self::open_target_url_or_path(&path);
+                            self.copy_clip_entry(idx);
                         }
                         return true;
                     }

@@ -538,23 +538,17 @@ impl NotchApp {
                 }
             }
 
-            // 2. Klik Bar Navigasi 6-Slot di Atas (Hub, Music, Control, Focus, Shelf, Clips)
-                        if (0.0..=26.0).contains(&ly) && lx >= 28.0 && lx <= pill_w - 28.0 {
-                            let tabs_w = (pill_w - 56.0).max(1.0);
-                            let slot = (((lx - 28.0) / (tabs_w / 6.0)).floor() as usize).min(5);
-                            match slot {
-                                0 => self.controller.transition_to(NotchState::Hub),
-                                1 => self.controller.transition_to(NotchState::Music),
-                                2 => self.controller.transition_to(NotchState::Control),
-                                3 => self.controller.transition_to(NotchState::Pomo),
-                                4 => self.controller.transition_to(NotchState::Shelf),
-                                _ => self.controller.transition_to(NotchState::Clips),
-                            }
-                            unsafe {
-                                let _ = InvalidateRect(self.hwnd, None, false);
-                            }
-                            return;
-                        }
+            // 2. Klik pager dots 6 section di bawah tengah.
+            if ly >= pill_h - 18.0 && ly <= pill_h && lx >= pill_w * 0.5 - 34.0 && lx <= pill_w * 0.5 + 34.0 {
+                let start_x = pill_w * 0.5 - 27.5;
+                let slot = (((lx - start_x) / 11.0).round() as i32).clamp(0, 5) as usize;
+                let tabs = NotchController::ordered_tabs();
+                self.controller.transition_to(tabs[slot]);
+                unsafe {
+                    let _ = InvalidateRect(self.hwnd, None, false);
+                }
+                return;
+            }
 
             // 3. Klik Konten di Dalam Section Aktif
             if self.controller.handle_panel_click(lx, ly, pill_w) {
