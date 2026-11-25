@@ -2468,7 +2468,7 @@ impl NotchRenderer {
                 right,
                 bottom: top + 78.0,
             },
-            glass::col(0.48, 0.51, 0.57, alpha),
+            glass::col(0.62, 0.65, 0.71, alpha),
         );
 
         // Footer tipis: sistem ringkas supaya tidak ada ruang kosong 45 px.

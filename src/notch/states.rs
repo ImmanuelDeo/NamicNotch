@@ -1276,20 +1276,24 @@ impl NotchController {
             } else {
                 0
             };
-            let mut free_bytes: u64 = 0;
-            let root: Vec<u16> = "C:\\0".encode_utf16().collect();
-            let disk = if windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
-                windows::core::PCWSTR(root.as_ptr()),
-                None,
-                None,
-                Some(&mut free_bytes),
-            )
-            .is_ok()
-            {
-                (free_bytes / (1024 * 1024 * 1024)) as u32
-            } else {
-                0
-            };
+            // Path harus diakhiri NUL. "C:\\0" sebelumnya menghasilkan literal
+            // backslash + '0', sehingga panggilan gagal dan disk selalu 0 GB.
+            let mut disk = 0u32;
+            for drive in ["C:\\", "D:\\"] {
+                let root: Vec<u16> = drive.encode_utf16().chain(std::iter::once(0)).collect();
+                let mut free_bytes: u64 = 0;
+                if windows::Win32::Storage::FileSystem::GetDiskFreeSpaceExW(
+                    windows::core::PCWSTR(root.as_ptr()),
+                    None,
+                    None,
+                    Some(&mut free_bytes),
+                )
+                .is_ok()
+                {
+                    disk = (free_bytes / (1024 * 1024 * 1024)) as u32;
+                    break;
+                }
+            }
             (ram, disk)
         }
     }
