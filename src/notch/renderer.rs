@@ -2950,12 +2950,17 @@ impl NotchRenderer {
         self.draw_glass_header(ctrl, pill, alpha);
         let left = pill.left + glass::PAD;
         let right = pill.right - glass::PAD;
-        let mut y = pill.top + 38.0;
 
-        // Tombol + Note / riwayat.
+        // Tombol mode di bawah tab strip, supaya tidak menimpa tab Clips.
+        let btn = D2D_RECT_F {
+            left: right - 66.0,
+            top: pill.top + 34.0,
+            right,
+            bottom: pill.top + 54.0,
+        };
         self.glass_pill(
-            D2D_RECT_F { left: right - 58.0, top: pill.top + 8.0, right, bottom: pill.top + 30.0 },
-            11.0,
+            btn,
+            10.0,
             glass::col(1.0, 1.0, 1.0, 0.09 * alpha),
             Some(glass::col(1.0, 1.0, 1.0, 0.14 * alpha)),
             0.8,
@@ -2963,47 +2968,64 @@ impl NotchRenderer {
         self.draw_text_centered(
             if ctrl.clips_view_notes { "History" } else { "+ Note" },
             &self.fmt_caption,
-            D2D_RECT_F { left: right - 58.0, top: pill.top + 10.0, right, bottom: pill.top + 28.0 },
-            glass::col(0.88, 0.94, 1.0, alpha),
+            D2D_RECT_F { left: btn.left, top: btn.top + 1.0, right: btn.right, bottom: btn.bottom - 1.0 },
+            glass::col(0.90, 0.95, 1.0, alpha),
+        );
+        self.draw_text_left(
+            if ctrl.clips_view_notes { "Notes" } else { "Clipboard" },
+            &self.fmt_caption,
+            D2D_RECT_F { left, top: pill.top + 36.0, right: btn.left - 8.0, bottom: pill.top + 52.0 },
+            glass::col(0.55, 0.60, 0.68, alpha),
         );
 
+        let mut y = pill.top + 58.0;
         if ctrl.note_input_active {
             self.glass_pill(
-                D2D_RECT_F { left, top: y, right, bottom: y + 26.0 },
+                D2D_RECT_F { left, top: y, right, bottom: y + 24.0 },
                 9.0,
                 glass::col(1.0, 1.0, 1.0, 0.06 * alpha),
-                Some(glass::col(0.62, 0.86, 1.0, 0.35 * alpha)),
+                Some(glass::col(0.62, 0.86, 1.0, 0.40 * alpha)),
                 1.0,
             );
             self.draw_text_left(
-                if ctrl.note_input.is_empty() { "Type a note, Enter to save" } else { &ctrl.note_input },
+                if ctrl.note_input.is_empty() {
+                    "Type a note, Enter to save"
+                } else {
+                    &ctrl.note_input
+                },
                 &self.fmt_caption,
-                D2D_RECT_F { left: left + 10.0, top: y + 4.0, right: right - 10.0, bottom: y + 23.0 },
-                glass::col(0.88, 0.92, 1.0, alpha),
+                D2D_RECT_F { left: left + 10.0, top: y + 3.0, right: right - 10.0, bottom: y + 21.0 },
+                glass::col(0.90, 0.94, 1.0, alpha),
             );
-            y += 34.0;
+            y += 30.0;
         }
 
         let rows = ctrl.clips_rows();
         if rows.is_empty() {
             self.draw_text_centered(
-                if ctrl.clips_view_notes { "No notes yet" } else { "Clipboard is empty" },
+                if ctrl.clips_view_notes {
+                    "No notes yet — press + Note"
+                } else {
+                    "Clipboard is empty"
+                },
                 &self.fmt_caption,
-                D2D_RECT_F { left, top: y + 24.0, right, bottom: y + 48.0 },
-                glass::col(0.50, 0.54, 0.61, alpha),
+                D2D_RECT_F { left, top: y + 20.0, right, bottom: y + 42.0 },
+                glass::col(0.52, 0.57, 0.64, alpha),
             );
+            return;
         }
 
-        let max_rows = 3;
-        for (i, row) in rows.iter().enumerate().skip(ctrl.clips_scroll).take(max_rows) {
-            let ry = y + (i - ctrl.clips_scroll) as f32 * 32.0;
+        for (i, row) in rows.iter().enumerate().skip(ctrl.clips_scroll).take(3) {
+            let ry = y + (i - ctrl.clips_scroll) as f32 * 28.0;
             self.draw_text_left(
                 row,
                 &self.fmt_caption,
-                D2D_RECT_F { left: left + 4.0, top: ry + 6.0, right: right - 22.0, bottom: ry + 24.0 },
-                glass::col(0.86, 0.88, 0.92, alpha),
+                D2D_RECT_F { left: left + 2.0, top: ry + 4.0, right: right - 8.0, bottom: ry + 22.0 },
+                glass::col(0.86, 0.89, 0.94, alpha),
             );
-            self.hairline(left, right, ry + 30.0, alpha * 0.9);
+            if ry + 26.0 < pill.bottom - 20.0 {
+                self.hairline(left, right, ry + 26.0, alpha);
+            }
         }
     }
 

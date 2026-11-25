@@ -1475,19 +1475,19 @@ pub fn handle_panel_click(&mut self, lx: f32, ly: f32, pill_w: f32) -> bool {
                 }
             }
             NotchState::Clips => {
-                if (40.0..=62.0).contains(&ly) && lx > right - 60.0 {
+                if (32.0..=56.0).contains(&ly) && lx > right - 66.0 {
                     self.clips_view_notes = !self.clips_view_notes;
                     if self.clips_view_notes && self.clip_store.notes.is_empty() {
                         self.note_input_active = true;
                     }
                     return true;
                 }
-                if self.note_input_active && (66.0..=92.0).contains(&ly) {
+                if self.note_input_active && (56.0..=84.0).contains(&ly) {
                     return true;
                 }
-                let row_top = if self.note_input_active { 100.0 } else { 66.0 };
+                let row_top = if self.note_input_active { 88.0 } else { 58.0 };
                 if ly >= row_top {
-                    let idx = (((ly - row_top) / 30.0).floor() as usize) + self.clips_scroll;
+                    let idx = (((ly - row_top) / 28.0).floor() as usize) + self.clips_scroll;
                     if idx < self.clips_rows().len() {
                         if self.clips_view_notes {
                             let note = self.clip_store.notes.get(idx).cloned().unwrap_or_default();
