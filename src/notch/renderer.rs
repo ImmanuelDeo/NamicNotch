@@ -417,6 +417,65 @@ impl NotchRenderer {
         Ok(path)
     }
 
+
+    /// Silhouette notch expanded yang melebur ke tepi atas layar: bibir atas
+    /// melebar keluar (feather) lalu turun dengan bezier ke sisi pill, jadi
+    /// tidak terlihat seperti kotak yang ditempel.
+    unsafe fn create_merged_notch_geometry(
+        &self,
+        rect: D2D_RECT_F,
+        bottom_radius: f32,
+        feather: f32,
+        shoulder: f32,
+    ) -> windows::core::Result<ID2D1PathGeometry> {
+        let path = self.factory.CreatePathGeometry()?;
+        let sink = path.Open()?;
+
+        let h = (rect.bottom - rect.top).max(8.0);
+        let r = bottom_radius.min(h * 0.45).max(4.0);
+        let f = feather.max(0.0);
+        let s = shoulder.clamp(8.0, (h - r).max(10.0));
+
+        let left = rect.left;
+        let right = rect.right;
+        let top = rect.top;
+        let bottom = rect.bottom;
+
+        // Bibir atas selebar feather, di luar area pandang (top = -26).
+        sink.BeginFigure(
+            D2D_POINT_2F { x: left - f, y: top },
+            D2D1_FIGURE_BEGIN_FILLED,
+        );
+        sink.AddLine(D2D_POINT_2F { x: right + f, y: top });
+        // Bahu kanan: turun melengkung masuk ke sisi pill.
+        sink.AddBezier(&D2D1_BEZIER_SEGMENT {
+            point1: D2D_POINT_2F { x: right + f, y: top + s * 0.55 },
+            point2: D2D_POINT_2F { x: right + f * 0.22, y: top + s },
+            point3: D2D_POINT_2F { x: right, y: top + s },
+        });
+        sink.AddLine(D2D_POINT_2F { x: right, y: bottom - r });
+        sink.AddBezier(&D2D1_BEZIER_SEGMENT {
+            point1: D2D_POINT_2F { x: right, y: bottom - r * 0.45 },
+            point2: D2D_POINT_2F { x: right - r * 0.45, y: bottom },
+            point3: D2D_POINT_2F { x: right - r, y: bottom },
+        });
+        sink.AddLine(D2D_POINT_2F { x: left + r, y: bottom });
+        sink.AddBezier(&D2D1_BEZIER_SEGMENT {
+            point1: D2D_POINT_2F { x: left + r * 0.45, y: bottom },
+            point2: D2D_POINT_2F { x: left, y: bottom - r * 0.45 },
+            point3: D2D_POINT_2F { x: left, y: bottom - r },
+        });
+        sink.AddLine(D2D_POINT_2F { x: left, y: top + s });
+        sink.AddBezier(&D2D1_BEZIER_SEGMENT {
+            point1: D2D_POINT_2F { x: left + f * 0.22, y: top + s },
+            point2: D2D_POINT_2F { x: left - f, y: top + s * 0.55 },
+            point3: D2D_POINT_2F { x: left - f, y: top },
+        });
+        sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+        sink.Close()?;
+        Ok(path)
+    }
+
     unsafe fn battery_arc(&self, cx: f32, cy: f32, r: f32, sweep_deg: f32) -> Option<ID2D1PathGeometry> {
         if sweep_deg <= 0.5 {
             return None;
@@ -517,7 +576,7 @@ impl NotchRenderer {
     pub unsafe fn draw_frame(&mut self, ctrl: &mut NotchController, pill_rect: D2D_RECT_F) {
         let radius = ctrl.corner_radius.value;
         let alpha = ctrl.content_alpha.value.clamp(0.0, 1.0);
-        let flare = if pill_rect.bottom - pill_rect.top > 60.0 {
+        let flare: f32 = if pill_rect.bottom - pill_rect.top > 60.0 {
             44.0
         } else {
             13.0
@@ -542,7 +601,14 @@ impl NotchRenderer {
             right: pill_rect.right,
             bottom: pill_rect.bottom,
         };
-        if let Ok(bezel_geom) = self.create_top_bezel_notch_geometry(shape_rect, radius, flare) {
+        let expanded = pill_rect.bottom - pill_rect.top > 60.0;
+        let bezel_geom = if expanded {
+            // 44 dip melebar sampai tepi jendela, bahu 34 dip.
+            self.create_merged_notch_geometry(shape_rect, radius, flare.max(44.0), 34.0)
+        } else {
+            self.create_top_bezel_notch_geometry(shape_rect, radius, flare)
+        };
+        if let Ok(bezel_geom) = bezel_geom {
             if let Ok(base_brush) = self.rt.CreateSolidColorBrush(&pitch_black, None) {
                 self.rt.FillGeometry(&bezel_geom, &base_brush, None);
             }
@@ -2098,10 +2164,13 @@ impl NotchRenderer {
         flare: f32,
     ) {
         let radius = ctrl.corner_radius.value.clamp(7.0, 34.0);
-        let Some(path_geom) = self
-            .create_top_bezel_notch_geometry(pill, radius, flare)
-            .ok()
-        else {
+        let expanded = pill.bottom - pill.top > 60.0;
+        let geom_res = if expanded {
+            self.create_merged_notch_geometry(pill, radius, flare.max(44.0), 34.0)
+        } else {
+            self.create_top_bezel_notch_geometry(pill, radius, flare)
+        };
+        let Some(path_geom) = geom_res.ok() else {
             return;
         };
         let Ok(geom) = path_geom.cast::<ID2D1Geometry>() else {
