@@ -1,226 +1,105 @@
-<p align="center">
-  <img src="resources/icon.png" width="120" height="120" alt="Namic Notch Logo" />
-</p>
+# Namic Notch
 
-<h1 align="center">Namic Notch</h1>
-
-<p align="center">
-  <b>A lightweight, native living dynamic notch for Windows 11 & 10.</b><br />
-  Built entirely in native Rust with Win32, Direct2D, and DirectWrite. Zero Electron. Zero web bloat. Under 25MB RAM.
-</p>
+A notch for Windows that lives at the top edge of the screen: a black pill that
+expands into a small control surface with music, volume, brightness, a Pomodoro
+timer, a file shelf and clipboard history. Written in Rust against Win32 and
+Direct2D — no Electron, no WebView, no runtime to install.
 
 <p align="center">
-  <img src="resources/preview.png" width="100%" alt="Namic Notch Preview" />
+  <img src="docs/img/hero.png" width="720" alt="Namic Notch expanded, showing the clock and daily quote">
 </p>
 
----
+## What it is
 
-## Overview
+The expanded notch is one glass surface with six panes. You switch panes with
+the tab strip at the top or the dots at the bottom. Nothing is a web page; every
+element is drawn by Direct2D at the native DPI.
 
-Windows has always lacked a clean, cohesive place for ambient information. Most existing desktop widgets rely on web technologies like Electron or Chromium, which easily eat up 500MB of RAM just to show the time or currently playing music.
+| Pane | What it holds |
+| --- | --- |
+| Hub | Clock, date, a rotating quote, battery and disk summary |
+| Music | Cover art from the system media session, seek bar, transport, synced lyrics |
+| Control | Volume and brightness sliders, wired to the real endpoints |
+| Focus | Pomodoro with 25 / 5 minute modes and a progress line |
+| Shelf | Drag files in, click to open, drag them back out |
+| Clips | Clipboard history plus short notes, click an entry to copy it again |
 
-**Namic Notch** was built from scratch in pure Rust to fix that. It rests seamlessly against your monitor's top bezel, expanding into an interactive multi-tool when you hover over it, and collapsing back into a minimal status pill when you move your cursor away.
+<p align="center">
+  <img src="docs/img/music.png" width="440" alt="Music pane with cover art, seek bar and transport controls">
+  <img src="docs/img/control.png" width="440" alt="Control pane with volume and brightness sliders">
+</p>
 
-It integrates directly with Windows system APIs:
-- **Global System Media Transport Controls (GSMTC)**: Real-time track metadata, interactive scrubbing, and speed adjustment for Spotify, YouTube (Chrome/Edge/Brave), VLC, and native media players.
-- **LRCLIB Auto-Sync**: Automatic timestamped karaoke lyrics that scroll smoothly alongside your music.
-- **Native Windows Audio COM**: Volume adjustments via `IAudioEndpointVolume` with zero console popups or lag.
-- **Direct2D Hardware Acceleration**: Fluid 60–120 FPS spring-physics animations with sub-millisecond frame rendering and virtually 0% idle CPU usage.
+## Mascots
 
----
+Six characters idle behind the collapsed pill, each with its own draw code and
+VFX, plus PNG head overlays for three of them. They are drawn, not animated
+video: the same renderer that draws the notch draws the characters.
 
-## Visual Tour & Interfaces
+<p align="center">
+  <img src="docs/img/mascot-grid.png" width="720" alt="Eight mascot frames rendered by the headless snapshot tool">
+</p>
 
-### 1. Minimal Pill (Idle / Mascot State)
+## Requirements
 
-When idle or while you are working, Namic Notch sits quietly at the top edge of your screen. It displays the time, battery percentage, charging state, or an optional animated mascot with glowing illuminated eyes.
+- Windows 10 21H2 or newer, x64
+- No runtime required for the installer build
 
-```text
-┌─────────────────────────────────────────────────────────────┐  <-- Top Screen Bezel
-│       [  ●  ●  ]   10:42 AM  ·  98% [⚡]                    │  (Collapsed: 156 x 34 px)
-└─────────────────────────────────────────────────────────────┘
-```
+Building from source needs the MSVC toolchain, see [docs/BUILD.md](docs/BUILD.md).
 
-- **Smart Click-Through**: Outside the pill boundaries, mouse clicks pass through completely to whatever window is behind it (`WS_EX_TRANSPARENT` dynamic hit-testing).
-- **No Focus Stealing**: Clicking or interacting with the notch never defocuses your active game, code editor, or document (`WS_EX_NOACTIVATE`).
+## Install
 
-### 1a. Idle Mascot Roster — 4 Modular Phases
+Two shapes, pick one:
 
-The idle mascot is a rotation of four characters drawn procedurally with Direct2D
-(no sprites, no image assets). Each character owns one file and one `IdleCharacter`
-implementation; `MascotDirector` cycles the roster with a 0.45 s fade-out / fade-in
-and a short blink at every handover.
+- **Installer** — `installer/NamicNotchSetup.iss` builds a setup executable with
+  Inno Setup; default target is `D:\NamicNotch`.
+- **Portable** — copy `nusa.exe` and the `assets` folder anywhere.
 
-| # | Character | Duration | Eyes | Right-side gesture | Ambient |
-|---|-----------|----------|------|--------------------|---------|
-| 1 | Asta (Devil Union) | 10 s | Crimson capsule, narrows when he reaches | Floating Demon-Slayer sword, dark hand grabs and pulls it | Crimson illumination + red thunder |
-| 2 | Yuji → Ryomen Sukuna | 11 s | Amber → crimson, plus a second pair of slit eyes | Malevolent Shrine hand sign with Dismantle/Cleave slash streaks | Amber fading into crimson + violet cursed mist |
-| 3 | Katsuki Bakugo | 10 s | Orange-red, permanently fierce | Black gauntlet firing a stylized nitroglycerin starburst | Fiery orange glow + rising embers |
-| 4 | Eren → Attack Titan | 11 s | Emerald, calm then intense | Golden transformation lightning, then titan steam wisps | Golden flash decaying to emerald-gold steam |
+Autostart is a single registry value under
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. There is no second launch
+path, so the app cannot start twice.
 
-```text
-src/mascot/
-├── mod.rs      # MascotDirector: roster, rotation, fade envelope, blink, gaze
-├── core.rs     # IdleCharacter trait, MascotContext, shared Direct2D primitives
-├── asta.rs     # phase 1
-├── sukuna.rs   # phase 2
-├── bakugo.rs   # phase 3
-└── eren.rs     # phase 4
-```
+## Build
 
-Adding a character means one new file implementing `IdleCharacter` and one
-`Box::new(...)` line in `MascotDirector::new()`. `DevilUnionEyes` is kept as a type
-alias for `MascotDirector`, so nothing in `src/notch/` had to change.
-
----
-
-### 2. Music Player & Flowing Karaoke Lyrics
-
-Expanding the notch opens the media section with comprehensive playback controls:
-
-```text
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│  ‹    Hub    [ Music ]    Control    Focus    Shelf    Stages                   › │
-├──────────────────────────────────────────────────────┬───────────────────────────┤
-│  ┌───────┐  Idol — YOASOBI                           │  Secret side, I wanna...  │
-│  │   ♫   │  ♪ Couldn't beat her smile; it stirred... │ ▌So mysterious...         │
-│  └───────┘                                           │  Even that elusive side.. │
-│  01:24  ───────────●───────────────────  -02:10      │                           │
-│              ⏮     ⏸     ⏭     [ 1.0x ]              │  [ 💬 Toggle Lyrics ]     │
-└──────────────────────────────────────────────────────┴───────────────────────────┘
-```
-
-- **Interactive Scrubbing**: Click or drag anywhere along the timeline bar to jump directly to that timestamp in Spotify, YouTube, or your media player.
-- **Quick Stepping (+5s / -5s)**:
-  - Click the elapsed time (`01:24`) to step back 5 seconds.
-  - Click the remaining time (`-02:10`) to skip forward 5 seconds.
-  - Mouse wheel scrolling anywhere over the music panel steps forward or backward 5 seconds.
-- **Playback Speed**: Click the speed badge (`1.0x`) to cycle between `1.0x`, `1.25x`, `1.5x`, `2.0x`, and `0.75x`.
-- **Karaoke Flow**: Synchronized lyrics glide into view with a highlighted active-line indicator. Clicking any lyric line jumps playback directly to that verse.
-
----
-
-### 3. Quick System Controls
-
-Instant sliders for master audio volume and screen brightness without opening Windows Action Center:
-
-```text
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│  ‹    Hub    Music    [ Control ]    Focus    Shelf    Stages                   › │
-├──────────────────────────────────────────────────────────────────────────────────┤
-│   🔊 Volume        72%  ═════════════════════════●─────────────                  │
-│   🔆 Brightness    80%  ════════════════════════════════●──────                  │
-└──────────────────────────────────────────────────────────────────────────────────┘
-```
-
-- Click or scroll on either bar to make instant hardware-level adjustments.
-
----
-
-### 4. Focus & Pomodoro Timer
-
-A distraction-free timer built right into the notch to keep you on schedule:
-
-```text
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│  ‹    Hub    Music    Control    [ Focus ]    Shelf    Stages                   › │
-├──────────────────────────────────────────────────────────────────────────────────┤
-│     24:18               [ 🎯 Focus 25m ]    [ ☕ Break 5m ]                      │
-│     Focus Session       [ ▶ Resume ]        [ ↺ Reset ]                          │
-└──────────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-### 5. Quick Shelf
-
-A temporary drop area for files, screenshots, or documents you want to keep handy:
-
-```text
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│  ‹    Hub    Music    Control    Focus    [ Shelf ]    Stages                   › │
-├──────────────────────────────────────────────────────────────────────────────────┤
-│   Drag & drop any file here to pin it temporarily to your top screen bezel       │
-│   📄 project-spec.pdf · 1.4 MB               [ Open ]  [ Copy ]  [ Clear ]       │
-└──────────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Keyboard & Mouse Shortcuts
-
-| Action | Gesture / Shortcut |
-|---|---|
-| **Expand Notch** | Move mouse cursor near the top center bezel |
-| **Collapse Notch** | Move cursor away from the notch |
-| **Switch Tabs** | Click the tab names (`Hub`, `Music`, `Control`, `Focus`, `Shelf`) or `‹` / `›` buttons |
-| **Seek Music Timeline** | Click or drag across the progress track bar |
-| **Fast Forward (+5s)** | Click remaining time on the right, or scroll mouse wheel up |
-| **Rewind (-5s)** | Click elapsed time on the left, or scroll mouse wheel down |
-| **Change Playback Speed** | Click the `[ 1.0x ]` badge |
-| **Volume Adjustment** | Click or scroll on the volume track bar in `Control` |
-| **Pin / Drop File** | Drag and drop files from Windows Explorer onto the notch |
-| **System Tray Menu** | Right-click the Namic Notch icon in the Windows taskbar tray |
-
----
-
-## Getting Started
-
-### Method 1: Installer (Recommended for Most Users)
-
-1. Download `NamicNotchSetup_v1.0.0.exe` from the Releases page.
-2. Run the setup installer. It will install Namic Notch to your local user directory without requiring administrative rights.
-3. Check **Start with Windows** if you'd like Namic Notch to launch automatically when you log in.
-
-### Method 2: Portable Executable
-
-1. Download the standalone `nusa.exe` (or `namic.exe`).
-2. Place it in any directory of your choice and double-click to run.
-3. Namic Notch will start in the background and sit quietly at the top of your screen.
-
----
-
-## Building From Source
-
-### Prerequisites
-
-- Windows 10 (version 1903 or later) or Windows 11
-- Rust toolchain (stable, 1.75+)
-- Inno Setup 6 (optional, only needed if compiling the installer)
-
-### Build Instructions
-
-```bash
-# 1. Clone this repository
-git clone https://github.com/ImmanuelDeo/NamicNotch.git
-cd NamicNotch
-
-# 2. Check and compile
-cargo check
+```powershell
 cargo build --release
-
-# 3. The release binary will be available at:
-# target/release/nusa-clone.exe
-
-# 4. (Optional) Build the Inno Setup installer:
-iscc NamicNotchSetup.iss
+# binary: target\release\nusa-clone.exe
 ```
 
----
+The headless renderer used for the mascot frames lives in `snaptop/`:
 
-## Architecture & Technical Details
+```powershell
+cd snaptop
+cargo run --release -- D:\NusaNotch-RE\snapshots
+```
 
-- **Language**: Rust 2021 edition
-- **Window Management**: Native Win32 API (`CreateWindowExW` with `WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_ACCEPTFILES | WS_EX_NOACTIVATE`)
-- **Composition**: Windows DWM (`DwmExtendFrameIntoClientArea` with `-1` margins)
-- **Renderer**: Direct2D 1.1 + DirectWrite for anti-aliased sub-pixel vector rendering
-- **Media Poller**: `windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager`
-- **Audio Control**: Windows Core Audio API (`IMMDeviceEnumerator` + `IAudioEndpointVolume`)
-- **Lyrics Engine**: LRCLIB HTTP client with smart title cleaning and sub-second timestamp interpolation
-- **Spring Physics**: Critically damped spring simulation for all geometric transitions (width, height, corner radius, alpha)
+## How it is put together
 
----
+- `src/notch/` — window, input, state machine, Direct2D renderer
+- `src/mascot/` — characters, shared drawing helpers, VFX, PNG head loader
+- `src/media/` — GSMTC session handling
+- `src/clipboard/`, `src/shelf/`, `src/timers/`, `src/settings/`, `src/tray/`
+
+Details, including the layer mask that keeps glow inside the pill and the
+geometry used to merge the notch into the top screen edge, are in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Known limits
+
+- Cover art and synced lyrics depend on what the media app publishes through
+  GSMTC. Spotify publishes artwork and position; some browser tabs publish only
+  a title.
+- Brightness control uses `WmiMonitorBrightnessMethods`. External monitors that
+  do not implement it stay unchanged.
+- Lyrics come from LRCLIB. Instrumental tracks usually have none, and the pane
+  says so instead of inventing lines.
+- The notch is a top-anchored window. Multi-monitor setups place it on the
+  primary display only.
+
+## Contributing
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports with a screenshot and the
+contents of `%LOCALAPPDATA%\NamicNotch\boot.log` are welcome.
 
 ## License
 
-This project is licensed under the MIT License — see the [LICENSE.txt](LICENSE.txt) file for details.
+MIT. See [LICENSE.txt](LICENSE.txt).

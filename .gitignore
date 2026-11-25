@@ -1,6 +1,6 @@
 /target/
 **/*.rs.bk
 *.pdb
-EOF
-# local build/installer logs
 *.log
+.DS_Store
+Thumbs.db
