@@ -2061,18 +2061,19 @@ impl NotchRenderer {
         self.rt.CreateRadialGradientBrush(&props, None, &sc).ok()
     }
 
-    /// Permukaan Solid Liquid Glass: base gradient, kilau atas, ambient tint, rim kaca.
-    unsafe fn draw_glass_surface(
-        &self,
-        ctrl: &NotchController,
-        pill: D2D_RECT_F,
-        alpha: f32,
-    ) {
+    /// Permukaan Solid Liquid Glass: mengikuti geometri bezel (rata di atas,
+    /// melengkung di bawah) supaya menyambung dengan tepi layar, bukan box melayang.
+    unsafe fn draw_glass_surface(&self, ctrl: &NotchController, pill: D2D_RECT_F, alpha: f32) {
         let radius = ctrl.corner_radius.value.clamp(7.0, 34.0);
-        let rr = D2D1_ROUNDED_RECT {
-            rect: pill,
-            radiusX: radius,
-            radiusY: radius,
+        let flare = 20.0;
+        let Some(path_geom) = self
+            .create_top_bezel_notch_geometry(pill, radius, flare)
+            .ok()
+        else {
+            return;
+        };
+        let Ok(geom) = path_geom.cast::<ID2D1Geometry>() else {
+            return;
         };
 
         let base = [
@@ -2085,36 +2086,46 @@ impl NotchRenderer {
             glass::pt(pill.left, pill.bottom),
             &base,
         ) {
-            self.rt.FillRoundedRectangle(&rr, &b);
+            self.rt.FillGeometry(&geom, &b, None);
         }
 
-        // Top specular sheen 26 dip.
-        let sheen_bottom = (pill.top + 26.0).min(pill.bottom);
-        let sheen = D2D_RECT_F {
-            left: pill.left + 1.0,
-            top: pill.top,
-            right: pill.right - 1.0,
-            bottom: sheen_bottom,
+        // Kilau atas + ambient tint dipotong ke bentuk bezel yang sama.
+        let params = D2D1_LAYER_PARAMETERS {
+            contentBounds: D2D_RECT_F {
+                left: f32::NEG_INFINITY,
+                top: f32::NEG_INFINITY,
+                right: f32::INFINITY,
+                bottom: f32::INFINITY,
+            },
+            geometricMask: std::mem::ManuallyDrop::new(Some(geom.clone())),
+            maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+            maskTransform: Matrix3x2::identity(),
+            opacity: 1.0,
+            opacityBrush: std::mem::ManuallyDrop::new(None),
+            layerOptions: D2D1_LAYER_OPTIONS_NONE,
         };
+        self.rt.PushLayer(&params, None);
+
+        let sheen_bottom = (pill.top + 26.0).min(pill.bottom);
         if let Some(b) = self.grad(
-            glass::pt(0.0, sheen.top),
-            glass::pt(0.0, sheen.bottom),
+            glass::pt(0.0, pill.top),
+            glass::pt(0.0, sheen_bottom),
             &[
                 (0.0, glass::col(1.0, 1.0, 1.0, 0.08 * alpha)),
                 (1.0, glass::col(1.0, 1.0, 1.0, 0.0)),
             ],
         ) {
-            self.rt.FillRoundedRectangle(
-                &D2D1_ROUNDED_RECT {
-                    rect: sheen,
-                    radiusX: radius * 0.8,
-                    radiusY: radius * 0.8,
+            self.rt.FillRectangle(
+                &D2D_RECT_F {
+                    left: pill.left - flare,
+                    top: pill.top,
+                    right: pill.right + flare,
+                    bottom: sheen_bottom,
                 },
                 &b,
             );
         }
 
-        // Dynamic ambient tint mengikuti section aktif.
         let (ar, ag, ab) = glass::accent_for(ctrl.state, ctrl.is_charging);
         let cx = (pill.left + pill.right) * 0.5;
         let pw = pill.right - pill.left;
@@ -2129,126 +2140,143 @@ impl NotchRenderer {
                 (1.0, glass::col(0.0, 0.0, 0.0, 0.0)),
             ],
         ) {
-            self.rt.FillRoundedRectangle(&rr, &b);
+            self.rt.FillRectangle(
+                &D2D_RECT_F {
+                    left: pill.left - flare,
+                    top: pill.top,
+                    right: pill.right + flare,
+                    bottom: pill.bottom,
+                },
+                &b,
+            );
         }
+        self.rt.PopLayer();
 
-        // Liquid glass rim: diagonal gradient stroke.
+        // Rim kaca: memudar di tepi atas supaya tidak ada garis terang di bibir layar.
         if let Some(b) = self.grad(
             glass::pt(pill.left, pill.top),
             glass::pt(pill.right, pill.bottom),
             &[
-                (0.0, glass::col(1.0, 1.0, 1.0, 0.24 * alpha)),
-                (0.52, glass::col(0.47, 0.82, 1.0, 0.14 * alpha)),
+                (0.0, glass::col(1.0, 1.0, 1.0, 0.0 * alpha)),
+                (0.16, glass::col(1.0, 1.0, 1.0, 0.16 * alpha)),
+                (0.55, glass::col(0.47, 0.82, 1.0, 0.14 * alpha)),
                 (1.0, glass::col(1.0, 1.0, 1.0, 0.07 * alpha)),
             ],
         ) {
-            self.rt.DrawRoundedRectangle(&rr, &b, 1.15, None);
+            self.rt.DrawGeometry(&geom, &b, 1.15, None);
         }
     }
 
-    /// Header tiap section: judul kiri, baterai + jam/tanggal kanan.
-    unsafe fn draw_glass_header(
-        &self,
-        ctrl: &NotchController,
-        pill: D2D_RECT_F,
-        title: &str,
-        alpha: f32,
-    ) {
-        let x = pill.left + glass::PAD;
-        let y = pill.top + glass::HDR_TOP;
-        self.draw_text_left(
-            title,
-            &self.fmt_title,
-            D2D_RECT_F {
-                left: x,
-                top: y - 2.0,
-                right: x + 130.0,
-                bottom: y + 18.0,
-            },
-            glass::col(0.62, 0.66, 0.72, alpha),
-        );
+    /// Header: 6 tab section di atas (klik untuk pindah), baterai + jam di kanan.
+    unsafe fn draw_glass_header(&self, ctrl: &NotchController, pill: D2D_RECT_F, alpha: f32) {
+        let left = pill.left + glass::PAD;
+        let right = pill.right - glass::PAD;
+        let tabs = NotchController::ordered_tabs();
+        let active = tabs.iter().position(|&s| s == ctrl.state).unwrap_or(0);
+        let labels = ["Hub", "Music", "Control", "Focus", "Shelf", "Clips"];
 
+        // Tab strip: slot sama lebar mulai dari padding konten.
+        let strip_right = right - 150.0;
+        let slot = ((strip_right - left) / 6.0).max(30.0);
+        for (i, label) in labels.iter().enumerate() {
+            let x = left + slot * i as f32;
+            let on = i == active;
+            self.draw_text_centered(
+                label,
+                &self.fmt_caption,
+                D2D_RECT_F {
+                    left: x,
+                    top: pill.top + 8.0,
+                    right: x + slot,
+                    bottom: pill.top + 27.0,
+                },
+                glass::col(1.0, 1.0, 1.0, if on { alpha } else { alpha * 0.42 }),
+            );
+            if on {
+                if let Ok(b) = self.rt.CreateSolidColorBrush(&glass::col(0.80, 0.92, 1.0, alpha), None)
+                {
+                    let w = (slot * 0.55).clamp(14.0, 24.0);
+                    let cxt = x + slot * 0.5;
+                    self.rt.FillRoundedRectangle(
+                        &D2D1_ROUNDED_RECT {
+                            rect: D2D_RECT_F {
+                                left: cxt - w * 0.5,
+                                top: pill.top + 30.0,
+                                right: cxt + w * 0.5,
+                                bottom: pill.top + 32.0,
+                            },
+                            radiusX: 1.0,
+                            radiusY: 1.0,
+                        },
+                        &b,
+                    );
+                }
+            }
+        }
+
+        // Jam ringkas.
         let now = Local::now();
-        let stamp = now.format("%H:%M · %a %d %b").to_string();
         self.draw_text_right(
-            &stamp,
+            &now.format("%H:%M").to_string(),
             &self.fmt_caption,
             D2D_RECT_F {
-                left: pill.right - glass::PAD - 150.0,
-                top: y,
-                right: pill.right - glass::PAD,
-                bottom: y + 16.0,
+                left: right - 60.0,
+                top: pill.top + 9.0,
+                right,
+                bottom: pill.top + 27.0,
             },
-            glass::col(0.62, 0.68, 0.78, alpha * 0.9),
+            glass::col(0.86, 0.90, 0.96, alpha),
+        );
+
+        // Persentase + cincin baterai.
+        self.draw_text_right(
+            &format!("{}%", ctrl.battery_percent),
+            &self.fmt_caption,
+            D2D_RECT_F {
+                left: right - 118.0,
+                top: pill.top + 9.0,
+                right: right - 74.0,
+                bottom: pill.top + 27.0,
+            },
+            glass::col(
+                if ctrl.battery_percent <= 15 {
+                    0.95
+                } else {
+                    0.82
+                },
+                0.90,
+                if ctrl.battery_percent <= 15 { 0.30 } else { 0.86 },
+                alpha,
+            ),
         );
         self.draw_nusa_ring_battery(
-            pill.right - glass::PAD - 160.0,
-            y + 7.0,
+            right - 60.0,
+            pill.top + 17.0,
             ctrl.battery_percent,
             ctrl.is_charging,
             alpha,
         );
     }
 
-    /// Navigasi: chevron kiri/kanan + 6 pager dots di bawah tengah.
+    /// Pager dots 6 section di bawah tengah (navigasi utama ada di tab atas).
     unsafe fn draw_glass_nav(&self, ctrl: &NotchController, pill: D2D_RECT_F, alpha: f32) {
-        let cy = (pill.top + pill.bottom) * 0.5;
-        for (side, label) in [(-1.0_f32, "<"), (1.0_f32, ">")] {
-            let cx = if side < 0.0 {
-                pill.left + 12.0
-            } else {
-                pill.right - 12.0
-            };
-            if let Ok(b) = self.rt.CreateSolidColorBrush(
-                &glass::col(1.0, 1.0, 1.0, if ctrl.is_hovered { 0.10 } else { 0.06 } * alpha),
-                None,
-            ) {
-                self.rt.FillEllipse(
-                    &D2D1_ELLIPSE {
-                        point: glass::pt(cx, cy),
-                        radiusX: 11.0,
-                        radiusY: 11.0,
-                    },
-                    &b,
-                );
-            }
-            self.draw_text_centered(
-                label,
-                &self.fmt_caption,
-                D2D_RECT_F {
-                    left: cx - 11.0,
-                    top: cy - 8.0,
-                    right: cx + 11.0,
-                    bottom: cy + 8.0,
-                },
-                glass::col(0.80, 0.84, 0.90, alpha * 0.85),
-            );
-        }
-
         let tabs = NotchController::ordered_tabs();
         let active = tabs.iter().position(|&s| s == ctrl.state).unwrap_or(0);
-        let dot_y = pill.bottom - 9.0;
-        let spacing = 11.0;
-        let start = (pill.left + pill.right) * 0.5 - spacing * 2.5;
+        let dot_y = pill.bottom - 12.0;
+        let start = (pill.left + pill.right) * 0.5 - 32.5;
         for i in 0..6 {
             let on = i == active;
-            let cx = start + spacing * i as f32;
-            if let Ok(b) = self.rt.CreateSolidColorBrush(
-                &glass::col(
-                    1.0,
-                    1.0,
-                    1.0,
-                    if on { 0.92 } else { 0.22 } * alpha,
-                ),
-                None,
-            ) {
+            let cx = start + 13.0 * i as f32;
+            if let Ok(b) =
+                self.rt.CreateSolidColorBrush(&glass::col(1.0, 1.0, 1.0, if on { 0.92 } else { 0.22 } * alpha), None)
+            {
                 if on {
                     self.rt.FillRoundedRectangle(
                         &D2D1_ROUNDED_RECT {
                             rect: D2D_RECT_F {
-                                left: cx - 7.0,
+                                left: cx - 6.0,
                                 top: dot_y - 2.0,
-                                right: cx + 7.0,
+                                right: cx + 6.0,
                                 bottom: dot_y + 2.0,
                             },
                             radiusX: 2.0,
@@ -2320,12 +2348,13 @@ impl NotchRenderer {
 
     // ── Section 1: Hub ──────────────────────────────────────────────────────
     unsafe fn draw_hub_glass(&self, ctrl: &NotchController, pill: D2D_RECT_F, alpha: f32) {
-        self.draw_glass_header(ctrl, pill, "Hub", alpha);
+        self.draw_glass_header(ctrl, pill, alpha);
 
         let left = pill.left + glass::PAD;
+        let right = pill.right - glass::PAD;
         let top = pill.top + glass::BODY_TOP;
-        let mid_x = left + (pill.right - pill.left - glass::PAD * 2.0) * 0.40;
         let bottom = pill.top + glass::BODY_BOT;
+        let mid_x = left + (right - left) * 0.40;
 
         let now = Local::now();
         self.draw_text_left(
@@ -2333,33 +2362,33 @@ impl NotchRenderer {
             &self.fmt_clock_hero,
             D2D_RECT_F {
                 left,
-                top: top + 4.0,
+                top: top + 2.0,
                 right: mid_x - 12.0,
-                bottom: top + 62.0,
+                bottom: top + 58.0,
             },
             glass::col(1.0, 1.0, 1.0, alpha),
         );
         self.draw_text_left(
             &now.format("%A · %d %B").to_string(),
-            &self.fmt_caption,
+            &self.fmt_body,
             D2D_RECT_F {
                 left: left + 2.0,
-                top: top + 62.0,
+                top: top + 58.0,
                 right: mid_x - 8.0,
-                bottom: top + 80.0,
+                bottom: top + 78.0,
             },
             glass::col(0.56, 0.62, 0.72, alpha),
         );
 
-        // Pemisah vertikal 1px.
+        // Pemisah vertikal mengikuti tinggi konten, tidak menggantung.
         if let Ok(b) = self.rt.CreateSolidColorBrush(&glass::col(1.0, 1.0, 1.0, 0.08 * alpha), None)
         {
             self.rt.FillRectangle(
                 &D2D_RECT_F {
                     left: mid_x,
-                    top: top + 2.0,
+                    top: top + 6.0,
                     right: mid_x + 1.0,
-                    bottom: bottom - 10.0,
+                    bottom: bottom - 28.0,
                 },
                 &b,
             );
@@ -2372,8 +2401,8 @@ impl NotchRenderer {
             D2D_RECT_F {
                 left: mid_x + glass::PAD,
                 top: top + 2.0,
-                right: pill.right - glass::PAD,
-                bottom: top + 62.0,
+                right,
+                bottom: top + 58.0,
             },
             glass::col(0.85, 0.87, 0.91, alpha),
         );
@@ -2382,30 +2411,54 @@ impl NotchRenderer {
             &self.fmt_caption,
             D2D_RECT_F {
                 left: mid_x + glass::PAD,
-                top: top + 64.0,
-                right: pill.right - glass::PAD,
-                bottom: top + 80.0,
+                top: top + 60.0,
+                right,
+                bottom: top + 78.0,
             },
             glass::col(0.48, 0.51, 0.57, alpha),
+        );
+
+        // Footer tipis: sistem ringkas supaya tidak ada ruang kosong 45 px.
+        self.hairline(left, right, bottom - 20.0, alpha * 0.7);
+        self.draw_text_left(
+            &format!("RAM {}%  ·  Disk {} GB", ctrl.ram_used_pct, ctrl.disk_free_gb),
+            &self.fmt_caption,
+            D2D_RECT_F {
+                left,
+                top: bottom - 17.0,
+                right: right,
+                bottom: bottom - 1.0,
+            },
+            glass::col(0.50, 0.55, 0.63, alpha),
         );
     }
 
     // ── Section 2: Music (2A info, 2B lyrics) ───────────────────────────────
     unsafe fn draw_music_glass(&self, ctrl: &NotchController, pill: D2D_RECT_F, alpha: f32) {
-        self.draw_glass_header(ctrl, pill, "Music", alpha);
+        self.draw_glass_header(ctrl, pill, alpha);
         let left = pill.left + glass::PAD;
         let right = pill.right - glass::PAD;
+        let cx = (pill.left + pill.right) * 0.5;
+
+        let glyph = |this: &Self, text: &str, x: f32, y: f32, a: f32| {
+            this.draw_text_centered(
+                text,
+                &this.fmt_title,
+                D2D_RECT_F {
+                    left: x - 15.0,
+                    top: y - 11.0,
+                    right: x + 15.0,
+                    bottom: y + 11.0,
+                },
+                glass::col(1.0, 1.0, 1.0, a),
+            );
+        };
 
         if ctrl.show_side_lyrics {
-            // 2B. Mini header + 3 baris lirik + progress tipis.
-            let mini_y = pill.top + 34.0;
+            // 2B: mini header + 3 baris lirik + progress tipis.
+            let hy = pill.top + 46.0;
             self.glass_pill(
-                D2D_RECT_F {
-                    left: left,
-                    top: mini_y,
-                    right: left + 22.0,
-                    bottom: mini_y + 22.0,
-                },
+                D2D_RECT_F { left, top: hy - 11.0, right: left + 22.0, bottom: hy + 11.0 },
                 6.0,
                 glass::col(0.10, 0.12, 0.18, 0.9 * alpha),
                 Some(glass::col(1.0, 1.0, 1.0, 0.10 * alpha)),
@@ -2416,41 +2469,31 @@ impl NotchRenderer {
                 &self.fmt_caption,
                 D2D_RECT_F {
                     left: left + 30.0,
-                    top: mini_y + 2.0,
-                    right: right - 62.0,
-                    bottom: mini_y + 20.0,
+                    top: hy - 10.0,
+                    right: right - 70.0,
+                    bottom: hy + 10.0,
                 },
                 glass::col(0.82, 0.84, 0.88, alpha),
             );
-            // Prev / Play / Next kompak + tombol Lyrics aktif.
-            let by = mini_y + 11.0;
-            for (dx, label) in [(-46.0_f32, "⏮"), (-24.0, if ctrl.media_playing { "⏸" } else { "⏵" }), (0.0, "⏭")] {
-                self.draw_text_centered(
-                    label,
-                    &self.fmt_caption,
-                    D2D_RECT_F {
-                        left: right + dx - 10.0,
-                        top: by - 10.0,
-                        right: right + dx + 10.0,
-                        bottom: by + 10.0,
-                    },
-                    glass::col(0.92, 0.94, 0.98, alpha),
-                );
-            }
+
+            glyph(self, "|<", cx - 34.0, hy, alpha * 0.85);
+            glyph(self, if ctrl.media_playing { "||" } else { ">" }, cx, hy, alpha);
+            glyph(self, ">|", cx + 34.0, hy, alpha * 0.85);
+
             self.glass_pill(
-                D2D_RECT_F {
-                    left: right - 30.0,
-                    top: mini_y,
-                    right: right,
-                    bottom: mini_y + 22.0,
-                },
+                D2D_RECT_F { left: right - 62.0, top: hy - 11.0, right, bottom: hy + 11.0 },
                 11.0,
-                glass::col(0.55, 0.85, 1.0, 0.22 * alpha),
+                glass::col(0.55, 0.85, 1.0, 0.24 * alpha),
                 Some(glass::col(0.60, 0.88, 1.0, 0.45 * alpha)),
                 0.9,
             );
+            self.draw_text_centered(
+                "Lyrics",
+                &self.fmt_caption,
+                D2D_RECT_F { left: right - 62.0, top: hy - 9.0, right, bottom: hy + 9.0 },
+                glass::col(0.92, 0.96, 1.0, alpha),
+            );
 
-            let stage_top = pill.top + 62.0;
             let prev_line = if ctrl.active_lyric_idx > 0 {
                 ctrl.timed_lyrics
                     .get(ctrl.active_lyric_idx - 1)
@@ -2473,76 +2516,51 @@ impl NotchRenderer {
             self.draw_text_centered(
                 &prev_line,
                 &self.fmt_caption,
-                D2D_RECT_F {
-                    left: left,
-                    top: stage_top,
-                    right: right,
-                    bottom: stage_top + 18.0,
-                },
-                glass::col(0.42, 0.45, 0.50, alpha * 0.75),
+                D2D_RECT_F { left, top: pill.top + 68.0, right, bottom: pill.top + 88.0 },
+                glass::col(0.44, 0.47, 0.52, alpha * 0.8),
             );
             self.draw_text_centered(
                 &cur_line,
                 &self.fmt_title,
-                D2D_RECT_F {
-                    left: left,
-                    top: stage_top + 24.0,
-                    right: right,
-                    bottom: stage_top + 62.0,
-                },
+                D2D_RECT_F { left: left + 6.0, top: pill.top + 92.0, right: right - 6.0, bottom: pill.top + 124.0 },
                 glass::col(1.0, 1.0, 1.0, alpha),
             );
             self.draw_text_centered(
                 &next_line,
                 &self.fmt_caption,
-                D2D_RECT_F {
-                    left: left,
-                    top: stage_top + 66.0,
-                    right: right,
-                    bottom: stage_top + 84.0,
-                },
-                glass::col(0.61, 0.64, 0.70, alpha * 0.8),
+                D2D_RECT_F { left, top: pill.top + 126.0, right, bottom: pill.top + 144.0 },
+                glass::col(0.62, 0.65, 0.71, alpha * 0.85),
             );
 
-            // Slim progress 2.5 dip (interaktif).
-            let py = pill.top + 146.0;
+            let py = pill.top + 148.0;
             self.glass_pill(
-                D2D_RECT_F {
-                    left: left,
-                    top: py,
-                    right: right,
-                    bottom: py + 2.5,
-                },
+                D2D_RECT_F { left, top: py, right, bottom: py + 2.5 },
                 1.25,
                 glass::col(1.0, 1.0, 1.0, 0.12 * alpha),
                 None,
                 0.0,
             );
-            let fill_r = left + (right - left) * ctrl.media_progress.clamp(0.0, 1.0);
+            let fx = left + (right - left) * ctrl.media_progress.clamp(0.0, 1.0);
             self.glass_pill(
-                D2D_RECT_F {
-                    left: left,
-                    top: py,
-                    right: fill_r.max(left + 2.0),
-                    bottom: py + 2.5,
-                },
+                D2D_RECT_F { left, top: py, right: fx.max(left + 8.0), bottom: py + 2.5 },
                 1.25,
                 glass::col(0.62, 0.86, 1.0, 0.95 * alpha),
                 None,
                 0.0,
             );
+            if let Ok(b) = self.rt.CreateSolidColorBrush(&glass::col(0.85, 0.95, 1.0, alpha), None) {
+                self.rt.FillEllipse(
+                    &D2D1_ELLIPSE { point: glass::pt(fx.max(left + 8.0), py + 1.25), radiusX: 3.0, radiusY: 3.0 },
+                    &b,
+                );
+            }
             return;
         }
 
-        // 2A. Track row.
-        let thumb_y = pill.top + 36.0;
+        // 2A. Track row: thumbnail kiri, judul/artis tengah, toggle Lyrics kanan.
+        let thumb_y = pill.top + 58.0;
         self.glass_pill(
-            D2D_RECT_F {
-                left: left,
-                top: thumb_y,
-                right: left + 48.0,
-                bottom: thumb_y + 48.0,
-            },
+            D2D_RECT_F { left, top: thumb_y - 20.0, right: left + 40.0, bottom: thumb_y + 20.0 },
             10.0,
             glass::col(0.09, 0.11, 0.16, 0.95 * alpha),
             Some(glass::col(1.0, 1.0, 1.0, 0.12 * alpha)),
@@ -2552,10 +2570,10 @@ impl NotchRenderer {
             &ctrl.media_title,
             &self.fmt_title,
             D2D_RECT_F {
-                left: left + 58.0,
-                top: thumb_y + 2.0,
-                right: right - 56.0,
-                bottom: thumb_y + 24.0,
+                left: left + 50.0,
+                top: thumb_y - 18.0,
+                right: right - 70.0,
+                bottom: thumb_y + 1.0,
             },
             glass::col(1.0, 1.0, 1.0, alpha),
         );
@@ -2563,22 +2581,16 @@ impl NotchRenderer {
             &ctrl.media_artist,
             &self.fmt_caption,
             D2D_RECT_F {
-                left: left + 58.0,
-                top: thumb_y + 24.0,
-                right: right - 56.0,
-                bottom: thumb_y + 42.0,
+                left: left + 50.0,
+                top: thumb_y + 1.0,
+                right: right - 70.0,
+                bottom: thumb_y + 19.0,
             },
             glass::col(0.60, 0.64, 0.70, alpha),
         );
-        // Toggle Lyrics.
         self.glass_pill(
-            D2D_RECT_F {
-                left: right - 44.0,
-                top: thumb_y + 2.0,
-                right: right,
-                bottom: thumb_y + 22.0,
-            },
-            10.0,
+            D2D_RECT_F { left: right - 62.0, top: thumb_y - 17.0, right, bottom: thumb_y + 3.0 },
+            11.0,
             glass::col(1.0, 1.0, 1.0, 0.10 * alpha),
             Some(glass::col(1.0, 1.0, 1.0, 0.16 * alpha)),
             0.8,
@@ -2586,32 +2598,40 @@ impl NotchRenderer {
         self.draw_text_centered(
             "Lyrics",
             &self.fmt_caption,
-            D2D_RECT_F {
-                left: right - 44.0,
-                top: thumb_y + 3.0,
-                right: right,
-                bottom: thumb_y + 21.0,
-            },
+            D2D_RECT_F { left: right - 62.0, top: thumb_y - 15.0, right, bottom: thumb_y + 1.0 },
             glass::col(0.86, 0.92, 1.0, alpha),
         );
 
-        // Seek bar.
-        let bar_y = pill.top + 104.0;
-        let bar_l = left + 42.0;
-        let bar_r = right - 42.0;
+        if ctrl.media_title.trim().is_empty() {
+            self.draw_text_centered(
+                "No media playing",
+                &self.fmt_caption,
+                D2D_RECT_F { left, top: pill.top + 82.0, right, bottom: pill.top + 98.0 },
+                glass::col(0.55, 0.60, 0.68, alpha),
+            );
+        }
+
+        // Seek row: waktu kiri, bar di tengah, sisa waktu kanan.
+        let bar_y = pill.top + 106.0;
         self.draw_text_left(
-            &format!("{:02}:{:02}", (ctrl.media_elapsed_exact as u32) / 60, (ctrl.media_elapsed_exact as u32) % 60),
+            &format!(
+                "{:02}:{:02}",
+                (ctrl.media_elapsed_exact as u32) / 60,
+                (ctrl.media_elapsed_exact as u32) % 60
+            ),
             &self.fmt_caption,
-            D2D_RECT_F { left, top: bar_y - 8.0, right: left + 40.0, bottom: bar_y + 8.0 },
-            glass::col(0.55, 0.60, 0.68, alpha),
+            D2D_RECT_F { left, top: bar_y - 9.0, right: left + 42.0, bottom: bar_y + 9.0 },
+            glass::col(0.58, 0.63, 0.70, alpha),
         );
         let remain = (ctrl.media_total_secs - ctrl.media_elapsed_exact).max(0.0) as u32;
         self.draw_text_right(
             &format!("-{:02}:{:02}", remain / 60, remain % 60),
             &self.fmt_caption,
-            D2D_RECT_F { left: right - 42.0, top: bar_y - 8.0, right, bottom: bar_y + 8.0 },
-            glass::col(0.55, 0.60, 0.68, alpha),
+            D2D_RECT_F { left: right - 42.0, top: bar_y - 9.0, right, bottom: bar_y + 9.0 },
+            glass::col(0.58, 0.63, 0.70, alpha),
         );
+        let bar_l = left + 46.0;
+        let bar_r = right - 46.0;
         self.glass_pill(
             D2D_RECT_F { left: bar_l, top: bar_y - 2.0, right: bar_r, bottom: bar_y + 2.0 },
             2.0,
@@ -2634,9 +2654,10 @@ impl NotchRenderer {
             );
         }
 
-        // Controls: prev / play / next, rapat 24 dip.
-        let ctrl_y = pill.top + 130.0;
-        let cx = (pill.left + pill.right) * 0.5;
+        // Playback: simetris di tengah, jarak 40 dip.
+        let ctrl_y = pill.top + 132.0;
+        glyph(self, "|<", cx - 40.0, ctrl_y, alpha * 0.85);
+        glyph(self, ">|", cx + 40.0, ctrl_y, alpha * 0.85);
         self.glass_pill(
             D2D_RECT_F { left: cx - 16.0, top: ctrl_y - 16.0, right: cx + 16.0, bottom: ctrl_y + 16.0 },
             16.0,
@@ -2645,37 +2666,23 @@ impl NotchRenderer {
             1.0,
         );
         self.draw_text_centered(
-            if ctrl.media_playing { "⏸" } else { "⏵" },
+            if ctrl.media_playing { "||" } else { ">" },
             &self.fmt_title,
-            D2D_RECT_F { left: cx - 14.0, top: ctrl_y - 11.0, right: cx + 14.0, bottom: ctrl_y + 11.0 },
+            D2D_RECT_F { left: cx - 16.0, top: ctrl_y - 11.0, right: cx + 16.0, bottom: ctrl_y + 11.0 },
             glass::col(1.0, 1.0, 1.0, alpha),
         );
-        for (dx, label) in [(-40.0_f32, "⏮"), (40.0, "⏭")] {
-            self.draw_text_centered(
-                label,
-                &self.fmt_title,
-                D2D_RECT_F {
-                    left: cx + dx - 14.0,
-                    top: ctrl_y - 11.0,
-                    right: cx + dx + 14.0,
-                    bottom: ctrl_y + 11.0,
-                },
-                glass::col(0.86, 0.90, 0.96, alpha * 0.9),
-            );
-        }
     }
-
 
     // ── Section 3: Control ─────────────────────────────────────────────────
     unsafe fn draw_control_glass(&self, ctrl: &NotchController, pill: D2D_RECT_F, alpha: f32) {
-        self.draw_glass_header(ctrl, pill, "Control", alpha);
+        self.draw_glass_header(ctrl, pill, alpha);
         let left = pill.left + glass::PAD;
         let right = pill.right - glass::PAD;
         let w = right - left;
 
         for (i, (icon, pct, warm)) in [
-            ("🔊", ctrl.volume_level, false),
-            ("🔆", ctrl.brightness_level, true),
+            ("Vol", ctrl.volume_level, false),
+            ("Bright", ctrl.brightness_level, true),
         ]
         .iter()
         .enumerate()
@@ -2716,12 +2723,12 @@ impl NotchRenderer {
             }
             self.draw_text_left(
                 icon,
-                &self.fmt_title,
+                &self.fmt_caption,
                 D2D_RECT_F {
-                    left: left + 10.0,
-                    top: y + 5.0,
-                    right: left + 40.0,
-                    bottom: y + 28.0,
+                    left: left + 12.0,
+                    top: y + 9.0,
+                    right: left + 74.0,
+                    bottom: y + 25.0,
                 },
                 glass::col(0.92, 0.95, 1.0, alpha),
             );
@@ -2730,9 +2737,9 @@ impl NotchRenderer {
                 &self.fmt_title,
                 D2D_RECT_F {
                     left: right - 62.0,
-                    top: y + 5.0,
-                    right: right - 10.0,
-                    bottom: y + 28.0,
+                    top: y + 8.0,
+                    right: right - 12.0,
+                    bottom: y + 26.0,
                 },
                 glass::col(0.95, 0.97, 1.0, alpha),
             );
@@ -2753,7 +2760,7 @@ impl NotchRenderer {
 
     // ── Section 4: Focus (Pomodoro) ────────────────────────────────────────
     unsafe fn draw_focus_glass(&self, ctrl: &NotchController, pill: D2D_RECT_F, alpha: f32) {
-        self.draw_glass_header(ctrl, pill, "Focus", alpha);
+        self.draw_glass_header(ctrl, pill, alpha);
         let left = pill.left + glass::PAD;
         let right = pill.right - glass::PAD;
 
@@ -2821,7 +2828,7 @@ impl NotchRenderer {
             1.0,
         );
         self.draw_text_centered(
-            if ctrl.pomo_running { "⏸" } else { "⏵" },
+            if ctrl.pomo_running { "||" } else { ">" },
             &self.fmt_title,
             D2D_RECT_F { left: right - 76.0, top: btn_y - 12.0, right: right - 40.0, bottom: btn_y + 12.0 },
             glass::col(1.0, 1.0, 1.0, alpha),
@@ -2834,7 +2841,7 @@ impl NotchRenderer {
             0.8,
         );
         self.draw_text_centered(
-            "↺",
+            "R",
             &self.fmt_title,
             D2D_RECT_F { left: right - 34.0, top: btn_y - 12.0, right: right - 2.0, bottom: btn_y + 12.0 },
             glass::col(0.90, 0.93, 0.98, alpha),
@@ -2867,7 +2874,7 @@ impl NotchRenderer {
 
     // ── Section 5: Shelf ───────────────────────────────────────────────────
     unsafe fn draw_shelf_glass(&self, ctrl: &NotchController, pill: D2D_RECT_F, alpha: f32) {
-        self.draw_glass_header(ctrl, pill, "Shelf", alpha);
+        self.draw_glass_header(ctrl, pill, alpha);
         let left = pill.left + glass::PAD;
         let right = pill.right - glass::PAD;
         let top = pill.top + 38.0;
@@ -2935,7 +2942,7 @@ impl NotchRenderer {
 
     // ── Section 6: Clips (clipboard + quick notes) ─────────────────────────
     unsafe fn draw_clips_glass(&self, ctrl: &NotchController, pill: D2D_RECT_F, alpha: f32) {
-        self.draw_glass_header(ctrl, pill, "Clips", alpha);
+        self.draw_glass_header(ctrl, pill, alpha);
         let left = pill.left + glass::PAD;
         let right = pill.right - glass::PAD;
         let mut y = pill.top + 38.0;

@@ -296,7 +296,8 @@ impl NotchController {
             media_elapsed_exact: 0.0,
             last_raw_gsmtc_pos: -1.0,
             media_total_secs: 280.0,
-            show_side_lyrics: true,
+            // Mode 2A (track + transport) sebagai default; 2B hanya saat toggle Lyrics.
+            show_side_lyrics: false,
             timed_lyrics: vec![
                 (0.0, String::from("♪ Putar lagu di Spotify / YouTube")),
                 (6.0, String::from("Timeline & Lirik bergerak mulus real-time")),
@@ -1343,6 +1344,19 @@ impl NotchController {
         let w = (right - left).max(40.0);
         let in_header = (8.0..=34.0).contains(&ly);
 
+        // Tab strip 6 section di atas (berhenti 150 dip sebelum tepi kanan,
+        // karena area itu dipakai baterai + jam).
+        let strip_right = right - 150.0;
+        if in_header && lx >= left && lx <= strip_right {
+            let slot = ((strip_right - left) / 6.0).max(30.0);
+            let idx = (((lx - left) / slot).floor() as usize).min(5);
+            let tabs = Self::ordered_tabs();
+            if tabs[idx] != self.state {
+                self.transition_to(tabs[idx]);
+            }
+            return true;
+        }
+
         match self.state {
             NotchState::Hub => {
                 if ly >= glass::BODY_TOP && lx > left + w * 0.42 {
@@ -1357,25 +1371,26 @@ impl NotchController {
                         self.show_side_lyrics = false;
                         return true;
                     }
-                    // Mini controls di header baris kedua.
-                    let by = 45.0;
+                    // Mini controls: grup tengah (cx-34 / cx / cx+34).
+                    let by = 46.0;
+                    let mid = pill_w * 0.5;
                     if (by - 13.0..=by + 13.0).contains(&ly) {
-                        if lx > right - 58.0 && lx < right - 34.0 {
+                        if lx > mid - 48.0 && lx < mid - 20.0 {
                             Self::send_system_media_command("prev");
                             return true;
                         }
-                        if lx >= right - 34.0 && lx <= right - 10.0 {
+                        if lx >= mid - 18.0 && lx <= mid + 18.0 {
                             Self::send_system_media_command("toggle");
                             self.media_playing = !self.media_playing;
                             return true;
                         }
-                        if lx > right - 10.0 && lx <= right + 6.0 {
+                        if lx > mid + 20.0 && lx <= mid + 48.0 {
                             Self::send_system_media_command("next");
                             return true;
                         }
                     }
-                    // Progress tipis 146 dip.
-                    if (140.0..=152.0).contains(&ly) {
+                    // Progress tipis 148 dip.
+                    if (142.0..=154.0).contains(&ly) {
                         let ratio = ((lx - left) / w).clamp(0.0, 1.0);
                         self.media_progress = ratio;
                         self.media_elapsed_exact = ratio * self.media_total_secs;
@@ -1386,14 +1401,14 @@ impl NotchController {
                 }
 
                 // Toggle Lyrics di kanan track row.
-                if (36.0..=58.0).contains(&ly) && lx > right - 48.0 {
+                if (16.0..=64.0).contains(&ly) && lx > right - 62.0 {
                     self.show_side_lyrics = true;
                     return true;
                 }
                 // Seek bar.
-                if (94.0..=114.0).contains(&ly) {
-                    let bl = left + 42.0;
-                    let br = right - 42.0;
+                if (96.0..=116.0).contains(&ly) {
+                    let bl = left + 46.0;
+                    let br = right - 46.0;
                     if lx >= bl - 6.0 && lx <= br + 6.0 {
                         let ratio = ((lx - bl) / (br - bl)).clamp(0.0, 1.0);
                         self.media_progress = ratio;
@@ -1404,7 +1419,7 @@ impl NotchController {
                     }
                 }
                 // Controls.
-                if (112.0..=148.0).contains(&ly) {
+                if (114.0..=150.0).contains(&ly) {
                     let cx = pill_w * 0.5;
                     if lx < cx - 24.0 {
                         Self::send_system_media_command("prev");
@@ -1430,7 +1445,7 @@ impl NotchController {
                     let y0 = 46.0 + row as f32 * 46.0;
                     if (y0..=y0 + 32.0).contains(&ly) {
                         let is_volume = row == 0;
-                        if lx < left + 40.0 {
+                        if lx < left + 78.0 {
                             if is_volume {
                                 let next = if self.volume_level == 0 { 40 } else { 0 };
                                 self.volume_level = next;
