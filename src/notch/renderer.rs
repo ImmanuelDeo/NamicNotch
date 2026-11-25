@@ -1,15 +1,21 @@
 // src/notch/renderer.rs
 use anyhow::Result;
 use chrono::Local;
-use windows::core::PCWSTR;
+use windows::core::{Interface, PCWSTR};
+use windows::Foundation::Numerics::Matrix3x2;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Direct2D::Common::{
+    D2D_SIZE_F, D2D1_FIGURE_BEGIN_HOLLOW, D2D1_FIGURE_END_OPEN,
     D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_BEZIER_SEGMENT, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED,
     D2D1_FIGURE_END_CLOSED, D2D1_PIXEL_FORMAT, D2D_POINT_2F, D2D_RECT_F, D2D_SIZE_U,
 };
 use windows::Win32::Graphics::Direct2D::{
     D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
-    D2D1CreateFactory, ID2D1Factory, ID2D1HwndRenderTarget, ID2D1PathGeometry, ID2D1StrokeStyle,
+    D2D1CreateFactory, ID2D1Factory, ID2D1Geometry, ID2D1GeometrySink, ID2D1HwndRenderTarget,
+    ID2D1PathGeometry,
+    ID2D1StrokeStyle, D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_LARGE, D2D1_ARC_SIZE_SMALL,
+    D2D1_LAYER_OPTIONS_NONE,
+    D2D1_LAYER_PARAMETERS, D2D1_SWEEP_DIRECTION_CLOCKWISE,
     D2D1_CAP_STYLE_ROUND, D2D1_DASH_STYLE_DASH, D2D1_ELLIPSE, D2D1_FACTORY_TYPE_SINGLE_THREADED,
     D2D1_FEATURE_LEVEL_DEFAULT, D2D1_HWND_RENDER_TARGET_PROPERTIES, D2D1_LINE_JOIN_ROUND,
     D2D1_PRESENT_OPTIONS_IMMEDIATELY, D2D1_RENDER_TARGET_PROPERTIES,
@@ -68,6 +74,9 @@ pub struct NotchRenderer {
     pub fmt_body: IDWriteTextFormat,
     pub fmt_quote_italic: IDWriteTextFormat,
     pub fmt_caption: IDWriteTextFormat,
+    /// Mask rounded-rect untuk clip isi notch; dibuat ulang hanya saat ukuran berubah.
+    pill_mask: Option<ID2D1Geometry>,
+    pill_mask_rect: Option<D2D_RECT_F>,
 }
 
 impl NotchRenderer {
@@ -211,7 +220,33 @@ impl NotchRenderer {
                 fmt_body,
                 fmt_quote_italic,
                 fmt_caption,
+                pill_mask: None,
+                pill_mask_rect: None,
             })
+        }
+    }
+
+    /// Pastikan mask rounded-rect tersedia untuk ukuran pill saat ini.
+    unsafe fn ensure_pill_mask(&mut self, pill_rect: D2D_RECT_F, radius: f32) {
+        let same = self.pill_mask_rect.map_or(false, |r| {
+            (r.left - pill_rect.left).abs() < 0.01
+                && (r.top - pill_rect.top).abs() < 0.01
+                && (r.right - pill_rect.right).abs() < 0.01
+                && (r.bottom - pill_rect.bottom).abs() < 0.01
+        });
+        if same && self.pill_mask.is_some() {
+            return;
+        }
+        if let Ok(geom) = self
+            .factory
+            .CreateRoundedRectangleGeometry(&D2D1_ROUNDED_RECT {
+                rect: pill_rect,
+                radiusX: radius,
+                radiusY: radius,
+            })
+        {
+            self.pill_mask = geom.cast::<ID2D1Geometry>().ok();
+            self.pill_mask_rect = Some(pill_rect);
         }
     }
 
@@ -380,53 +415,101 @@ impl NotchRenderer {
         Ok(path)
     }
 
-    unsafe fn draw_nusa_ring_battery(&self, cx: f32, cy: f32, pct: u8, charging: bool, alpha: f32) {
-        let ring_col = if charging || pct > 20 {
-            D2D1_COLOR_F {
-                r: 0.13,
-                g: 0.85,
-                b: 0.38,
-                a: alpha,
-            }
-        } else {
-            D2D1_COLOR_F {
-                r: 0.94,
-                g: 0.27,
-                b: 0.27,
-                a: alpha,
-            }
+    unsafe fn battery_arc(&self, cx: f32, cy: f32, r: f32, sweep_deg: f32) -> Option<ID2D1PathGeometry> {
+        if sweep_deg <= 0.5 {
+            return None;
+        }
+        let geo: ID2D1PathGeometry = self.factory.CreatePathGeometry().ok()?;
+        let sink: ID2D1GeometrySink = geo.Open().ok()?;
+        let start_deg = -90.0_f32;
+        let p0 = D2D_POINT_2F {
+            x: cx + r * start_deg.to_radians().cos(),
+            y: cy + r * start_deg.to_radians().sin(),
         };
+        sink.BeginFigure(p0, D2D1_FIGURE_BEGIN_HOLLOW);
+        let mut a0 = start_deg;
+        let mut left = sweep_deg.min(359.9);
+        while left > 0.2 {
+            let step = left.min(180.0);
+            let a1 = a0 + step;
+            sink.AddArc(&D2D1_ARC_SEGMENT {
+                point: D2D_POINT_2F {
+                    x: cx + r * a1.to_radians().cos(),
+                    y: cy + r * a1.to_radians().sin(),
+                },
+                size: D2D_SIZE_F { width: r, height: r },
+                rotationAngle: 0.0,
+                sweepDirection: D2D1_SWEEP_DIRECTION_CLOCKWISE,
+                arcSize: if step >= 179.5 {
+                    D2D1_ARC_SIZE_LARGE
+                } else {
+                    D2D1_ARC_SIZE_SMALL
+                },
+            });
+            a0 = a1;
+            left -= step;
+        }
+        sink.EndFigure(D2D1_FIGURE_END_OPEN);
+        sink.Close().ok()?;
+        Some(geo)
+    }
 
-        if let Ok(rb) = self.rt.CreateSolidColorBrush(&ring_col, None) {
+    /// Cincin baterai: busur mengikuti persentase asli, warna mengikuti state.
+    unsafe fn draw_nusa_ring_battery(&self, cx: f32, cy: f32, pct: u8, charging: bool, alpha: f32) {
+        const R: f32 = 7.0;
+        let pct_f = pct.min(100) as f32;
+
+        // Track redup supaya sisa kapasitas terbaca sebagai bagian cincin.
+        if let Ok(track) = self.rt.CreateSolidColorBrush(
+            &D2D1_COLOR_F { r: 0.55, g: 0.62, b: 0.72, a: 0.20 * alpha },
+            None,
+        ) {
             self.rt.DrawEllipse(
                 &D2D1_ELLIPSE {
                     point: D2D_POINT_2F { x: cx, y: cy },
-                    radiusX: 7.0,
-                    radiusY: 7.0,
+                    radiusX: R,
+                    radiusY: R,
                 },
-                &rb,
-                2.0,
+                &track,
+                2.4,
                 None,
             );
         }
 
-        let bolt = if charging { "⚡" } else { "•" };
-        self.draw_text_centered(
-            bolt,
-            &self.fmt_caption,
-            D2D_RECT_F {
-                left: cx - 8.0,
-                top: cy - 8.0,
-                right: cx + 8.0,
-                bottom: cy + 8.0,
-            },
-            D2D1_COLOR_F {
-                r: 1.0,
-                g: 1.0,
-                b: 1.0,
-                a: alpha,
-            },
-        );
+        let (r, g, b) = if charging {
+            (0.24, 0.86, 0.94)
+        } else if pct_f <= 15.0 {
+            (0.95, 0.26, 0.28)
+        } else if pct_f <= 40.0 {
+            (0.98, 0.68, 0.22)
+        } else {
+            (0.22, 0.86, 0.42)
+        };
+
+        if let Some(geo) = self.battery_arc(cx, cy, R, pct_f * 3.6) {
+            if let Ok(brush) = self.rt.CreateSolidColorBrush(
+                &D2D1_COLOR_F { r, g, b, a: alpha },
+                None,
+            ) {
+                self.rt.DrawGeometry(&geo, &brush, 2.4, None);
+            }
+        }
+
+        // Titik/nadi di tengah: petir saat charging, angka tidak muat di 14 px.
+        let glyph = if charging { "⚡" } else { "" };
+        if !glyph.is_empty() {
+            self.draw_text_centered(
+                glyph,
+                &self.fmt_caption,
+                D2D_RECT_F {
+                    left: cx - 8.0,
+                    top: cy - 8.0,
+                    right: cx + 8.0,
+                    bottom: cy + 8.0,
+                },
+                D2D1_COLOR_F { r: 0.90, g: 0.98, b: 1.0, a: alpha },
+            );
+        }
     }
 
     pub unsafe fn draw_frame(&mut self, ctrl: &mut NotchController, pill_rect: D2D_RECT_F) {
@@ -460,9 +543,38 @@ impl NotchRenderer {
             );
         }
 
+        // Semua isi notch digambar di dalam layer ber-mask rounded-rect.
+        // Tanpa ini gradient yang sengaja diperlebar menyisakan pendar di
+        // keempat sudut lengkung, sehingga tampak bocor ke desktop.
+        self.ensure_pill_mask(pill_rect, radius);
+        let mask = self.pill_mask.clone();
+        let masked = if let Some(ref geom) = mask {
+            let params = D2D1_LAYER_PARAMETERS {
+                contentBounds: D2D_RECT_F {
+                    left: f32::NEG_INFINITY,
+                    top: f32::NEG_INFINITY,
+                    right: f32::INFINITY,
+                    bottom: f32::INFINITY,
+                },
+                geometricMask: std::mem::ManuallyDrop::new(Some(geom.clone())),
+                maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                maskTransform: Matrix3x2::identity(),
+                opacity: 1.0,
+                opacityBrush: std::mem::ManuallyDrop::new(None),
+                layerOptions: D2D1_LAYER_OPTIONS_NONE,
+            };
+            self.rt.PushLayer(&params, None);
+            true
+        } else {
+            false
+        };
+
         if !ctrl.is_hovered {
             if let Some(ref ov) = ctrl.active_overlay {
                 self.draw_system_overlay(ov, pill_rect, alpha);
+                if masked {
+                    self.rt.PopLayer();
+                }
                 return;
             }
         }
@@ -473,9 +585,6 @@ impl NotchRenderer {
             } else {
                 // ID2D1HwndRenderTarget deref ke ID2D1RenderTarget, jadi bisa
                 // dipakai langsung oleh modul maskot.
-                // Clip ke bentuk pill: aura memakai gradient yang sengaja
-                // diperluas, tanpa clip warnanya bocor ke desktop.
-                self.rt.PushAxisAlignedClip(&pill_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
                 ctrl.devil_eyes.draw_idle_aura_background(
                     &self.rt,
                     &self.factory,
@@ -485,7 +594,6 @@ impl NotchRenderer {
                 let cx = (pill_rect.left + pill_rect.right) * 0.5;
                 let cy = (pill_rect.top + pill_rect.bottom) * 0.5;
                 ctrl.devil_eyes.draw(&self.rt, &self.factory, cx, cy, alpha);
-                self.rt.PopAxisAlignedClip();
             }
         } else {
             let content_rect = self.draw_clean_nusa_shell(ctrl, pill_rect, alpha);
@@ -524,6 +632,10 @@ impl NotchRenderer {
 
         ctrl.chibi_liebe
             .draw(&self.rt, &self.factory, pill_rect, ctrl.state);
+
+        if masked {
+            self.rt.PopLayer();
+        }
     }
 
     unsafe fn draw_system_overlay(
