@@ -3,6 +3,7 @@
 // Bahasa visual sama dengan Asta Devil Union: basis kepala gelap, rambut berlapis dengan
 // highlight chunk + outline, aksesoris kepala, kerah pakaian, mata illuminated, objek
 // ikonik di kanan.
+use super::atlas;
 use super::core::*;
 use super::vfx;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_POINT_2F, D2D_RECT_F};
@@ -147,34 +148,6 @@ impl IdleCharacter for YujiSukuna {
         let cloth_white = col(0.86, 0.84, 0.80);
         let cloth_dark = col(0.075, 0.070, 0.090);
 
-        // Basis kepala: hampir menyatu dengan latar obsidian, hanya cukup
-        // untuk memisahkan siluet dari background (tanpa warna kulit).
-        fill_smooth_shape(
-            rt,
-            factory,
-            &local(&[
-                (0.0, -9.6),
-                (9.6, -8.4),
-                (15.8, -4.8),
-                (18.6, 0.8),
-                (16.0, 6.8),
-                (9.6, 11.4),
-                (3.4, 13.4),
-                (-3.4, 13.4),
-                (-9.6, 11.4),
-                (-16.0, 6.8),
-                (-18.6, 0.8),
-                (-15.8, -4.8),
-                (-9.6, -8.4),
-            ]),
-            D2D1_COLOR_F {
-                r: 0.088,
-                g: 0.084,
-                b: 0.098,
-                a: alpha * 0.92,
-            },
-        );
-
         // ── 0. Kerah + bahu ────────────────────────────────────────────────
         fill_polygon(
             rt,
@@ -227,114 +200,7 @@ impl IdleCharacter for YujiSukuna {
             1.0,
         );
 
-        // ── 2. Rambut berlapis ─────────────────────────────────────────────
-        let hair_pts = [
-            (-23.0, -2.5),
-            (-27.5, -8.0),
-            (-21.0, -8.8),
-            (-26.0, -14.5),
-            (-17.5, -12.2),
-            (-19.5, -19.0),
-            (-11.0, -14.6),
-            (-11.0, -20.5),
-            (-4.5, -15.6),
-            (-2.0, -22.0),
-            (2.0, -17.6),
-            (6.0, -21.0),
-            (7.5, -15.4),
-            (14.0, -19.4),
-            (13.0, -13.6),
-            (20.5, -16.6),
-            (17.5, -10.6),
-            (25.5, -11.6),
-            (21.0, -6.4),
-            (26.0, -3.0),
-            (17.0, 0.2),
-            (8.0, -3.2),
-            (0.0, -0.4),
-            (-9.0, -3.4),
-            (-18.0, 0.0),
-        ];
-        fill_polygon(rt, factory, &local(&hair_pts), hair_pink);
-        for chunk in [
-            [(-22.0, -12.0), (-13.5, -9.6), (-18.5, -5.6)],
-            [(-12.0, -16.6), (-3.6, -12.4), (-8.6, -7.4)],
-            [(-1.0, -19.4), (3.2, -13.6), (-0.6, -8.8)],
-            [(8.6, -17.0), (6.4, -8.6), (0.8, -5.4)],
-            [(19.4, -14.0), (15.2, -7.0), (9.4, -5.2)],
-            [(-23.4, -6.6), (-17.0, -3.8), (-19.6, -1.8)],
-        ] {
-            fill_polygon(rt, factory, &local(&chunk), hair_hi);
-        }
-        for side in [-1.0_f32, 1.0_f32] {
-            fill_polygon(
-                rt,
-                factory,
-                &local(&[
-                    (side * 24.6, -3.4),
-                    (side * 15.4, -2.6),
-                    (side * 19.4, -9.2),
-                ]),
-                hair_deep,
-            );
-        }
-        draw_polyline(
-            rt,
-            factory,
-            &local(&[
-                (-23.0, -2.5),
-                (-27.5, -8.0),
-                (-21.0, -8.8),
-                (-26.0, -14.5),
-                (-17.5, -12.2),
-                (-19.5, -19.0),
-                (-11.0, -14.6),
-                (-11.0, -20.5),
-                (-4.5, -15.6),
-                (-2.0, -22.0),
-                (2.0, -17.6),
-                (6.0, -21.0),
-                (7.5, -15.4),
-                (14.0, -19.4),
-                (13.0, -13.6),
-                (20.5, -16.6),
-                (17.5, -10.6),
-                (25.5, -11.6),
-                (21.0, -6.4),
-                (26.0, -3.0),
-            ]),
-            D2D1_COLOR_F {
-                a: 0.55 * alpha,
-                ..hair_hi
-            },
-            0.9,
-        );
-
-        // ── 3. Tato Sukuna ─────────────────────────────────────────────────
-        if sk > 0.04 {
-            let ink = D2D1_COLOR_F {
-                a: alpha * sk,
-                ..black
-            };
-            let ink_glow = D2D1_COLOR_F {
-                r: 0.85,
-                g: 0.10,
-                b: 0.20,
-                a: 0.30 * alpha * sk,
-            };
-            let mark = |pts: &[(f32, f32)], w: f32| {
-                draw_polyline(rt, factory, &local(pts), ink_glow, w + 1.6);
-                draw_polyline(rt, factory, &local(pts), ink, w);
-            };
-            mark(&[(0.0, -12.6), (0.0, -5.4)], 1.3);
-            mark(&[(-4.6, -12.2), (-1.5, -6.4)], 1.0);
-            mark(&[(4.6, -12.2), (1.5, -6.4)], 1.0);
-            mark(&[(-16.0, 2.6), (-13.4, 6.6)], 0.9);
-            mark(&[(16.0, 2.6), (13.4, 6.6)], 0.9);
-            mark(&[(-9.6, 8.6), (-6.4, 10.4)], 0.8);
-            mark(&[(9.6, 8.6), (6.4, 10.4)], 0.8);
-        }
-
+        // ── 2. Kepala HD: Yuji -> Sukuna (crossfade) ────────────────────
         // ── 4. Mata ────────────────────────────────────────────────────────
         let eye_y = base_cy + 5.0 * s;
         let (outer, core_c, glow) = if sk < 0.5 {
@@ -374,6 +240,25 @@ impl IdleCharacter for YujiSukuna {
                 }
             }
         }
+
+        // Kepala HD: Yuji pudar masuk saat sk turun, Sukuna saat sk naik.
+        let sk_fade = smoothstep(0.25, 0.85, sk);
+        atlas::draw_head(
+            rt,
+            atlas::Head::Yuji,
+            base_cx,
+            base_cy - 7.0 * s,
+            104.0 * s,
+            alpha * (1.0 - sk_fade),
+        );
+        atlas::draw_head(
+            rt,
+            atlas::Head::Sukuna,
+            base_cx,
+            base_cy - 7.0 * s,
+            104.0 * s,
+            alpha * sk_fade,
+        );
 
         // ── 5. Gestur kanan ────────────────────────────────────────────────
         let float_y = (ctx.phase_time * 2.4).sin() * 1.2 * (1.0 - g);

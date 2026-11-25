@@ -1,14 +1,14 @@
 // src/mascot/atlas.rs
-// Loader kepala HD (PNG transparan) untuk maskot yang di-upgrade:
-// Bakugo, Eren Attack Titan, Okarun.
+// Loader tekstur HD (PNG transparan) untuk kepala maskot dan gesture khusus.
 //
-// Kepala disimpan sebagai aset yang di-embed, jadi nusa.exe tetap jalan tanpa
-// folder assets di sebelah binary. Kalau file aset ada di disk (build dev), file
-// itu yang dipakai lebih dulu supaya bisa diubah tanpa rebuild.
+// Aset di-embed lewat include_bytes!, jadi nusa.exe tetap jalan tanpa folder
+// assets. Kalau file ada di disk (build dev / folder install), file itu yang
+// dipakai lebih dulu supaya bisa diganti tanpa rebuild.
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 use windows::core::PCWSTR;
+use windows::Win32::Foundation::GENERIC_READ;
 use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
 use windows::Win32::Graphics::Direct2D::{
     ID2D1Bitmap, ID2D1RenderTarget, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR,
@@ -18,38 +18,53 @@ use windows::Win32::Graphics::Imaging::{
     WICBitmapDitherTypeNone, WICBitmapPaletteTypeCustom, WICDecodeMetadataCacheOnLoad,
 };
 use windows::Win32::System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER};
-use windows::Win32::Foundation::GENERIC_READ;
 
-pub const HEAD_W: u32 = 240;
-pub const HEAD_H: u32 = 160;
-
+/// Tekstur HD yang dipakai maskot. Urutan = index cache.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Head {
-    Bakugo = 0,
-    ErenTitan = 1,
-    Okarun = 2,
+    Asta = 0,
+    Yuji = 1,
+    Sukuna = 2,
+    ErenHuman = 3,
+    Bakugo = 4,
+    ErenTitan = 5,
+    Okarun = 6,
+    GestureBite = 7,
 }
 
 impl Head {
     fn rel_path(self) -> &'static str {
         match self {
+            Head::Asta => "01_asta/head_cap.png",
+            Head::Yuji => "02_yuji/head_cap.png",
+            Head::Sukuna => "03_sukuna/head_cap.png",
+            Head::ErenHuman => "05_eren_human/head_cap.png",
             Head::Bakugo => "04_bakugo/head_cap.png",
             Head::ErenTitan => "06_eren_titan/head_cap.png",
             Head::Okarun => "07_okarun/head_cap.png",
+            Head::GestureBite => "05_eren_human/gesture_bite.png",
         }
     }
 
     fn embedded(self) -> &'static [u8] {
         match self {
+            Head::Asta => include_bytes!("../../assets/mascots/01_asta/head_cap.png"),
+            Head::Yuji => include_bytes!("../../assets/mascots/02_yuji/head_cap.png"),
+            Head::Sukuna => include_bytes!("../../assets/mascots/03_sukuna/head_cap.png"),
+            Head::ErenHuman => include_bytes!("../../assets/mascots/05_eren_human/head_cap.png"),
             Head::Bakugo => include_bytes!("../../assets/mascots/04_bakugo/head_cap.png"),
             Head::ErenTitan => include_bytes!("../../assets/mascots/06_eren_titan/head_cap.png"),
             Head::Okarun => include_bytes!("../../assets/mascots/07_okarun/head_cap.png"),
+            Head::GestureBite => {
+                include_bytes!("../../assets/mascots/05_eren_human/gesture_bite.png")
+            }
         }
     }
 }
 
 thread_local! {
-    static CACHE: RefCell<[Option<ID2D1Bitmap>; 3]> = const { RefCell::new([None, None, None]) };
+    static CACHE: RefCell<[Option<ID2D1Bitmap>; 8]> =
+        const { RefCell::new([None, None, None, None, None, None, None, None]) };
 }
 
 /// Cari file aset di sebelah exe, satu level di atasnya, lalu di working dir.
@@ -82,7 +97,12 @@ unsafe fn decode_file(rt: &ID2D1RenderTarget, path: &Path) -> Option<ID2D1Bitmap
     let mut wide: Vec<u16> = path.to_string_lossy().encode_utf16().collect();
     wide.push(0);
     let decoder = factory
-        .CreateDecoderFromFilename(PCWSTR(wide.as_ptr()), None, GENERIC_READ, WICDecodeMetadataCacheOnLoad)
+        .CreateDecoderFromFilename(
+            PCWSTR(wide.as_ptr()),
+            None,
+            GENERIC_READ,
+            WICDecodeMetadataCacheOnLoad,
+        )
         .ok()?;
     let frame = decoder.GetFrame(0).ok()?;
     let converter = factory.CreateFormatConverter().ok()?;
@@ -122,8 +142,8 @@ unsafe fn decode_bytes(rt: &ID2D1RenderTarget, bytes: &[u8]) -> Option<ID2D1Bitm
     rt.CreateBitmapFromWicBitmap(&converter, None).ok()
 }
 
-/// Ambil tekstur kepala; decode sekali, sisanya dari cache thread-local.
-pub unsafe fn head_bitmap(rt: &ID2D1RenderTarget, head: Head) -> Option<ID2D1Bitmap> {
+/// Ambil tekstur; decode sekali, sisanya dari cache thread-local.
+pub unsafe fn texture(rt: &ID2D1RenderTarget, head: Head) -> Option<ID2D1Bitmap> {
     if let Some(bmp) = CACHE.with(|c| c.borrow()[head as usize].clone()) {
         return Some(bmp);
     }
@@ -134,7 +154,8 @@ pub unsafe fn head_bitmap(rt: &ID2D1RenderTarget, head: Head) -> Option<ID2D1Bit
     Some(bmp)
 }
 
-/// Gambar kepala terpusat di (cx, cy). `w` = lebar kepala dalam unit maskot.
+/// Gambar tekstur terpusat di (cx, cy). `w` = lebar dalam unit maskot,
+/// tinggi mengikuti rasio asli bitmap.
 pub unsafe fn draw_head(
     rt: &ID2D1RenderTarget,
     head: Head,
@@ -143,11 +164,16 @@ pub unsafe fn draw_head(
     w: f32,
     opacity: f32,
 ) {
-    if opacity <= 0.005 {
+    if opacity <= 0.005 || w <= 0.5 {
         return;
     }
-    let Some(bmp) = head_bitmap(rt, head) else { return };
-    let h = w * HEAD_H as f32 / HEAD_W as f32;
+    let Some(bmp) = texture(rt, head) else { return };
+    let size = bmp.GetSize();
+    let h = if size.width > 0.5 {
+        w * size.height / size.width
+    } else {
+        w
+    };
     let dest = D2D_RECT_F {
         left: cx - w * 0.5,
         top: cy - h * 0.5,

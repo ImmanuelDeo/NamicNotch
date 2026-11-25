@@ -498,15 +498,48 @@ impl IdleCharacter for ErenAttackTitan {
             alpha,
             ctx,
         );
-        // Kepala HD Attack Titan: crossfade halus di atas mata emerald.
+        // Kepala HD: manusia -> Attack Titan, crossfade di atas mata.
+        let titan_fade = smoothstep(0.05, 0.85, titan);
+        atlas::draw_head(
+            rt,
+            atlas::Head::ErenHuman,
+            base_cx,
+            base_cy - 6.0 * s,
+            104.0 * s,
+            alpha * (1.0 - titan_fade),
+        );
         atlas::draw_head(
             rt,
             atlas::Head::ErenTitan,
             base_cx,
             base_cy - 1.5 * s,
             112.0 * s,
-            alpha * smoothstep(0.05, 0.85, titan),
+            alpha * titan_fade,
         );
+
+        // Tangan berdarah: naik pelan, getar tegang, pendar emas makin terang,
+        // lalu pudar saat petir transformasi menyambar.
+        let lt = ctx.local_time;
+        if lt > 0.8 && lt < 3.6 {
+            let rise = smoothstep(0.9, 1.9, lt);
+            let out = 1.0 - smoothstep(2.9, 3.5, lt);
+            let a = alpha * rise * out;
+            let tremor = (lt * 26.0).sin() * 0.55 * smoothstep(1.4, 2.2, lt);
+            let gx = base_cx + (38.0 + tremor) * s;
+            let gy = base_cy + lerp(26.0, 14.0, rise) * s;
+            let ember = smoothstep(1.0, 3.0, lt) * out;
+            draw_soft_radial_glow(
+                rt,
+                D2D_POINT_2F { x: gx - 2.0 * s, y: gy - 3.0 * s },
+                17.0 * s,
+                16.0 * s,
+                1.0,
+                0.78,
+                0.32,
+                (0.36 * alpha * ember).min(0.42),
+            );
+            atlas::draw_head(rt, atlas::Head::GestureBite, gx, gy, 44.0 * s, a);
+        }
 
         // Mata titan sedikit dipanjangkan vertikal.
         if titan > 0.3 {

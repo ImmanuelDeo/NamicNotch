@@ -2,6 +2,7 @@
 // Fase 1: Asta (Devil Union) — detail penuh: rambut berlapis, tanduk domba,
 // ikat kepala Black Bulls, pupil '+' anti-magic Liebe, pedang Demon-Slayer,
 // grimoire Black Bulls melayang, kerah mantel, bara anti-magic.
+use super::atlas;
 use super::core::*;
 use super::vfx;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_POINT_2F, D2D_RECT_F};
@@ -197,238 +198,7 @@ impl IdleCharacter for AstaDevilUnion {
             1.2,
         );
 
-        // ── 1. Dasar kepala / visor hitam pekat ─────────────────────────────
-        if let Ok(b) = rt.CreateSolidColorBrush(&black, None) {
-            rt.FillRoundedRectangle(
-                &D2D1_ROUNDED_RECT {
-                    rect: D2D_RECT_F {
-                        left: base_cx - 21.0 * s,
-                        top: base_cy - 9.0 * s,
-                        right: base_cx + 21.0 * s,
-                        bottom: base_cy + 13.0 * s,
-                    },
-                    radiusX: 10.0 * s,
-                    radiusY: 10.0 * s,
-                },
-                &b,
-            );
-        }
-        // Rim light crimson di sisi luar kepala.
-        draw_soft_radial_glow(rt, at(-20.0, 2.0), 9.0, 12.0, 0.95, 0.12, 0.22, 0.16 * alpha);
-        draw_soft_radial_glow(rt, at(20.0, 2.0), 9.0, 12.0, 0.95, 0.12, 0.22, 0.16 * alpha);
-
-        // ── 2. Rambut spiky berlapis + cowlick ──────────────────────────────
-        let hair_pts = [
-            (-23.0, -3.0),
-            (-28.0, -8.0),
-            (-20.0, -9.0),
-            (-25.0, -15.0),
-            (-14.0, -12.0),
-            (-16.0, -19.0),
-            (-6.0, -15.0),
-            (-2.0, -22.0),
-            (2.0, -18.0),
-            (1.0, -14.0),
-            (10.0, -19.0),
-            (10.0, -14.0),
-            (21.0, -17.0),
-            (18.0, -11.0),
-            (26.0, -12.0),
-            (22.0, -6.0),
-            (25.0, -3.0),
-            (16.0, 0.0),
-            (8.0, -3.0),
-            (0.0, 0.0),
-            (-9.0, -3.0),
-            (-18.0, 0.0),
-        ];
-        fill_polygon(rt, factory, &local(&hair_pts), hair);
-        // Highlight volume → rambut rapi berlapis, bukan blob.
-        for chunk in [
-            [(-23.0, -13.0), (-12.0, -10.0), (-17.0, -6.0)],
-            [(-13.0, -17.0), (-4.0, -12.0), (-9.0, -7.0)],
-            [(-1.0, -20.0), (3.0, -14.0), (0.0, -9.0)],
-            [(10.0, -17.0), (7.0, -8.0), (1.0, -5.0)],
-            [(20.0, -15.0), (16.0, -7.0), (10.0, -5.0)],
-            [(-24.0, -7.0), (-17.0, -4.0), (-20.0, -2.0)],
-        ] {
-            fill_polygon(rt, factory, &local(&chunk), hair_hi);
-        }
-        // Siluet luar rambut.
-        draw_polyline(
-            rt,
-            factory,
-            &local(&[
-                (-23.0, -3.0),
-                (-28.0, -8.0),
-                (-20.0, -9.0),
-                (-25.0, -15.0),
-                (-14.0, -12.0),
-                (-16.0, -19.0),
-                (-6.0, -15.0),
-                (-2.0, -22.0),
-                (2.0, -18.0),
-                (10.0, -19.0),
-                (21.0, -17.0),
-                (26.0, -12.0),
-                (25.0, -3.0),
-            ]),
-            D2D1_COLOR_F {
-                a: 0.60 * alpha,
-                ..hair_hi
-            },
-            0.9,
-        );
-
-        // ── 3. Tanduk domba Devil Union ─────────────────────────────────────
-        for side in [-1.0_f32, 1.0_f32] {
-            let hx = base_cx + side * 20.0 * s;
-            let hy = base_cy - 8.5 * s;
-            if let Ok(b) = rt.CreateSolidColorBrush(&dark, None) {
-                rt.FillEllipse(
-                    &D2D1_ELLIPSE {
-                        point: D2D_POINT_2F { x: hx, y: hy },
-                        radiusX: 5.6 * s,
-                        radiusY: 5.8 * s,
-                    },
-                    &b,
-                );
-            }
-            if let Ok(hb) = rt.CreateSolidColorBrush(&hair_hi, None) {
-                rt.DrawEllipse(
-                    &D2D1_ELLIPSE {
-                        point: D2D_POINT_2F { x: hx, y: hy },
-                        radiusX: 5.6 * s,
-                        radiusY: 5.8 * s,
-                    },
-                    &hb,
-                    1.0,
-                    None,
-                );
-            }
-            draw_polyline(
-                rt,
-                factory,
-                &[
-                    D2D_POINT_2F {
-                        x: hx - side * 2.8 * s,
-                        y: hy + 2.8 * s,
-                    },
-                    D2D_POINT_2F {
-                        x: hx + side * 2.4 * s,
-                        y: hy + 1.8 * s,
-                    },
-                    D2D_POINT_2F {
-                        x: hx + side * 2.8 * s,
-                        y: hy - 1.8 * s,
-                    },
-                    D2D_POINT_2F { x: hx, y: hy - 2.8 * s },
-                    D2D_POINT_2F { x: hx - side * s, y: hy },
-                ],
-                hair,
-                2.0,
-            );
-            for j in 0..3 {
-                let y = hy - 2.8 * s + j as f32 * 2.2 * s;
-                draw_polyline(
-                    rt,
-                    factory,
-                    &[
-                        D2D_POINT_2F {
-                            x: hx + side * 3.9 * s,
-                            y,
-                        },
-                        D2D_POINT_2F {
-                            x: hx + side * 5.3 * s,
-                            y: y - 0.6 * s,
-                        },
-                    ],
-                    D2D1_COLOR_F {
-                        a: 0.85 * alpha,
-                        ..red
-                    },
-                    0.75,
-                );
-            }
-        }
-
-        // ── 4. Ikat kepala: pita + salib + emblem emas + mahkota ────────────
-        fill_polygon(
-            rt,
-            factory,
-            &local(&[
-                (-19.0, -7.0),
-                (-9.0, -6.0),
-                (0.0, -7.0),
-                (19.0, -7.0),
-                (20.0, -2.0),
-                (9.0, -1.0),
-                (0.0, -2.0),
-                (-20.0, -2.0),
-            ]),
-            dark,
-        );
-        // Salib merah Black Bulls (kiri).
-        draw_polyline(rt, factory, &local(&[(-16.0, -5.7), (-10.0, -2.8)]), red, 1.5);
-        draw_polyline(rt, factory, &local(&[(-12.0, -6.0), (-14.0, -2.0)]), red, 1.5);
-        // Emblem emas (kanan).
-        draw_polyline(
-            rt,
-            factory,
-            &local(&[
-                (10.0, -6.0),
-                (10.5, -3.5),
-                (13.0, -2.5),
-                (15.5, -3.5),
-                (16.0, -6.0),
-            ]),
-            gold,
-            1.1,
-        );
-        fill_polygon(
-            rt,
-            factory,
-            &local(&[(11.0, -4.8), (15.0, -4.8), (14.0, -1.6), (12.0, -1.6)]),
-            gold,
-        );
-        // Poni perak tengah.
-        fill_polygon(
-            rt,
-            factory,
-            &local(&[(-3.0, -3.0), (0.0, 1.0), (3.0, -3.0)]),
-            hair_hi,
-        );
-        // Mahkota zigzag crimson Devil Union.
-        draw_polyline(
-            rt,
-            factory,
-            &local(&[
-                (-18.0, -4.5),
-                (-10.0, -3.5),
-                (-5.0, -5.0),
-                (0.0, -9.0),
-                (5.0, -5.0),
-                (10.0, -3.5),
-                (18.0, -4.5),
-            ]),
-            red,
-            1.6,
-        );
-        draw_polyline(
-            rt,
-            factory,
-            &local(&[(-4.0, -7.0), (0.0, -2.0), (4.0, -7.0)]),
-            red,
-            1.6,
-        );
-        draw_polyline(
-            rt,
-            factory,
-            &local(&[(-3.0, -7.0), (0.0, -3.0), (3.0, -7.0)]),
-            red_core,
-            0.8,
-        );
-
+        // ── 1. Kepala HD (rambut, tanduk, ikat kepala) ──────────────────
         // ── 5. Mata capsule baku (tanpa pupil '+' / tanda silang) ──────────
         let grab_now = grab;
         draw_capsule_eyes(
@@ -449,6 +219,9 @@ impl IdleCharacter for AstaDevilUnion {
             alpha,
             ctx,
         );
+
+        // Kepala HD digambar di atas mata: salib ikat kepala duduk di atas mata.
+        atlas::draw_head(rt, atlas::Head::Asta, base_cx, base_cy - 7.0 * s, 104.0 * s, alpha);
 
         // ── 6. Grimoire Black Bulls melayang (kiri) ─────────────────────────
         let gb = ctx.phase_time * 1.5;
