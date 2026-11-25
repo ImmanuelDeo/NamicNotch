@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="../../actions/workflows/build.yml"><img src="../../actions/workflows/build.yml/badge.svg" alt="build"></a>
+  <a href="https://github.com/ImmanuelDeo/NamicNotch/actions/workflows/build.yml"><img src="https://github.com/ImmanuelDeo/NamicNotch/actions/workflows/build.yml/badge.svg" alt="build"></a>
   <img src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011%20x64-0b7285" alt="platform">
   <img src="https://img.shields.io/badge/Rust-stable-dea584?logo=rust&logoColor=white" alt="rust">
   <img src="https://img.shields.io/badge/license-MIT-3b5bdb" alt="license">
