@@ -725,6 +725,23 @@ extern "system" fn notch_wnd_proc(
                 app.on_lbutton_down(x, y);
                 return LRESULT(0);
             }
+            WM_MOUSEMOVE => {
+                let x = (lparam.0 & 0xFFFF) as i16 as f32;
+                let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as f32;
+                let lx = x / app.dpi_scale;
+                let ly = y / app.dpi_scale;
+                let pill_w = app.controller.width.value;
+                // Drag slider volume/brightness atau seek bar selama tombol kiri tertahan.
+                let lbutton_down = unsafe {
+                    (windows::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(0x01) as u16 & 0x8000) != 0
+                };
+                if lbutton_down && app.controller.drag_panel(lx, ly, pill_w) {
+                    unsafe {
+                        let _ = InvalidateRect(hwnd, None, false);
+                    }
+                }
+                return LRESULT(0);
+            }
             WM_LBUTTONUP => {
                 if app.controller.is_dragging_track_bar {
                     app.controller.is_dragging_track_bar = false;

@@ -1337,16 +1337,16 @@ impl NotchController {
     }
 
     /// Menangani klik pada konten section (koordinat relatif terhadap area konten `left: 34.0, top: 26.0`)
-    pub fn handle_panel_click(&mut self, lx: f32, ly: f32, pill_w: f32) -> bool {
+pub fn handle_panel_click(&mut self, lx: f32, ly: f32, pill_w: f32) -> bool {
         use crate::notch::renderer::glass;
         let left = glass::PAD;
         let right = pill_w - glass::PAD;
         let w = (right - left).max(40.0);
-        let in_header = (8.0..=34.0).contains(&ly);
+        let in_header = (8.0..=32.0).contains(&ly);
+        let cx = pill_w * 0.5;
 
-        // Tab strip 6 section di atas (berhenti 150 dip sebelum tepi kanan,
-        // karena area itu dipakai baterai + jam).
-        let strip_right = right - 150.0;
+        // Tab strip 6 section (selebar konten; area status hanya ada di Hub).
+        let strip_right = if self.state == NotchState::Hub { right - 150.0 } else { right };
         if in_header && lx >= left && lx <= strip_right {
             let slot = ((strip_right - left) / 6.0).max(30.0);
             let idx = (((lx - left) / slot).floor() as usize).min(5);
@@ -1366,31 +1366,26 @@ impl NotchController {
             }
             NotchState::Music => {
                 if self.show_side_lyrics {
-                    // Tombol Lyrics aktif -> kembali ke mode 2A.
-                    if in_header && lx > right - 70.0 {
+                    if (36.0..=58.0).contains(&ly) && lx > right - 70.0 {
                         self.show_side_lyrics = false;
                         return true;
                     }
-                    // Mini controls: grup tengah (cx-34 / cx / cx+34).
-                    let by = 46.0;
-                    let mid = pill_w * 0.5;
-                    if (by - 13.0..=by + 13.0).contains(&ly) {
-                        if lx > mid - 48.0 && lx < mid - 20.0 {
+                    if (34.0..=58.0).contains(&ly) {
+                        if lx > cx - 44.0 && lx < cx - 16.0 {
                             Self::send_system_media_command("prev");
                             return true;
                         }
-                        if lx >= mid - 18.0 && lx <= mid + 18.0 {
+                        if lx >= cx - 14.0 && lx <= cx + 14.0 {
                             Self::send_system_media_command("toggle");
                             self.media_playing = !self.media_playing;
                             return true;
                         }
-                        if lx > mid + 20.0 && lx <= mid + 48.0 {
+                        if lx > cx + 16.0 && lx <= cx + 44.0 {
                             Self::send_system_media_command("next");
                             return true;
                         }
                     }
-                    // Progress tipis 148 dip.
-                    if (142.0..=154.0).contains(&ly) {
+                    if (144.0..=153.0).contains(&ly) {
                         let ratio = ((lx - left) / w).clamp(0.0, 1.0);
                         self.media_progress = ratio;
                         self.media_elapsed_exact = ratio * self.media_total_secs;
@@ -1400,52 +1395,45 @@ impl NotchController {
                     return false;
                 }
 
-                // Toggle Lyrics di kanan track row.
-                if (16.0..=64.0).contains(&ly) && lx > right - 62.0 {
+                // Toggle Lyrics.
+                if (42.0..=64.0).contains(&ly) && lx > right - 62.0 {
                     self.show_side_lyrics = true;
                     return true;
                 }
                 // Seek bar.
-                if (96.0..=116.0).contains(&ly) {
-                    let bl = left + 46.0;
-                    let br = right - 46.0;
-                    if lx >= bl - 6.0 && lx <= br + 6.0 {
-                        let ratio = ((lx - bl) / (br - bl)).clamp(0.0, 1.0);
-                        self.media_progress = ratio;
-                        self.media_elapsed_exact = ratio * self.media_total_secs;
-                        Self::seek_system_media(self.media_elapsed_exact);
-                        self.is_dragging_track_bar = true;
-                        return true;
-                    }
+                if (90.0..=112.0).contains(&ly) && lx >= left + 40.0 && lx <= right - 40.0 {
+                    let bl = left + 44.0;
+                    let br = right - 44.0;
+                    let ratio = ((lx - bl) / (br - bl)).clamp(0.0, 1.0);
+                    self.media_progress = ratio;
+                    self.media_elapsed_exact = ratio * self.media_total_secs;
+                    Self::seek_system_media(self.media_elapsed_exact);
+                    self.is_dragging_track_bar = true;
+                    return true;
                 }
-                // Controls.
-                if (114.0..=150.0).contains(&ly) {
-                    let cx = pill_w * 0.5;
-                    if lx < cx - 24.0 {
+                // Transport.
+                if (110.0..=148.0).contains(&ly) {
+                    if lx > cx - 70.0 && lx < cx - 34.0 {
                         Self::send_system_media_command("prev");
-                        self.media_elapsed_exact = 0.0;
-                        self.media_progress = 0.0;
                         return true;
                     }
-                    if lx <= cx + 24.0 {
+                    if lx >= cx - 20.0 && lx <= cx + 20.0 {
                         Self::send_system_media_command("toggle");
                         self.media_playing = !self.media_playing;
                         return true;
                     }
-                    if lx <= cx + 60.0 {
+                    if lx > cx + 34.0 && lx <= cx + 70.0 {
                         Self::send_system_media_command("next");
-                        self.media_elapsed_exact = 0.0;
-                        self.media_progress = 0.0;
                         return true;
                     }
                 }
             }
             NotchState::Control => {
                 for row in 0..2 {
-                    let y0 = 46.0 + row as f32 * 46.0;
-                    if (y0..=y0 + 32.0).contains(&ly) {
+                    let y0 = 44.0 + row as f32 * 42.0;
+                    if (y0..=y0 + 30.0).contains(&ly) {
                         let is_volume = row == 0;
-                        if lx < left + 78.0 {
+                        if lx < left + 54.0 {
                             if is_volume {
                                 let next = if self.volume_level == 0 { 40 } else { 0 };
                                 self.volume_level = next;
@@ -1454,33 +1442,22 @@ impl NotchController {
                             }
                             return true;
                         }
-                        let pct = (((lx - left) / w).clamp(0.0, 1.0) * 100.0).round() as u8;
-                        self.volume_poll_suppress = 1.5;
-                        if is_volume {
-                            self.volume_level = pct;
-                            Self::apply_system_volume(pct);
-                        } else {
-                            self.brightness_level = pct;
-                            Self::apply_system_brightness(pct);
-                        }
+                        self.apply_slider_at(lx, pill_w, is_volume);
                         return true;
                     }
                 }
             }
             NotchState::Pomo => {
-                // Segmented 25m / 5m.
-                if in_header && lx >= right - 132.0 {
-                    let mid = right - 66.0;
-                    self.set_pomo_mode(lx > mid);
+                if (40.0..=62.0).contains(&ly) && lx >= right - 132.0 {
+                    self.set_pomo_mode(lx > right - 66.0);
                     return true;
                 }
-                // Play / Reset.
-                if (56.0..=92.0).contains(&ly) {
-                    if lx >= right - 78.0 && lx <= right - 38.0 {
+                if (70.0..=114.0).contains(&ly) {
+                    if lx >= right - 98.0 && lx <= right - 50.0 {
                         self.pomo_running = !self.pomo_running;
                         return true;
                     }
-                    if lx >= right - 36.0 {
+                    if lx >= right - 48.0 {
                         self.pomo_running = false;
                         self.pomo_remaining_secs = self.pomo_total_secs;
                         return true;
@@ -1488,7 +1465,7 @@ impl NotchController {
                 }
             }
             NotchState::Shelf => {
-                if ly >= 38.0 && !self.shelf_files.is_empty() {
+                if ly >= 44.0 && !self.shelf_files.is_empty() {
                     let idx = if lx < (left + right) * 0.5 { 0 } else { 1 };
                     if idx < self.shelf_files.len() {
                         let path = self.shelf_files[idx].2.clone();
@@ -1498,19 +1475,19 @@ impl NotchController {
                 }
             }
             NotchState::Clips => {
-                if in_header && lx > right - 60.0 {
+                if (40.0..=62.0).contains(&ly) && lx > right - 60.0 {
                     self.clips_view_notes = !self.clips_view_notes;
                     if self.clips_view_notes && self.clip_store.notes.is_empty() {
                         self.note_input_active = true;
                     }
                     return true;
                 }
-                if self.note_input_active && (38.0..=64.0).contains(&ly) {
+                if self.note_input_active && (66.0..=92.0).contains(&ly) {
                     return true;
                 }
-                let row_top = if self.note_input_active { 72.0 } else { 38.0 };
+                let row_top = if self.note_input_active { 100.0 } else { 66.0 };
                 if ly >= row_top {
-                    let idx = (((ly - row_top) / 32.0).floor() as usize) + self.clips_scroll;
+                    let idx = (((ly - row_top) / 30.0).floor() as usize) + self.clips_scroll;
                     if idx < self.clips_rows().len() {
                         if self.clips_view_notes {
                             let note = self.clip_store.notes.get(idx).cloned().unwrap_or_default();
@@ -1524,6 +1501,55 @@ impl NotchController {
                         }
                         return true;
                     }
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+
+    /// Hitung level dari posisi kursor di dalam track slider, lalu terapkan.
+    fn apply_slider_at(&mut self, lx: f32, pill_w: f32, is_volume: bool) {
+        use crate::notch::renderer::glass;
+        let track_l = glass::PAD + 54.0;
+        let track_r = pill_w - glass::PAD - 46.0;
+        if track_r <= track_l {
+            return;
+        }
+        let ratio = ((lx - track_l) / (track_r - track_l)).clamp(0.0, 1.0);
+        let pct = (ratio * 100.0).round() as u8;
+        self.volume_poll_suppress = 1.5;
+        if is_volume {
+            self.volume_level = pct;
+            Self::apply_system_volume(pct);
+        } else {
+            self.brightness_level = pct;
+            Self::apply_system_brightness(pct);
+        }
+    }
+
+    /// Dipanggil saat mouse bergerak dengan tombol kiri tertahan: drag slider/seek.
+    pub fn drag_panel(&mut self, lx: f32, ly: f32, pill_w: f32) -> bool {
+        match self.state {
+            NotchState::Control => {
+                for row in 0..2 {
+                    let y0 = 44.0 + row as f32 * 42.0;
+                    if (y0..=y0 + 30.0).contains(&ly) {
+                        self.apply_slider_at(lx, pill_w, row == 0);
+                        return true;
+                    }
+                }
+            }
+            NotchState::Music => {
+                if !self.show_side_lyrics && (90.0..=112.0).contains(&ly) && self.is_dragging_track_bar {
+                    use crate::notch::renderer::glass;
+                    let bl = glass::PAD + 44.0;
+                    let br = pill_w - glass::PAD - 44.0;
+                    let ratio = ((lx - bl) / (br - bl)).clamp(0.0, 1.0);
+                    self.media_progress = ratio;
+                    self.media_elapsed_exact = ratio * self.media_total_secs;
+                    Self::seek_system_media(self.media_elapsed_exact);
+                    return true;
                 }
             }
             _ => {}
