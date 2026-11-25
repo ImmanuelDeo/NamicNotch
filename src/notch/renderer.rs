@@ -530,7 +530,19 @@ impl NotchRenderer {
             b: 0.0,
             a: 1.0,
         };
-        if let Ok(bezel_geom) = self.create_top_bezel_notch_geometry(pill_rect, radius, flare) {
+        // Notch expanded disambung ke tepi atas: bentuknya dimulai 26 dip di atas
+        // layar, jadi sisi atas turun lurus dan tidak terlihat seperti box.
+        let shape_rect = D2D_RECT_F {
+            left: pill_rect.left,
+            top: if pill_rect.bottom - pill_rect.top > 60.0 {
+                pill_rect.top - 26.0
+            } else {
+                pill_rect.top
+            },
+            right: pill_rect.right,
+            bottom: pill_rect.bottom,
+        };
+        if let Ok(bezel_geom) = self.create_top_bezel_notch_geometry(shape_rect, radius, flare) {
             if let Ok(base_brush) = self.rt.CreateSolidColorBrush(&pitch_black, None) {
                 self.rt.FillGeometry(&bezel_geom, &base_brush, None);
             }
@@ -571,6 +583,12 @@ impl NotchRenderer {
             false
         };
 
+        // Permukaan kaca digambar sebelum mask konten, supaya area sambungan
+        // (flare) ikut berwarna sama dan tidak terlihat seperti potongan hitam.
+        if ctrl.height.value >= 55.0 {
+            self.draw_glass_surface(ctrl, shape_rect, alpha, flare);
+        }
+
         if !ctrl.is_hovered {
             if let Some(ref ov) = ctrl.active_overlay {
                 self.draw_system_overlay(ov, pill_rect, alpha);
@@ -599,7 +617,6 @@ impl NotchRenderer {
             }
         } else {
             // Tema Solid Liquid Glass + layout rapat 6 section.
-            self.draw_glass_surface(ctrl, pill_rect, alpha, flare);
             self.draw_glass_nav(ctrl, pill_rect, alpha);
             self.draw_glass_panel(ctrl, pill_rect, alpha);
         }
@@ -2091,8 +2108,13 @@ impl NotchRenderer {
             return;
         };
 
+        // Bagian paling atas dibiarkan hitam pekat (sama dengan notch idle) lalu
+        // memudar ke permukaan kaca. Tanpa ini, "sambungan" hitam di tepi layar
+        // terlihat beda warna dengan badan nota sehingga seperti potongan terpisah.
         let base = [
-            (0.0, glass::col(0.020, 0.024, 0.035, 0.97 * alpha)),
+            (0.0, glass::col(0.010, 0.012, 0.018, 0.0)),
+            (0.07, glass::col(0.010, 0.012, 0.018, 0.55 * alpha)),
+            (0.18, glass::col(0.020, 0.024, 0.035, 0.97 * alpha)),
             (0.55, glass::col(0.039, 0.051, 0.078, 0.95 * alpha)),
             (1.0, glass::col(0.051, 0.071, 0.114, 0.96 * alpha)),
         ];
