@@ -7,10 +7,10 @@ AppId={{A8F3C2E1-7B4D-4F9A-8C3E-2F1D5E7B9A6C}
 AppName=Namic Notch
 AppVersion=1.0.0
 AppPublisher=Namic Notch Project
-AppPublisherURL=https://github.com/yourusername/namic-notch
-AppSupportURL=https://github.com/yourusername/namic-notch/issues
-AppUpdatesURL=https://github.com/yourusername/namic-notch/releases
-DefaultDirName={localappdata}\Programs\NamicNotch
+AppPublisherURL=https://github.com/ImmanuelDeo/NamicNotch
+AppSupportURL=https://github.com/ImmanuelDeo/NamicNotch/issues
+AppUpdatesURL=https://github.com/ImmanuelDeo/NamicNotch/releases
+DefaultDirName=D:\NamicNotch
 DefaultGroupName=Namic Notch
 AllowNoIcons=yes
 OutputDir=..
@@ -41,8 +41,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 ; Name: "indonesian"; MessagesFile: "compiler:Languages\Indonesian.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: "startup"; Description: "Start with Windows (auto-launch on login)"; GroupDescription: "Options"
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
+Name: "startup"; Description: "Start with Windows (auto-launch on login)"; GroupDescription: "Options"; Flags: checkedonce
 Name: "pinstart"; Description: "Pin to Start Menu"; GroupDescription: "Options"
 
 [Files]

@@ -2,6 +2,7 @@
 // MascotDirector: rotasi 5 karakter idle + transisi fade, dengan alias kompatibel
 // `DevilUnionEyes` agar `src/notch/` tidak perlu diubah.
 pub mod asta;
+pub mod atlas;
 pub mod bakugo;
 pub mod chibi_liebe;
 pub mod core;

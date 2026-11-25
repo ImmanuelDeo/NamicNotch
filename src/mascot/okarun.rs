@@ -3,6 +3,7 @@
 // Bahasa visual sama dengan Asta Devil Union: basis kepala gelap, rambut api berlapis
 // (putih-perak + aksen crimson), kacamata bulat tipis, garis yokai, kerah hoodie,
 // mata illuminated, speed-slash merah-putih di kanan.
+use super::atlas;
 use super::core::*;
 use super::vfx;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_POINT_2F, D2D_RECT_F};
@@ -63,96 +64,46 @@ impl IdleCharacter for OkarunTurbo {
         alpha: f32,
         ctx: &MascotContext,
     ) {
-        let dash = Self::dash_pulse(ctx.local_time);
         let pw = pill_rect.right - pill_rect.left;
         let ph = pill_rect.bottom - pill_rect.top;
         let cx = (pill_rect.left + pill_rect.right) * 0.5;
-        let cy = (pill_rect.top + pill_rect.bottom) * 0.5;
+        let cy = pill_rect.top + ph * 0.58;
         let t = ctx.phase_time;
+        let breathe = 1.0 + 0.05 * (t * 0.55).sin();
 
+        // Calm illumination: satu gradien radial besar, tanpa garis/laser.
         vfx::draw_ambient_notch_illumination(
             rt,
             pill_rect,
-            (0.42, 0.10, 0.14),
-            (0.30, 0.04, 0.08),
-            (1.00, 0.24, 0.34),
-            0.75 + 0.45 * dash,
+            (0.26, 0.04, 0.07),
+            (0.16, 0.03, 0.05),
+            (0.92, 0.18, 0.26),
+            0.78,
             alpha,
         );
-        vfx::draw_bokeh_motes(rt, pill_rect, 12, t, 58.6, (1.0, 0.34, 0.42), alpha);
-
-        // Dua pita kecepatan melengkung selebar notch.
-        let shift = (t * 3.5).sin() * 4.0;
-        vfx::draw_tapered_flame_ribbon(
+        draw_soft_radial_glow(
             rt,
-            factory,
-            D2D_POINT_2F {
-                x: pill_rect.left + 8.0,
-                y: pill_rect.bottom - 4.0,
-            },
-            D2D_POINT_2F {
-                x: cx - pw * 0.18,
-                y: pill_rect.top + 2.0 + shift,
-            },
-            D2D_POINT_2F {
-                x: cx + pw * 0.16,
-                y: pill_rect.bottom - 2.0 - shift,
-            },
-            D2D_POINT_2F {
-                x: pill_rect.right - 8.0,
-                y: pill_rect.top + 6.0,
-            },
-            4.6 + 2.2 * dash,
-            (0.92, 0.12, 0.22),
-            (0.30 + 0.28 * dash) * alpha,
-            false,
+            D2D_POINT_2F { x: cx, y: cy },
+            pw * 0.46 * breathe,
+            ph * 1.00 * breathe,
+            0.90,
+            0.12,
+            0.22,
+            (0.30 * alpha).min(0.34),
         );
-        vfx::draw_tapered_flame_ribbon(
+        draw_soft_radial_glow(
             rt,
-            factory,
-            D2D_POINT_2F {
-                x: pill_rect.left + pw * 0.16,
-                y: pill_rect.bottom - 2.0,
-            },
-            D2D_POINT_2F {
-                x: cx - pw * 0.06,
-                y: pill_rect.top + 4.0 - shift * 0.6,
-            },
-            D2D_POINT_2F {
-                x: cx + pw * 0.22,
-                y: pill_rect.bottom - 5.0 + shift * 0.6,
-            },
-            D2D_POINT_2F {
-                x: pill_rect.right - 6.0,
-                y: pill_rect.top + 4.0,
-            },
-            3.0 + 1.6 * dash,
-            (1.0, 0.96, 0.98),
-            (0.42 + 0.24 * dash) * alpha,
-            true,
+            D2D_POINT_2F { x: cx, y: pill_rect.bottom + 2.0 },
+            pw * 0.58,
+            ph * 0.88,
+            0.902,
+            0.122,
+            0.222,
+            (0.302 * alpha).min(0.30),
         );
-
-        // Arc mikro di tepi kanan.
-        vfx::draw_tapered_anime_lightning(
-            rt,
-            factory,
-            D2D_POINT_2F {
-                x: cx + pw * 0.14,
-                y: pill_rect.bottom - 6.0,
-            },
-            D2D_POINT_2F {
-                x: pill_rect.right - 12.0,
-                y: cy - 4.0,
-            },
-            t,
-            27.9,
-            (1.0, 0.18, 0.28),
-            (0.28 + 0.32 * dash) * alpha,
-            1.15,
-            2,
-        );
-        let _ = ph;
-    }
+        // Partikel lembut, ukuran kecil, melayang pelan.
+        vfx::draw_bokeh_motes(rt, pill_rect, 11, t, 44.2, (1.0, 0.62, 0.62), alpha * 0.95);
+}
 
     unsafe fn draw_character(
         &self,
@@ -259,149 +210,9 @@ impl IdleCharacter for OkarunTurbo {
             );
         }
 
-        // ── 2. Rambut api putih + lapisan crimson ──────────────────────────
-        // Lapisan merah di belakang (aksen yokai).
-        fill_polygon(
-            rt,
-            factory,
-            &local(&[
-                (-24.0, -2.0),
-                (-27.5, -9.5),
-                (-20.0, -10.5),
-                (-23.5, -16.5),
-                (-14.5, -14.0),
-                (-15.5, -20.5),
-                (-7.0, -16.0),
-                (-6.0, -22.5),
-                (1.0, -17.5),
-                (5.0, -21.5),
-                (7.0, -15.5),
-                (14.5, -18.5),
-                (13.0, -12.5),
-                (21.0, -14.0),
-                (17.5, -8.5),
-                (24.5, -6.5),
-                (18.0, -1.5),
-                (8.0, -4.0),
-                (0.0, -1.0),
-                (-9.0, -4.0),
-                (-18.0, -1.0),
-            ]),
-            D2D1_COLOR_F {
-                a: 0.85 * alpha,
-                ..crimson
-            },
-        );
-        // Lapisan putih-perak di atas (flame tipis).
-        let white_pts = [
-            (-21.0, -3.0),
-            (-24.0, -9.0),
-            (-18.5, -9.5),
-            (-21.0, -14.5),
-            (-13.5, -12.0),
-            (-13.0, -18.0),
-            (-6.5, -13.5),
-            (-4.5, -19.5),
-            (1.0, -14.5),
-            (5.5, -18.5),
-            (7.0, -12.5),
-            (13.5, -15.5),
-            (13.0, -9.5),
-            (20.0, -11.5),
-            (17.0, -5.5),
-            (22.5, -3.0),
-            (15.0, 0.5),
-            (7.0, -2.8),
-            (0.0, 0.2),
-            (-8.0, -2.8),
-            (-16.0, 0.6),
-        ];
-        fill_polygon(rt, factory, &local(&white_pts), silver_hair);
-        for chunk in [
-            [(-19.0, -10.5), (-11.5, -9.0), (-15.5, -5.0)],
-            [(-10.0, -14.5), (-2.5, -11.0), (-7.0, -6.5)],
-            [(-1.0, -16.5), (3.0, -11.0), (-1.0, -7.0)],
-            [(8.0, -14.0), (6.0, -7.5), (1.0, -4.5)],
-            [(17.0, -10.0), (14.0, -4.5), (9.0, -3.5)],
-        ] {
-            fill_polygon(rt, factory, &local(&chunk), silver_hi);
-        }
-        // Sela rambut merah (streak).
-        for side in [-1.0_f32, 1.0_f32] {
-            draw_polyline(
-                rt,
-                factory,
-                &local(&[
-                    (side * 8.0, -14.5),
-                    (side * 10.5, -9.0),
-                    (side * 9.0, -4.5),
-                ]),
-                D2D1_COLOR_F {
-                    a: 0.75 * alpha,
-                    ..crimson_hi
-                },
-                1.0,
-            );
-        }
-        draw_polyline(
-            rt,
-            factory,
-            &local(&[
-                (-21.0, -3.0),
-                (-24.0, -9.0),
-                (-18.5, -9.5),
-                (-21.0, -14.5),
-                (-13.5, -12.0),
-                (-13.0, -18.0),
-                (-6.5, -13.5),
-                (-4.5, -19.5),
-                (1.0, -14.5),
-                (5.5, -18.5),
-                (7.0, -12.5),
-                (13.5, -15.5),
-                (13.0, -9.5),
-                (20.0, -11.5),
-                (17.0, -5.5),
-                (22.5, -3.0),
-            ]),
-            D2D1_COLOR_F {
-                a: 0.5 * alpha,
-                ..silver_hi
-            },
-            0.9,
-        );
-
-        // ── 3. Garis yokai vertikal merah ──────────────────────────────────
-        let eye_y = base_cy + 5.0 * s;
-        let stroke = create_round_stroke(factory);
-        if let Ok(mark_b) = rt.CreateSolidColorBrush(
-            &D2D1_COLOR_F {
-                r: 0.92,
-                g: 0.22,
-                b: 0.26,
-                a: alpha * 0.9,
-            },
-            None,
-        ) {
-            for side in [-1.0_f32, 1.0_f32] {
-                let mx = base_cx + side * 9.0;
-                rt.DrawLine(
-                    D2D_POINT_2F {
-                        x: mx,
-                        y: eye_y - 10.0,
-                    },
-                    D2D_POINT_2F {
-                        x: mx,
-                        y: eye_y + 10.5,
-                    },
-                    &mark_b,
-                    1.6,
-                    stroke.as_ref(),
-                );
-            }
-        }
-
+        // ── 2. Kepala HD (rambut api + kacamata) ────────────────────────
         // ── 4. Mata kapsul merah-oranye ────────────────────────────────────
+        let eye_y = base_cy + 4.2 * s;
         draw_capsule_eyes(
             rt,
             factory,
@@ -416,59 +227,8 @@ impl IdleCharacter for OkarunTurbo {
             ctx,
         );
 
-        // ── 5. Kacamata bulat tipis + jembatan ─────────────────────────────
-        if let Ok(glass_b) = rt.CreateSolidColorBrush(
-            &D2D1_COLOR_F {
-                r: glass.r,
-                g: glass.g,
-                b: glass.b,
-                a: alpha * 0.92,
-            },
-            None,
-        ) {
-            for side in [-1.0_f32, 1.0_f32] {
-                let gx = base_cx + side * 9.0 + ctx.look_x * 0.4;
-                rt.DrawEllipse(
-                    &D2D1_ELLIPSE {
-                        point: D2D_POINT_2F { x: gx, y: eye_y },
-                        radiusX: 7.4 * s,
-                        radiusY: 7.4 * s,
-                    },
-                    &glass_b,
-                    1.1,
-                    stroke.as_ref(),
-                );
-            }
-            rt.DrawLine(
-                D2D_POINT_2F {
-                    x: base_cx - 2.6 + ctx.look_x * 0.4,
-                    y: eye_y,
-                },
-                D2D_POINT_2F {
-                    x: base_cx + 2.6 + ctx.look_x * 0.4,
-                    y: eye_y,
-                },
-                &glass_b,
-                1.1,
-                stroke.as_ref(),
-            );
-            // Tangkai kacamata ke pelipis.
-            for side in [-1.0_f32, 1.0_f32] {
-                rt.DrawLine(
-                    D2D_POINT_2F {
-                        x: base_cx + side * 16.2 + ctx.look_x * 0.4,
-                        y: eye_y - 0.6,
-                    },
-                    D2D_POINT_2F {
-                        x: base_cx + side * 19.5,
-                        y: eye_y - 1.8,
-                    },
-                    &glass_b,
-                    1.0,
-                    stroke.as_ref(),
-                );
-            }
-        }
+        // Kepala HD: rambut api, kacamata bulat, garis yokai sudah menyatu di PNG.
+        atlas::draw_head(rt, atlas::Head::Okarun, base_cx, base_cy - 1.0 * s, 104.0 * s, alpha);
 
         // ── 6. Speed slash merah-putih (kanan) ─────────────────────────────
         let sx = base_cx + 34.0 * s + dash * 4.0;

@@ -5,6 +5,7 @@
 // kedua sisi, satu baris gigi bergerigi tanpa bibir, mata hijau terang memanjang vertikal,
 // garis titan tipis di bawah mata.
 // Environment: asap abu di kanan, petir emas bercabang, gradien hijau-kuning bawah.
+use super::atlas;
 use super::core::*;
 use super::vfx;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_POINT_2F, D2D_RECT_F};
@@ -175,9 +176,11 @@ impl IdleCharacter for ErenAttackTitan {
 
         // Siluet: cokelat gelap flat (tanpa shading) sesuai referensi.
         let silhouette = lerp_color(col(0.145, 0.105, 0.092), col(0.115, 0.083, 0.072), titan);
-        let hair = col(0.20, 0.14, 0.115);
-        let hair_hi = col(0.33, 0.235, 0.19);
-        let hair_deep = col(0.10, 0.068, 0.058);
+        // Rambut prosedural memudar saat kepala HD titan masuk.
+        let head_fade = (1.0 - titan).clamp(0.0, 1.0);
+        let hair = D2D1_COLOR_F { a: alpha * head_fade, ..col(0.20, 0.14, 0.115) };
+        let hair_hi = D2D1_COLOR_F { a: alpha * head_fade, ..col(0.33, 0.235, 0.19) };
+        let hair_deep = D2D1_COLOR_F { a: alpha * head_fade, ..col(0.10, 0.068, 0.058) };
         let teal = col(0.20, 0.86, 0.62);
         let teal_core = col(0.80, 1.00, 0.92);
         let green = col(0.30, 1.00, 0.58);
@@ -441,7 +444,7 @@ impl IdleCharacter for ErenAttackTitan {
         // ── 4. Wajah titan: garis titan + satu baris gigi ──────────────────
         let eye_y = base_cy + (5.0 + 0.6 * titan) * s;
         if titan > 0.10 {
-            let ta = smoothstep(0.10, 0.8, titan) * alpha;
+            let ta = smoothstep(0.10, 0.8, titan) * alpha * (1.0 - titan);
 
             // Garis titan: streak tipis merah muda di bawah mata.
             for side in [-1.0_f32, 1.0_f32] {
@@ -495,6 +498,16 @@ impl IdleCharacter for ErenAttackTitan {
             alpha,
             ctx,
         );
+        // Kepala HD Attack Titan: crossfade halus di atas mata emerald.
+        atlas::draw_head(
+            rt,
+            atlas::Head::ErenTitan,
+            base_cx,
+            base_cy - 1.5 * s,
+            112.0 * s,
+            alpha * smoothstep(0.05, 0.85, titan),
+        );
+
         // Mata titan sedikit dipanjangkan vertikal.
         if titan > 0.3 {
             let a = alpha * smoothstep(0.3, 0.9, titan) * ctx.open_factor();

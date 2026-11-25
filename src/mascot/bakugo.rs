@@ -3,6 +3,7 @@
 // Bahasa visual sama dengan Asta Devil Union: basis kepala gelap, rambut pirang berlapis,
 // topeng mata hitam bergerigi, sirip flare hitam ber-outline oranye, kerah kostum +
 // pelat dada, gauntlet granat dengan ledakan di kanan.
+use super::atlas;
 use super::core::*;
 use super::vfx;
 use windows::Win32::Graphics::Direct2D::Common::{D2D1_COLOR_F, D2D_POINT_2F, D2D_RECT_F};
@@ -63,67 +64,46 @@ impl IdleCharacter for KatsukiBakugo {
         alpha: f32,
         ctx: &MascotContext,
     ) {
-        let blast = Self::blast_pulse(ctx.local_time);
         let pw = pill_rect.right - pill_rect.left;
         let ph = pill_rect.bottom - pill_rect.top;
         let cx = (pill_rect.left + pill_rect.right) * 0.5;
-        let cy = (pill_rect.top + pill_rect.bottom) * 0.5;
+        let cy = pill_rect.top + ph * 0.58;
         let t = ctx.phase_time;
+        let breathe = 1.0 + 0.05 * (t * 0.55).sin();
 
+        // Calm illumination: satu gradien radial besar, tanpa garis/laser.
         vfx::draw_ambient_notch_illumination(
             rt,
             pill_rect,
-            (0.52, 0.26, 0.06),
-            (0.34, 0.14, 0.03),
-            (1.00, 0.62, 0.18),
-            0.90 + 0.40 * blast,
+            (0.30, 0.16, 0.03),
+            (0.20, 0.10, 0.02),
+            (1.00, 0.60, 0.14),
+            0.82,
             alpha,
         );
-        vfx::draw_bokeh_motes(rt, pill_rect, 12, t, 33.9, (1.0, 0.66, 0.26), alpha);
-
-        vfx::draw_connected_anime_explosion(
+        draw_soft_radial_glow(
             rt,
-            factory,
-            D2D_POINT_2F {
-                x: cx + pw * 0.24,
-                y: cy - 4.0,
-            },
-            (13.0 + 10.0 * blast) * (1.0 + 0.05 * (t * 6.0).sin()),
-            t,
-            (0.55 + 0.45 * blast) * alpha,
+            D2D_POINT_2F { x: cx, y: cy },
+            pw * 0.46 * breathe,
+            ph * 1.00 * breathe,
+            0.95,
+            0.55,
+            0.12,
+            (0.32 * alpha).min(0.34),
         );
-
-        // Uap hangat menyebar dari ledakan.
-        for k in 0..2 {
-            let fk = k as f32;
-            let side = if k == 0 { -1.0_f32 } else { 1.0_f32 };
-            vfx::draw_tapered_flame_ribbon(
-                rt,
-                factory,
-                D2D_POINT_2F {
-                    x: cx + pw * (0.24 + side * 0.04),
-                    y: cy + 4.0,
-                },
-                D2D_POINT_2F {
-                    x: cx + pw * (0.24 + side * 0.14),
-                    y: cy - 2.0,
-                },
-                D2D_POINT_2F {
-                    x: cx + pw * (0.24 + side * 0.20),
-                    y: cy - 10.0,
-                },
-                D2D_POINT_2F {
-                    x: cx + pw * (0.24 + side * 0.26),
-                    y: cy - 16.0,
-                },
-                3.0,
-                (1.0, 0.70, 0.32),
-                (0.16 + 0.18 * blast) * alpha,
-                false,
-            );
-        }
-        let _ = ph;
-    }
+        draw_soft_radial_glow(
+            rt,
+            D2D_POINT_2F { x: cx, y: pill_rect.bottom + 2.0 },
+            pw * 0.58,
+            ph * 0.88,
+            0.952,
+            0.552,
+            0.122,
+            (0.322 * alpha).min(0.30),
+        );
+        // Partikel lembut, ukuran kecil, melayang pelan.
+        vfx::draw_bokeh_motes(rt, pill_rect, 10, t, 7.9, (1.0, 0.72, 0.28), alpha * 0.95);
+}
 
     unsafe fn draw_character(
         &self,
@@ -271,164 +251,7 @@ impl IdleCharacter for KatsukiBakugo {
             }
         }
 
-        // ── 2. Rambut pirang berlapis + sirip flare ────────────────────────
-        let hair_pts = [
-            (-23.5, -2.4),
-            (-28.5, -7.4),
-            (-22.5, -8.6),
-            (-28.0, -14.0),
-            (-19.0, -12.0),
-            (-21.5, -19.5),
-            (-12.5, -15.0),
-            (-13.0, -21.5),
-            (-5.0, -16.0),
-            (-2.5, -22.5),
-            (2.0, -17.8),
-            (7.0, -21.4),
-            (8.0, -15.6),
-            (15.0, -19.6),
-            (13.5, -13.4),
-            (21.5, -16.4),
-            (18.0, -10.4),
-            (26.0, -11.0),
-            (21.5, -6.0),
-            (26.5, -2.6),
-            (17.5, 0.4),
-            (8.5, -3.0),
-            (0.0, -0.2),
-            (-9.0, -3.2),
-            (-18.5, 0.2),
-        ];
-        fill_polygon(rt, factory, &local(&hair_pts), hair);
-        for chunk in [
-            [(-22.5, -11.6), (-14.0, -9.4), (-19.0, -5.4)],
-            [(-13.0, -16.8), (-4.0, -12.6), (-9.0, -7.2)],
-            [(-1.5, -19.6), (3.4, -13.8), (-0.4, -8.6)],
-            [(9.0, -17.2), (6.6, -8.4), (1.0, -5.2)],
-            [(19.8, -13.8), (15.4, -6.8), (9.6, -5.0)],
-            [(-24.0, -6.4), (-17.4, -3.6), (-20.0, -1.6)],
-        ] {
-            fill_polygon(rt, factory, &local(&chunk), hair_hi);
-        }
-        // Bayangan akar rambut.
-        fill_polygon(
-            rt,
-            factory,
-            &local(&[
-                (-16.0, -3.4),
-                (-5.5, -7.8),
-                (5.5, -7.8),
-                (16.0, -3.4),
-                (0.0, -1.2),
-            ]),
-            hair_deep,
-        );
-        draw_polyline(
-            rt,
-            factory,
-            &local(&[
-                (-23.5, -2.4),
-                (-28.5, -7.4),
-                (-22.5, -8.6),
-                (-28.0, -14.0),
-                (-19.0, -12.0),
-                (-21.5, -19.5),
-                (-12.5, -15.0),
-                (-13.0, -21.5),
-                (-5.0, -16.0),
-                (-2.5, -22.5),
-                (2.0, -17.8),
-                (7.0, -21.4),
-                (8.0, -15.6),
-                (15.0, -19.6),
-                (13.5, -13.4),
-                (21.5, -16.4),
-                (18.0, -10.4),
-                (26.0, -11.0),
-                (21.5, -6.0),
-                (26.5, -2.6),
-            ]),
-            D2D1_COLOR_F {
-                a: 0.55 * alpha,
-                ..hair_hi
-            },
-            0.9,
-        );
-
-        // Sirip flare hitam bergerigi ber-outline oranye.
-        for side in [-1.0_f32, 1.0_f32] {
-            let fin = [
-                (side * 14.0, -3.0),
-                (side * 24.0, -8.0),
-                (side * 19.0, -1.5),
-                (side * 25.5, 2.0),
-                (side * 17.5, 4.4),
-                (side * 20.0, 8.0),
-                (side * 12.5, 5.0),
-            ];
-            fill_polygon(rt, factory, &local(&fin), black);
-            let mut outline = fin.to_vec();
-            outline.push(fin[0]);
-            draw_polyline(
-                rt,
-                factory,
-                &local(&outline),
-                D2D1_COLOR_F {
-                    a: 0.95 * alpha,
-                    ..orange
-                },
-                1.2,
-            );
-        }
-
-        // ── 3. Topeng mata hitam bergerigi ─────────────────────────────────
-        fill_polygon(
-            rt,
-            factory,
-            &local(&[
-                (-17.0, -2.6),
-                (-7.0, -3.8),
-                (0.0, -1.8),
-                (7.0, -3.8),
-                (17.0, -2.6),
-                (15.5, 5.2),
-                (6.0, 6.4),
-                (0.0, 4.6),
-                (-6.0, 6.4),
-                (-15.5, 5.2),
-            ]),
-            black,
-        );
-        // Gerigi tepi topeng.
-        let mut teeth = Vec::new();
-        for k in 0..7 {
-            let fk = k as f32;
-            let x = -14.0 + fk * 4.6;
-            teeth.push((x, 5.4));
-            teeth.push((x + 2.3, 3.4));
-        }
-        draw_polyline(
-            rt,
-            factory,
-            &local(&teeth),
-            D2D1_COLOR_F {
-                a: 0.55 * alpha,
-                ..orange_hot
-            },
-            0.8,
-        );
-        // Aksen oranye tepi atas topeng.
-        draw_polyline(
-            rt,
-            factory,
-            &local(&[(-16.4, -2.4), (-7.0, -3.6), (0.0, -1.6), (7.0, -3.6), (16.4, -2.4)]),
-            D2D1_COLOR_F {
-                a: 0.45 * alpha,
-                ..orange
-            },
-            0.9,
-        );
-
+        // ── 2. Kepala HD (hair + mask) ──────────────────────────────────
         // ── 4. Mata merah-oranye garang ────────────────────────────────────
         let eye_y = base_cy + 5.0 * s;
         draw_capsule_eyes(
@@ -444,6 +267,9 @@ impl IdleCharacter for KatsukiBakugo {
             alpha,
             ctx,
         );
+
+        // Kepala HD digambar di atas mata: lubang topeng membiarkan mata menyala.
+        atlas::draw_head(rt, atlas::Head::Bakugo, base_cx, base_cy - 9.0 * s, 96.0 * s, alpha);
 
         // ── 5. Gauntlet granat + ledakan (kanan) ───────────────────────────
         let recoil = blast * 2.2;

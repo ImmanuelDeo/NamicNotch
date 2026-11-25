@@ -66,88 +66,46 @@ impl IdleCharacter for YujiSukuna {
         alpha: f32,
         ctx: &MascotContext,
     ) {
-        let sk = Self::sukuna_factor(ctx.local_time);
-        let g = Self::shrine_gesture(ctx.local_time);
         let pw = pill_rect.right - pill_rect.left;
+        let ph = pill_rect.bottom - pill_rect.top;
         let cx = (pill_rect.left + pill_rect.right) * 0.5;
-        let cy = (pill_rect.top + pill_rect.bottom) * 0.5;
+        let cy = pill_rect.top + ph * 0.58;
         let t = ctx.phase_time;
+        let breathe = 1.0 + 0.05 * (t * 0.55).sin();
 
+        // Calm illumination: satu gradien radial besar, tanpa garis/laser.
         vfx::draw_ambient_notch_illumination(
             rt,
             pill_rect,
-            (lerp(0.10, 0.40, sk), lerp(0.34, 0.05, sk), lerp(0.46, 0.09, sk)),
-            (lerp(0.10, 0.20, sk), lerp(0.22, 0.02, sk), lerp(0.38, 0.24, sk)),
-            (lerp(0.30, 1.00, sk), lerp(0.90, 0.20, sk), lerp(1.00, 0.34, sk)),
-            0.82 + 0.30 * g,
+            (0.28, 0.04, 0.10),
+            (0.16, 0.03, 0.08),
+            (0.85, 0.14, 0.34),
+            0.78,
             alpha,
         );
-        vfx::draw_bokeh_motes(
+        draw_soft_radial_glow(
             rt,
-            pill_rect,
-            10,
-            t,
-            21.7,
-            (lerp(0.40, 1.00, sk), lerp(0.86, 0.28, sk), lerp(1.00, 0.36, sk)),
-            alpha,
+            D2D_POINT_2F { x: cx, y: cy },
+            pw * 0.46 * breathe,
+            ph * 1.00 * breathe,
+            0.82,
+            0.08,
+            0.26,
+            (0.32 * alpha).min(0.34),
         );
-
-        // Flame ribbon crimson + ungu, mengalir melengkung.
-        for k in 0..2 {
-            let fk = k as f32;
-            let y0 = pill_rect.bottom - 2.0;
-            let sway = (t * 0.9 + fk * 2.1).sin() * 5.0;
-            vfx::draw_tapered_flame_ribbon(
-                rt,
-                factory,
-                D2D_POINT_2F {
-                    x: pill_rect.left + pw * (0.12 + 0.52 * fk),
-                    y: y0,
-                },
-                D2D_POINT_2F {
-                    x: pill_rect.left + pw * (0.22 + 0.52 * fk) + sway,
-                    y: y0 - 14.0,
-                },
-                D2D_POINT_2F {
-                    x: pill_rect.left + pw * (0.40 + 0.34 * fk) - sway * 0.6,
-                    y: y0 - 30.0,
-                },
-                D2D_POINT_2F {
-                    x: pill_rect.left + pw * (0.58 + 0.20 * fk),
-                    y: pill_rect.top + 4.0,
-                },
-                3.4 + 1.4 * fk,
-                if k == 0 {
-                    (0.98, 0.16, 0.26)
-                } else {
-                    (0.62, 0.18, 0.94)
-                },
-                (0.22 + 0.20 * sk) * alpha,
-                k == 0,
-            );
-        }
-
-        // Dismantle crescents saat hand sign aktif.
-        if g > 0.25 {
-            for k in 0..3 {
-                let fk = k as f32;
-                let phase = (t * 0.36 + fk * 0.31) % 1.0;
-                let a = (phase * (1.0 - phase) * 4.0).min(1.0) * g * alpha;
-                vfx::draw_crescent_dismantle_slash(
-                    rt,
-                    factory,
-                    D2D_POINT_2F {
-                        x: cx + pw * (0.05 + 0.10 * fk),
-                        y: cy + 10.0 - 7.0 * fk,
-                    },
-                    -0.55,
-                    pw * (0.20 + 0.05 * fk),
-                    6.0 + 2.0 * fk,
-                    a * 0.85,
-                );
-            }
-        }
-    }
+        draw_soft_radial_glow(
+            rt,
+            D2D_POINT_2F { x: cx, y: pill_rect.bottom + 2.0 },
+            pw * 0.58,
+            ph * 0.88,
+            0.822,
+            0.082,
+            0.262,
+            (0.322 * alpha).min(0.30),
+        );
+        // Partikel lembut, ukuran kecil, melayang pelan.
+        vfx::draw_bokeh_motes(rt, pill_rect, 9, t, 31.7, (0.95, 0.28, 0.44), alpha * 0.95);
+}
 
     unsafe fn draw_character(
         &self,
@@ -390,32 +348,7 @@ impl IdleCharacter for YujiSukuna {
 
         if sk > 0.35 {
             let a = alpha * smoothstep(0.35, 0.9, sk) * ctx.open_factor();
-            if let Ok(b) = rt.CreateSolidColorBrush(
-                &D2D1_COLOR_F {
-                    r: 0.02,
-                    g: 0.01,
-                    b: 0.03,
-                    a,
-                },
-                None,
-            ) {
-                for side in [-1.0_f32, 1.0_f32] {
-                    let ex = base_cx + side * 9.0 + ctx.look_x * 0.65;
-                    rt.FillRoundedRectangle(
-                        &D2D1_ROUNDED_RECT {
-                            rect: D2D_RECT_F {
-                                left: ex - 0.85,
-                                top: eye_y - 2.6,
-                                right: ex + 0.85,
-                                bottom: eye_y + 2.6,
-                            },
-                            radiusX: 0.85,
-                            radiusY: 1.2,
-                        },
-                        &b,
-                    );
-                }
-            }
+            // Pupil garis hitam dihapus: mata Sukuna murni glow crimson.
             if let Ok(b) = rt.CreateSolidColorBrush(
                 &D2D1_COLOR_F {
                     r: 1.0,

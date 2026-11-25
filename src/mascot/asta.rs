@@ -66,192 +66,46 @@ impl IdleCharacter for AstaDevilUnion {
         alpha: f32,
         ctx: &MascotContext,
     ) {
-        let (grab, pull) = Self::sword_choreography(ctx.local_time);
         let pw = pill_rect.right - pill_rect.left;
         let ph = pill_rect.bottom - pill_rect.top;
         let cx = (pill_rect.left + pill_rect.right) * 0.5;
+        let cy = pill_rect.top + ph * 0.58;
         let t = ctx.phase_time;
-        let boost = 1.0 + pull * 0.45 + grab * 0.15;
+        let breathe = 1.0 + 0.05 * (t * 0.55).sin();
 
+        // Calm illumination: satu gradien radial besar, tanpa garis/laser.
         vfx::draw_ambient_notch_illumination(
             rt,
             pill_rect,
-            (0.34, 0.03, 0.07),
-            (0.22, 0.02, 0.05),
+            (0.30, 0.03, 0.07),
+            (0.20, 0.02, 0.05),
             (1.00, 0.18, 0.28),
-            0.85 + 0.35 * grab,
+            0.80,
             alpha,
         );
-        vfx::draw_bokeh_motes(rt, pill_rect, 10, t, 12.4, (1.0, 0.30, 0.36), alpha);
-
-        // 1. Pendar dasar crimson dari bawah notch.
         draw_soft_radial_glow(
             rt,
-            D2D_POINT_2F {
-                x: cx,
-                y: pill_rect.bottom + 1.0,
-            },
-            pw * 0.52,
-            ph * 0.82,
-            0.90,
-            0.09,
+            D2D_POINT_2F { x: cx, y: cy },
+            pw * 0.46 * breathe,
+            ph * 1.00 * breathe,
+            0.92,
+            0.10,
             0.20,
-            (0.34 * alpha * boost).min(0.58),
+            (0.34 * alpha).min(0.34),
         );
-
-        // 2. Berkas sinar di belakang kepala (iluminasi environment).
-        draw_back_rays(
-            rt,
-            factory,
-            cx,
-            pill_rect.bottom - 1.0,
-            9,
-            1.05,
-            ph * 1.25,
-            t * 0.55,
-            D2D1_COLOR_F {
-                r: 0.95,
-                g: 0.13,
-                b: 0.24,
-                a: 0.085 * alpha * boost,
-            },
-        );
-
-        // 3. Halo inti di belakang kepala.
         draw_soft_radial_glow(
             rt,
-            D2D_POINT_2F {
-                x: cx,
-                y: pill_rect.top + ph * 0.62,
-            },
-            pw * 0.20,
-            ph * 0.62,
-            1.0,
-            0.28,
-            0.36,
-            (0.20 * alpha * boost).min(0.34),
+            D2D_POINT_2F { x: cx, y: pill_rect.bottom + 2.0 },
+            pw * 0.58,
+            ph * 0.88,
+            0.922,
+            0.102,
+            0.202,
+            (0.342 * alpha).min(0.30),
         );
-
-        // 4. Kilat crimson acak + lonjakan saat pedang ditarik.
-        let flash = ((t * 12.0).sin() + (t * 21.0).cos()) * 0.5;
-        if flash > -0.1 || pull > 0.25 {
-            let spark_a = (((flash + 0.25) * 0.85).max(pull * 0.85)).clamp(0.18, 0.9) * alpha;
-            let glow_col = D2D1_COLOR_F {
-                r: 0.94,
-                g: 0.12,
-                b: 0.22,
-                a: spark_a * 0.35,
-            };
-            let core_col = D2D1_COLOR_F {
-                r: 1.0,
-                g: 0.45,
-                b: 0.50,
-                a: spark_a,
-            };
-
-            for (i, ax) in [-pw * 0.27, pw * 0.25].iter().enumerate() {
-                let shift = (t * 14.0 + i as f32 * 2.1).sin() * 3.5;
-                let bx = cx + ax + shift;
-                let by = pill_rect.top + 5.0;
-                draw_lightning_bolt(
-                    rt,
-                    factory,
-                    &[
-                        D2D_POINT_2F {
-                            x: bx - 5.0,
-                            y: by + 2.0,
-                        },
-                        D2D_POINT_2F { x: bx, y: by + 8.0 },
-                        D2D_POINT_2F {
-                            x: bx - 3.5,
-                            y: by + 12.0,
-                        },
-                        D2D_POINT_2F {
-                            x: bx + 3.5,
-                            y: by + 19.0,
-                        },
-                    ],
-                    glow_col,
-                    core_col,
-                    1.15,
-                );
-            }
-        }
-
-        // 5. Bara anti-magic naik dari dasar notch.
-        draw_rising_particles(
-            rt,
-            cx,
-            pill_rect.bottom - 1.0,
-            pw * 0.40,
-            ph * 0.95,
-            t,
-            11,
-            D2D1_COLOR_F {
-                r: 1.0,
-                g: 0.24,
-                b: 0.34,
-                a: 0.42 * alpha,
-            },
-            1.05,
-        );
-
-        // 5b. Crimson thunder + asap anti-magic (referensi efek Asta).
-        for k in 0..2 {
-            let fk = k as f32;
-            let y = pill_rect.top + ph * (0.20 + 0.30 * fk);
-            let pulse = 0.40 + 0.40 * (t * (1.3 + fk * 0.4) + fk).sin().abs();
-            vfx::draw_tapered_anime_lightning(
-                rt,
-                factory,
-                D2D_POINT_2F {
-                    x: pill_rect.left + pw * 0.04,
-                    y,
-                },
-                D2D_POINT_2F {
-                    x: pill_rect.left + pw * 0.58,
-                    y: y + ph * 0.12,
-                },
-                t,
-                fk * 3.1,
-                (1.0, 0.22, 0.40),
-                0.55 * alpha * pulse,
-                1.1,
-                3,
-            );
-        }
-        draw_smoke_wisp(
-            rt,
-            pill_rect,
-            cx + pw * 0.26,
-            0.72,
-            1.0,
-            D2D1_COLOR_F {
-                r: 0.42,
-                g: 0.05,
-                b: 0.12,
-                a: alpha,
-            },
-            0.15 * alpha,
-            t,
-            0.41,
-        );
-
-        // 6. Garis cahaya di bibir bawah notch (refleksi lantai).
-        draw_soft_radial_glow(
-            rt,
-            D2D_POINT_2F {
-                x: cx,
-                y: pill_rect.bottom - 0.5,
-            },
-            pw * 0.45,
-            2.4,
-            1.0,
-            0.55,
-            0.60,
-            (0.30 * alpha).min(0.40),
-        );
-    }
+        // Partikel lembut, ukuran kecil, melayang pelan.
+        vfx::draw_bokeh_motes(rt, pill_rect, 9, t, 12.4, (1.0, 0.32, 0.38), alpha * 0.95);
+}
 
     // ── KARAKTER ───────────────────────────────────────────────────────────
     unsafe fn draw_character(
